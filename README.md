@@ -3,13 +3,16 @@
 A working tree for resonance with an evolving implementation history.
 
 ## Overview
-resonance is moving through bootstrap push work.
+resonance tracks the practical state of the current maintenance pass.
 
 ## Status
-Working state: bootstrap. Activity resumed after a longer gap.
+Project phase: bootstrap. Activity resumed after a longer gap.
 
 ## Development
 - Reduced surprise in the docker release checks.
 
 ## Usage
-- Merged scattered docker guidance into the docs.
+- Merged scattered domain guidance into the docs.
+
+## Roadmap
+Keep the next pass focused on verification and smaller changes.
