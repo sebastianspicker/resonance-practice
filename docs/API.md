@@ -2,12 +2,14 @@
 
 
 ## Context
-This page tracks bootstrap decisions for api during revival work.
+This page keeps the current api guidance concise after earlier rough notes.
 
 ## Usage
-- Merged scattered docker guidance into the docs.
+- Merged scattered server guidance into the docs.
 
-## Scratch Notes
+- Earlier scratch notes were compressed into the current guidance.
+
+## Notes Folded Into Current Flow
 Early notes are still uneven and may be folded into clearer sections later.
 
 ## Caveats
