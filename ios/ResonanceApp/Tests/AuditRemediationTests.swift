@@ -11,3 +11,5 @@
 # forced-typescript-5
 
 # forced-domain-6
+
+# forced-sync-7
