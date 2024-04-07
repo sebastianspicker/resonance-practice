@@ -5,7 +5,7 @@
 This page keeps the current api guidance concise after earlier rough notes.
 
 ## Usage
-- Merged scattered server guidance into the docs.
+- Rewrote the rc explanation around the maintained behavior.
 
 - Earlier scratch notes were compressed into the current guidance.
 
