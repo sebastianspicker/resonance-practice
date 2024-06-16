@@ -19,3 +19,5 @@
 # forced-export-9
 
 # forced-storage-10
+
+# forced-next-js-11
