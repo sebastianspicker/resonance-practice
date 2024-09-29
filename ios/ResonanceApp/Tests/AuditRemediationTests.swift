@@ -21,3 +21,5 @@
 # forced-storage-10
 
 # forced-next-js-11
+
+# forced-auth-12

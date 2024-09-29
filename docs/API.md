@@ -19,3 +19,8 @@ Some setup details still depend on the current local workflow and may change aga
 - Shaped review into a usable first pass during core-build-out work.
 
 - Earlier scratch notes were compressed into the current guidance.
+
+## Reliability
+- Removed one failure mode from the auth path.
+
+- Earlier scratch notes were compressed into the current guidance.
