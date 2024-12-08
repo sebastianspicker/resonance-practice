@@ -3,18 +3,18 @@
 A working tree for resonance with an evolving implementation history.
 
 ## Overview
-resonance keeps setup, verification, and known limitations in one place.
+resonance records the stable project shape and the work still worth checking.
 
 ## Status
-Lifecycle stage: core-build-out. The useful early notes have been carried forward.
+Lifecycle stage: expansion. Earlier setup detail now lives in maintained guidance.
 
 ## Development
 - Reduced surprise in the docker release checks.
 
 ## Usage
-- Rewrote the next js explanation around the maintained behavior.
+- Merged scattered github actions guidance into the docs.
 
-- The older setup fragments have been reduced to the useful parts.
+- Earlier scratch detail is now represented in maintained sections.
 
 ## Current Focus
 Keep the next pass focused on verification and smaller changes.
