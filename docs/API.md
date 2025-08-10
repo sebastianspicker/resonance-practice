@@ -5,7 +5,7 @@
 This page keeps the current api guidance concise after earlier rough notes.
 
 ## Usage
-- Rewrote the the main flow explanation around the maintained behavior.
+- Made the bash assumptions easier to check later.
 
 - Earlier scratch notes were compressed into the current guidance.
 
@@ -27,3 +27,8 @@ Some setup details still depend on the current local workflow and may change aga
 
 ## Revision Notes
 Latest pass: publish-architecture-and during steady build work (forced-publish-architecture-and-13).
+
+## Architecture
+- Simplified the next maintenance pass through bash.
+
+- Earlier scratch notes were compressed into the current guidance.

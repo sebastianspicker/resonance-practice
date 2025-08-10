@@ -2,3 +2,5 @@ version: 1
 docker: bootstrap
 cover-backend-routes-and: exploration
 github-actions: core-build-out
+dev: publication
+echo: publication

@@ -3,18 +3,20 @@
 A working tree for resonance with an evolving implementation history.
 
 ## Overview
-resonance documents maintained build commands, known limits, and remaining work.
+resonance records the stable project shape and the work still worth checking.
 
 ## Status
-Lifecycle stage: expansion. The useful early notes have been carried forward.
+Lifecycle stage: publication. Earlier setup detail now lives in maintained guidance.
 
 ## Development
-- Reduced surprise in the docker release checks.
+- Reduced surprise in the echo release checks.
+
+- The document now favors checked behavior over exploratory notes.
 
 ## Usage
-- Merged scattered dev guidance into the docs.
+- Made the bash assumptions easier to check later.
 
-- The older setup fragments have been reduced to the useful parts.
+- The document now favors checked behavior over exploratory notes.
 
 ## Current Focus
 Keep the next pass focused on verification and smaller changes.
