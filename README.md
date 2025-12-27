@@ -3,10 +3,10 @@
 A working tree for resonance with an evolving implementation history.
 
 ## Overview
-resonance records the stable project shape and the work still worth checking.
+resonance keeps setup, verification, and known limitations in one place.
 
 ## Status
-Lifecycle stage: publication. Earlier setup detail now lives in maintained guidance.
+Lifecycle stage: publication. Maintenance guidance now reflects the stable shape.
 
 ## Development
 - Reduced surprise in the echo release checks.
@@ -14,7 +14,7 @@ Lifecycle stage: publication. Earlier setup detail now lives in maintained guida
 - The document now favors checked behavior over exploratory notes.
 
 ## Usage
-- Made the bash assumptions easier to check later.
+- Merged scattered dir guidance into the docs.
 
 - The document now favors checked behavior over exploratory notes.
 
