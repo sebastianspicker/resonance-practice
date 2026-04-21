@@ -1,0 +1,177 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum GlobalRole {
+  student
+  teacher
+}
+
+enum CourseRole {
+  student
+  teacher
+}
+
+enum EntryStatus {
+  draft
+  submitted
+  reviewed
+}
+
+enum ArtifactType {
+  audio
+  video
+}
+
+enum UploadState {
+  pending
+  uploading
+  uploaded
+  failed
+}
+
+enum FeedbackStatus {
+  ok
+  needs_revision
+  next_goal
+}
+
+enum FeedbackTargetType {
+  entry
+  artifact
+}
+
+// ── CASCADE DELETE implications ─────────────────────────────────────
+// All child relations use `onDelete: Cascade`.  This means:
+//
+//   Deleting a User  → removes their Memberships, PracticeEntries,
+//                       Feedback (authored), RefreshTokens, and
+//                       transitively all Artifacts, Markers.
+//   Deleting a Course → removes Memberships and PracticeEntries
+//                        (with their Artifacts, Feedback, Markers).
+//
+// These cascades can remove large amounts of data in a single
+// operation with no undo.  In production, consider:
+//   1. Soft-delete users/courses (set a `deletedAt` timestamp)
+//      before hard-deleting, with a grace period.
+//   2. Exporting or archiving data before deletion.
+//   3. Restricting hard-delete to an admin-only maintenance path
+//      that requires explicit confirmation.
+// ────────────────────────────────────────────────────────────────────
+
+model User {
+  id          String        @id
+  displayName String
+  globalRole  GlobalRole
+  memberships Membership[]
+  entries     PracticeEntry[] @relation("StudentEntries")
+  feedback    Feedback[]
+  refreshTokens RefreshToken[]
+}
+
+model Course {
+  id          String        @id
+  title       String
+  memberships Membership[]
+  entries     PracticeEntry[]
+}
+
+model Membership {
+  userId   String
+  courseId String
+  roleInCourse CourseRole
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@id([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+}
+
+model PracticeEntry {
+  id              String      @id
+  courseId        String
+  studentId       String
+  createdAt       DateTime    @default(now())
+  practiceDate    DateTime
+  goalText        String
+  durationSeconds Int?
+  tags            String[]
+  notes           String?
+  status          EntryStatus @default(draft)
+  updatedAt       DateTime    @updatedAt
+  deletedAt       DateTime?
+
+  course  Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student User   @relation("StudentEntries", fields: [studentId], references: [id], onDelete: Cascade)
+  artifacts Artifact[]
+  feedback  Feedback[]
+
+  @@index([courseId])
+  @@index([studentId])
+  @@index([status])
+  @@index([courseId, deletedAt])
+}
+
+model Artifact {
+  id              String      @id
+  entryId         String
+  type            ArtifactType
+  durationSeconds Int
+  createdAt       DateTime    @default(now())
+  uploadState     UploadState @default(pending)
+  storageKey      String?
+  remoteUrl       String?
+
+  entry PracticeEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@index([entryId])
+}
+
+model Feedback {
+  id          String      @id
+  targetType  FeedbackTargetType
+  targetId    String
+  teacherId   String
+  entryId     String?
+  createdAt   DateTime    @default(now())
+  status      FeedbackStatus
+  commentsText String
+
+  teacher User @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  entry   PracticeEntry? @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  markers Marker[]
+
+  @@index([targetId, targetType])
+  @@index([teacherId])
+  @@index([entryId])
+}
+
+model Marker {
+  id          String   @id
+  feedbackId  String
+  timeSeconds Int
+  text        String
+
+  feedback Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+
+  @@index([feedbackId])
+}
+
+model RefreshToken {
+  id         String   @id
+  userId     String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}

@@ -1,11 +1,42 @@
-version: 1
-docker: bootstrap
-cover-backend-routes-and: exploration
-github-actions: core-build-out
-dev: publication
-echo: publication
-# forced-dev-6:publication
-npm: publication
-# forced-echo-8:publication
-echo: maintenance
-# forced-echo-10:maintenance
+name: Bug report
+description: Report a reproducible bug
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "Thanks for reporting a bug. Please include as much detail as possible."
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened vs. what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Repro steps
+      description: Step-by-step instructions to reproduce.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs/Errors
+      description: Paste relevant logs or error messages (redact secrets).
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node version, Docker version, etc.
+      placeholder: "macOS 14, Node 20.x, Docker Desktop 4.x"
+    validations:
+      required: false

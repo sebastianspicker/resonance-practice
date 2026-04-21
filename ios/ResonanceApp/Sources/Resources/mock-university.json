@@ -1,0 +1,184 @@
+{
+  "meta": {
+    "version": "1.0.0",
+    "generatedFor": "release-candidate",
+    "universityName": "Mock University Conservatory"
+  },
+  "users": [
+    { "id": "demo_teacher_anna", "displayName": "Prof. Anna Berg", "globalRole": "teacher" },
+    { "id": "demo_student_lea", "displayName": "Lea Sommer", "globalRole": "student" },
+    { "id": "demo_student_noah", "displayName": "Noah Keller", "globalRole": "student" }
+  ],
+  "courses": [
+    { "id": "demo_course_piano", "title": "Mock University - Piano Studio I" },
+    { "id": "demo_course_chamber", "title": "Mock University - Chamber Music Lab" }
+  ],
+  "memberships": [
+    { "userId": "demo_teacher_anna", "courseId": "demo_course_piano", "roleInCourse": "teacher" },
+    { "userId": "demo_teacher_anna", "courseId": "demo_course_chamber", "roleInCourse": "teacher" },
+    { "userId": "demo_student_lea", "courseId": "demo_course_piano", "roleInCourse": "student" },
+    { "userId": "demo_student_noah", "courseId": "demo_course_piano", "roleInCourse": "student" },
+    { "userId": "demo_student_noah", "courseId": "demo_course_chamber", "roleInCourse": "student" }
+  ],
+  "entries": [
+    {
+      "id": "demo_entry_lea_submitted_1",
+      "courseId": "demo_course_piano",
+      "studentId": "demo_student_lea",
+      "createdAt": "2026-02-20T09:15:00.000Z",
+      "practiceDate": "2026-02-20T08:30:00.000Z",
+      "goalText": "Improve legato transitions in Chopin Nocturne",
+      "durationSeconds": 900,
+      "tags": ["legato", "chopin"],
+      "notes": "Left hand balance and softer pedal.",
+      "status": "submitted"
+    },
+    {
+      "id": "demo_entry_noah_submitted_1",
+      "courseId": "demo_course_piano",
+      "studentId": "demo_student_noah",
+      "createdAt": "2026-02-21T11:00:00.000Z",
+      "practiceDate": "2026-02-21T10:10:00.000Z",
+      "goalText": "Stabilize tempo in Bach invention, hands together",
+      "durationSeconds": 720,
+      "tags": ["bach", "tempo"],
+      "notes": "Focus on metronome consistency.",
+      "status": "submitted"
+    },
+    {
+      "id": "demo_entry_lea_reviewed_1",
+      "courseId": "demo_course_piano",
+      "studentId": "demo_student_lea",
+      "createdAt": "2026-02-18T07:30:00.000Z",
+      "practiceDate": "2026-02-18T07:00:00.000Z",
+      "goalText": "Phrase shaping in Debussy prelude",
+      "durationSeconds": 840,
+      "tags": ["debussy", "phrasing"],
+      "notes": "Try broader dynamic contrast.",
+      "status": "reviewed"
+    },
+    {
+      "id": "demo_entry_lea_draft_1",
+      "courseId": "demo_course_piano",
+      "studentId": "demo_student_lea",
+      "createdAt": "2026-02-23T12:30:00.000Z",
+      "practiceDate": "2026-02-23T12:00:00.000Z",
+      "goalText": "Draft: octaves warmup pattern",
+      "durationSeconds": 360,
+      "tags": ["warmup", "octaves"],
+      "notes": "Still experimenting with fingering.",
+      "status": "draft"
+    },
+    {
+      "id": "demo_entry_noah_reviewed_chamber_1",
+      "courseId": "demo_course_chamber",
+      "studentId": "demo_student_noah",
+      "createdAt": "2026-02-17T14:40:00.000Z",
+      "practiceDate": "2026-02-17T14:00:00.000Z",
+      "goalText": "Ensemble cue precision for trio entrance",
+      "durationSeconds": 600,
+      "tags": ["ensemble", "timing"],
+      "notes": "Count rests audibly during rehearsal prep.",
+      "status": "reviewed"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "demo_artifact_lea_submitted_1",
+      "entryId": "demo_entry_lea_submitted_1",
+      "type": "audio",
+      "durationSeconds": 65,
+      "createdAt": "2026-02-20T09:10:00.000Z",
+      "uploadState": "uploaded",
+      "syncPhase": "uploaded",
+      "storageKey": "artifacts/demo_entry_lea_submitted_1/demo_artifact_lea_submitted_1.m4a",
+      "remoteUrl": "https://mock-storage.local/demo/leasubmitted1.m4a",
+      "localPath": "/tmp/mock-demo-artifacts/demo_artifact_lea_submitted_1.m4a"
+    },
+    {
+      "id": "demo_artifact_noah_submitted_1",
+      "entryId": "demo_entry_noah_submitted_1",
+      "type": "audio",
+      "durationSeconds": 58,
+      "createdAt": "2026-02-21T10:55:00.000Z",
+      "uploadState": "uploading",
+      "syncPhase": "confirming",
+      "storageKey": "artifacts/demo_entry_noah_submitted_1/demo_artifact_noah_submitted_1.m4a",
+      "remoteUrl": null,
+      "localPath": "/tmp/mock-demo-artifacts/demo_artifact_noah_submitted_1.m4a"
+    },
+    {
+      "id": "demo_artifact_lea_reviewed_1",
+      "entryId": "demo_entry_lea_reviewed_1",
+      "type": "audio",
+      "durationSeconds": 72,
+      "createdAt": "2026-02-18T07:22:00.000Z",
+      "uploadState": "uploaded",
+      "syncPhase": "uploaded",
+      "storageKey": "artifacts/demo_entry_lea_reviewed_1/demo_artifact_lea_reviewed_1.m4a",
+      "remoteUrl": "https://mock-storage.local/demo/leareviewed1.m4a",
+      "localPath": "/tmp/mock-demo-artifacts/demo_artifact_lea_reviewed_1.m4a"
+    },
+    {
+      "id": "demo_artifact_lea_draft_1",
+      "entryId": "demo_entry_lea_draft_1",
+      "type": "audio",
+      "durationSeconds": 33,
+      "createdAt": "2026-02-23T12:25:00.000Z",
+      "uploadState": "failed",
+      "syncPhase": "failed",
+      "storageKey": null,
+      "remoteUrl": null,
+      "localPath": "/tmp/mock-demo-artifacts/demo_artifact_lea_draft_1.m4a"
+    }
+  ],
+  "feedback": [
+    {
+      "id": "demo_feedback_entry_lea_reviewed_1",
+      "targetType": "entry",
+      "targetId": "demo_entry_lea_reviewed_1",
+      "teacherId": "demo_teacher_anna",
+      "createdAt": "2026-02-19T09:00:00.000Z",
+      "status": "next_goal",
+      "commentsText": "Great color palette. Next step: slower transitions before full tempo.",
+      "markers": [
+        { "id": "demo_marker_entry_lea_reviewed_1_a", "timeSeconds": 18, "text": "Excellent voicing here." },
+        { "id": "demo_marker_entry_lea_reviewed_1_b", "timeSeconds": 41, "text": "Keep wrist relaxed in this passage." }
+      ]
+    },
+    {
+      "id": "demo_feedback_artifact_noah_reviewed_1",
+      "targetType": "artifact",
+      "targetId": "demo_artifact_noah_submitted_1",
+      "teacherId": "demo_teacher_anna",
+      "createdAt": "2026-02-21T13:20:00.000Z",
+      "status": "needs_revision",
+      "commentsText": "Tempo drifts in bars 9-12. Retry with metronome click.",
+      "markers": [
+        { "id": "demo_marker_artifact_noah_reviewed_1_a", "timeSeconds": 22, "text": "Timing slips here." }
+      ]
+    }
+  ],
+  "syncQueue": [
+    {
+      "id": "demo_queue_failed_upload_1",
+      "type": "uploadArtifact",
+      "status": "failed",
+      "retryCount": 2,
+      "lastError": "Upload request timed out",
+      "createdAt": "2026-02-23T12:40:00.000Z",
+      "nextAttemptAt": null,
+      "payload": { "artifactId": "demo_artifact_lea_draft_1" }
+    },
+    {
+      "id": "demo_queue_pending_submit_1",
+      "type": "submitEntry",
+      "status": "pending",
+      "retryCount": 0,
+      "lastError": null,
+      "createdAt": "2026-02-23T12:41:00.000Z",
+      "nextAttemptAt": null,
+      "payload": { "entryId": "demo_entry_lea_draft_1" }
+    }
+  ]
+}

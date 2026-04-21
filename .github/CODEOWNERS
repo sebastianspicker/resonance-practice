@@ -1,0 +1,23 @@
+# Require review for security-sensitive paths
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# CI / CD — changes here can exfiltrate secrets or bypass checks
+.github/                    @sebastianspicker
+
+# Auth, tokens, access control
+server/src/auth.ts          @sebastianspicker
+server/src/routes/auth.ts   @sebastianspicker
+
+# Infrastructure and deployment
+infra/                      @sebastianspicker
+
+# Security documentation
+SECURITY.md                 @sebastianspicker
+docs/SECURITY.md            @sebastianspicker
+
+# Dependency manifests — supply chain vector
+server/package.json         @sebastianspicker
+server/package-lock.json    @sebastianspicker
+
+# Database schema — data integrity
+server/prisma/              @sebastianspicker

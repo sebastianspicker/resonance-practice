@@ -1,17 +1,22 @@
-# resonance file
+// swift-tools-version: 5.9
+import PackageDescription
 
-# forced-domain-1
-
-# forced-ios-2
-
-# forced-typescript-3
-
-# forced-sync-4
-
-# forced-sync-5
-
-# forced-review-6
-
-# forced-vitest-7
-
-# forced-auth-8
+let package = Package(
+  name: "ResonanceApp",
+  platforms: [.iOS(.v17)],
+  products: [
+    .executable(name: "ResonanceApp", targets: ["ResonanceApp"])
+  ],
+  targets: [
+    .executableTarget(
+      name: "ResonanceApp",
+      path: "Sources",
+      resources: [.process("Resources/mock-university.json")]
+    ),
+    .testTarget(
+      name: "ResonanceAppTests",
+      dependencies: ["ResonanceApp"],
+      path: "Tests"
+    )
+  ]
+)
