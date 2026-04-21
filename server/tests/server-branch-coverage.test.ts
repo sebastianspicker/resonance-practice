@@ -80,7 +80,7 @@ describe('server & artifact branch coverage', () => {
 
     it('returns 413 for body too large (FST_ERR_CTP_BODY_TOO_LARGE)', async () => {
       const token = await login('student');
-      const largeBody = 'x'.repeat(1_100_000);
+      const largeBody = JSON.stringify({ payload: 'x'.repeat(1_100_000) });
       const res = await request(app.server)
         .post('/courses/COURSE_TEST/entries')
         .set('Authorization', `Bearer ${token}`)
@@ -132,7 +132,7 @@ describe('server & artifact branch coverage', () => {
           entryId: 'entry-no-key',
           type: 'audio',
           durationSeconds: 60,
-          uploadState: 'pending',
+          uploadState: 'uploading',
           storageKey: null,
         },
       });

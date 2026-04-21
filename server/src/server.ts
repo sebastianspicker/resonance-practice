@@ -191,11 +191,11 @@ export function buildServer(prisma: PrismaClient, s3: S3Client) {
   // --- Routes ---------------------------------------------------------------
   app.get('/health', async () => ({ status: 'ok' }));
 
-  registerAuthRoutes(app, prisma, s3, requireAuth);
-  registerCourseRoutes(app, prisma, s3, requireAuth);
+  registerAuthRoutes(app, prisma, requireAuth);
+  registerCourseRoutes(app, prisma, requireAuth);
   registerEntryRoutes(app, prisma, s3, requireAuth);
   registerArtifactRoutes(app, prisma, s3, requireAuth);
-  registerFeedbackRoutes(app, prisma, s3, requireAuth);
+  registerFeedbackRoutes(app, prisma, requireAuth);
 
   return app;
 }

@@ -4,7 +4,7 @@
 - Device: iPad (latest available simulator)
 - Orientation: Portrait
 - Appearance: Dark mode
-- Text size: Default
+- Text size: Large
 
 ## File Naming Convention
 Use:
@@ -14,8 +14,8 @@ rc-<version>-<persona>-<screen>-<index>.png
 ```
 
 Examples:
-- `rc-0.1.0-student-courses-01.png`
-- `rc-0.1.0-teacher-review-queue-01.png`
+- `rc-0.1.0-rc-student-courses-01.png`
+- `rc-0.1.0-rc-teacher-teacher-review-queue-01.png`
 
 ## Mandatory Screens
 
@@ -39,7 +39,7 @@ Examples:
 
 ## Capture Flow
 1. Run `./scripts/demo/capture-ios-screenshots.sh` for the semi-automatic capture flow.
-2. Script output folder is `artifacts/screenshots/rc-local` by default (gitignored). Copy final screenshots to `docs/assets/screenshots/rc/` before committing.
+2. Script output folder is `artifacts/screenshots/rc-local` by default (gitignored). Copy the approved screenshots to `docs/assets/screenshots/rc/` before committing.
 3. Optionally override folder via `OUTPUT_DIR=/absolute/path ./scripts/demo/capture-ios-screenshots.sh`.
 4. Validate filenames against the naming convention.
 

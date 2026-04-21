@@ -135,36 +135,26 @@ final class SyncManagerTests: XCTestCase {
         XCTAssertNil(failedItems.first?.lastError)
     }
 
-    // MARK: 2 — Exponential backoff calculation
+    // MARK: 2 — Exponential backoff calculation (via RetryPolicy)
 
     func testExponentialBackoffRetryCount0() {
-        // pow(2.0, 0) = 1, min(1, 300) = 1
-        let delay = min(pow(2.0, Double(0)), 300)
-        XCTAssertEqual(delay, 1.0, accuracy: 0.001)
+        XCTAssertEqual(RetryPolicy().backoffDelay(retryCount: 0), 1.0, accuracy: 0.001)
     }
 
     func testExponentialBackoffRetryCount3() {
-        // pow(2.0, 3) = 8, min(8, 300) = 8
-        let delay = min(pow(2.0, Double(3)), 300)
-        XCTAssertEqual(delay, 8.0, accuracy: 0.001)
+        XCTAssertEqual(RetryPolicy().backoffDelay(retryCount: 3), 8.0, accuracy: 0.001)
     }
 
     func testExponentialBackoffRetryCount10CapsAt300() {
-        // pow(2.0, 10) = 1024, min(1024, 300) = 300
-        let delay = min(pow(2.0, Double(10)), 300)
-        XCTAssertEqual(delay, 300.0, accuracy: 0.001)
+        XCTAssertEqual(RetryPolicy().backoffDelay(retryCount: 10), 300.0, accuracy: 0.001)
     }
 
     func testExponentialBackoffRetryCount8Below300() {
-        // pow(2.0, 8) = 256, min(256, 300) = 256
-        let delay = min(pow(2.0, Double(8)), 300)
-        XCTAssertEqual(delay, 256.0, accuracy: 0.001)
+        XCTAssertEqual(RetryPolicy().backoffDelay(retryCount: 8), 256.0, accuracy: 0.001)
     }
 
     func testExponentialBackoffRetryCount9ExceedsCap() {
-        // pow(2.0, 9) = 512, min(512, 300) = 300
-        let delay = min(pow(2.0, Double(9)), 300)
-        XCTAssertEqual(delay, 300.0, accuracy: 0.001)
+        XCTAssertEqual(RetryPolicy().backoffDelay(retryCount: 9), 300.0, accuracy: 0.001)
     }
 
     // MARK: 3 — FIFO ordering
@@ -1239,5 +1229,203 @@ final class PDFExporterEdgeCaseTests: XCTestCase {
         } catch {
             // Acceptable: UIKit renderer may not be available in test host.
         }
+    }
+}
+
+
+// MARK: - RetryPolicy Tests
+
+final class RetryPolicyTests: XCTestCase {
+
+    private let policy = RetryPolicy()
+
+    // MARK: maxAttempts
+
+    func testDefaultMaxAttempts() {
+        XCTAssertEqual(policy.maxAttempts, 20)
+    }
+
+    func testCustomMaxAttempts() {
+        XCTAssertEqual(RetryPolicy(maxAttempts: 5).maxAttempts, 5)
+    }
+
+    // MARK: backoffDelay
+
+    func testBackoffDelayRetryCount0() {
+        XCTAssertEqual(policy.backoffDelay(retryCount: 0), 1.0, accuracy: 0.001)
+    }
+
+    func testBackoffDelayRetryCount3() {
+        XCTAssertEqual(policy.backoffDelay(retryCount: 3), 8.0, accuracy: 0.001)
+    }
+
+    func testBackoffDelayCapsAt300() {
+        XCTAssertEqual(policy.backoffDelay(retryCount: 10), 300.0, accuracy: 0.001)
+        XCTAssertEqual(policy.backoffDelay(retryCount: 100), 300.0, accuracy: 0.001)
+    }
+
+    // MARK: isTerminal — SyncError is always terminal
+
+    func testIsTerminalForPayloadParseError() {
+        XCTAssertTrue(policy.isTerminal(SyncError.payloadParseError("bad")))
+    }
+
+    func testIsTerminalForUnknownTaskType() {
+        XCTAssertTrue(policy.isTerminal(SyncError.unknownTaskType("x")))
+    }
+
+    func testIsTerminalForLocalFileNotFound() {
+        XCTAssertTrue(policy.isTerminal(SyncError.localFileNotFound("/tmp/missing")))
+    }
+
+    func testIsTerminalForLocalFeedbackNotFound() {
+        XCTAssertTrue(policy.isTerminal(SyncError.localFeedbackNotFound("f-1")))
+    }
+
+    // MARK: isTerminal — SyncLocal 404 is terminal
+
+    func testIsTerminalForSyncLocal404() {
+        let err = NSError(domain: "SyncLocal", code: 404, userInfo: [NSLocalizedDescriptionKey: "not found"])
+        XCTAssertTrue(policy.isTerminal(err))
+    }
+
+    func testIsNotTerminalForSyncLocal500() {
+        let err = NSError(domain: "SyncLocal", code: 500, userInfo: [:])
+        XCTAssertFalse(policy.isTerminal(err))
+    }
+
+    // MARK: isTerminal — generic network errors are retryable
+
+    func testIsNotTerminalForURLError() {
+        XCTAssertFalse(policy.isTerminal(URLError(.networkConnectionLost)))
+    }
+
+    func testIsNotTerminalForURLErrorTimedOut() {
+        XCTAssertFalse(policy.isTerminal(URLError(.timedOut)))
+    }
+}
+
+// MARK: - QueueStore Tests
+
+final class QueueStoreTests: XCTestCase {
+
+    @MainActor
+    private func makeStore() -> (container: ModelContainer, store: QueueStore) {
+        let container = PersistenceController.createContainer(inMemory: true)
+        let store = QueueStore(modelContext: container.mainContext)
+        return (container, store)
+    }
+
+    // MARK: enqueue / counts
+
+    @MainActor
+    func testEnqueueInsertsItemWithCorrectType() throws {
+        let (container, store) = makeStore()
+        store.enqueue(type: .createEntry, payload: ["entryId": "e-1"])
+        let items = try container.mainContext.fetch(FetchDescriptor<SyncQueueItem>())
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.first?.type, SyncTaskType.createEntry.rawValue)
+        XCTAssertEqual(items.first?.status, SyncStatus.pending.rawValue)
+    }
+
+    @MainActor
+    func testEnqueueRejectsInvalidPayload() throws {
+        let (container, store) = makeStore()
+        store.enqueue(type: .createEntry, payload: ["nan": Double.nan])
+        let items = try container.mainContext.fetch(FetchDescriptor<SyncQueueItem>())
+        XCTAssertTrue(items.isEmpty)
+    }
+
+    @MainActor
+    func testCountsReturnCorrectValues() throws {
+        let (container, store) = makeStore()
+        let pending = SyncQueueItem(id: "p", type: "createEntry", payloadJSON: "{}")
+        pending.status = SyncStatus.pending.rawValue
+        container.mainContext.insert(pending)
+
+        let failed = SyncQueueItem(id: "f", type: "createEntry", payloadJSON: "{}")
+        failed.status = SyncStatus.failed.rawValue
+        container.mainContext.insert(failed)
+        try container.mainContext.save()
+
+        let (p, f) = store.counts()
+        XCTAssertEqual(p, 1)
+        XCTAssertEqual(f, 1)
+    }
+
+    // MARK: fetchReady
+
+    @MainActor
+    func testFetchReadyFiltersItemsWithFutureNextAttemptAt() throws {
+        let (container, store) = makeStore()
+        let now = Date()
+
+        let ready = SyncQueueItem(id: "ready", type: "createEntry", payloadJSON: "{}")
+        ready.status = SyncStatus.pending.rawValue
+        ready.nextAttemptAt = nil
+        container.mainContext.insert(ready)
+
+        let notYet = SyncQueueItem(id: "not-yet", type: "createEntry", payloadJSON: "{}")
+        notYet.status = SyncStatus.pending.rawValue
+        notYet.nextAttemptAt = now.addingTimeInterval(60)
+        container.mainContext.insert(notYet)
+
+        try container.mainContext.save()
+
+        let fetched = try store.fetchReady(now: now)
+        XCTAssertEqual(fetched.count, 1)
+        XCTAssertEqual(fetched.first?.id, "ready")
+    }
+
+    // MARK: resetAllFailed
+
+    @MainActor
+    func testResetAllFailedClearsErrorAndNextAttempt() throws {
+        let (container, store) = makeStore()
+        let item = SyncQueueItem(id: "fail-1", type: "createEntry", payloadJSON: "{}")
+        item.status = SyncStatus.failed.rawValue
+        item.lastError = "some error"
+        item.nextAttemptAt = Date().addingTimeInterval(60)
+        container.mainContext.insert(item)
+        try container.mainContext.save()
+
+        store.resetAllFailed()
+
+        let fetched = try container.mainContext.fetch(FetchDescriptor<SyncQueueItem>())
+        XCTAssertEqual(fetched.first?.status, SyncStatus.pending.rawValue)
+        XCTAssertNil(fetched.first?.lastError)
+        XCTAssertNil(fetched.first?.nextAttemptAt)
+    }
+
+    // MARK: resetStuckProcessing
+
+    @MainActor
+    func testResetStuckProcessingResetsToPending() throws {
+        let (container, store) = makeStore()
+        let item = SyncQueueItem(id: "stuck", type: "uploadArtifact", payloadJSON: "{}")
+        item.status = SyncStatus.processing.rawValue
+        container.mainContext.insert(item)
+        try container.mainContext.save()
+
+        store.resetStuckProcessing()
+
+        let fetched = try container.mainContext.fetch(FetchDescriptor<SyncQueueItem>())
+        XCTAssertEqual(fetched.first?.status, SyncStatus.pending.rawValue)
+    }
+
+    // MARK: delete
+
+    @MainActor
+    func testDeleteRemovesItem() throws {
+        let (container, store) = makeStore()
+        let item = SyncQueueItem(id: "to-delete", type: "submitEntry", payloadJSON: "{}")
+        container.mainContext.insert(item)
+        try container.mainContext.save()
+
+        store.delete(item)
+        store.save()
+
+        let fetched = try container.mainContext.fetch(FetchDescriptor<SyncQueueItem>())
+        XCTAssertTrue(fetched.isEmpty)
     }
 }

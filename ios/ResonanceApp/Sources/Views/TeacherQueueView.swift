@@ -81,8 +81,29 @@ struct TeacherQueueView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            let response = try await appState.apiClient.fetchReviewQueue(accessToken: session.accessToken, courseId: courseId)
-            queue = response.items
+            var loadedQueue: [ReviewQueueEntry] = []
+            var cursor: String?
+            var seenCursors = Set<String>()
+
+            while true {
+                let response = try await appState.apiClient.fetchReviewQueue(
+                    accessToken: session.accessToken,
+                    courseId: courseId,
+                    limit: 50,
+                    cursor: cursor
+                )
+                loadedQueue.append(contentsOf: response.items)
+
+                guard let nextCursor = response.nextCursor, nextCursor.isEmpty == false else {
+                    break
+                }
+                guard seenCursors.insert(nextCursor).inserted else {
+                    break
+                }
+                cursor = nextCursor
+            }
+
+            queue = loadedQueue
         } catch {
             appState.reportError(error)
         }

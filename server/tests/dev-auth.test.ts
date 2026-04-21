@@ -6,15 +6,24 @@ describe('dev auth disabled', () => {
   let app: any;
   let prisma: PrismaClient;
   let originalAuthMode: string | undefined;
-  let originalOidcIssuer: string | undefined;
+  let originalOidcDiscoveryUrl: string | undefined;
+  let originalOidcClientId: string | undefined;
+  let originalOidcClientSecret: string | undefined;
+  let originalOidcRedirectUri: string | undefined;
   let originalCorsOrigins: string | undefined;
 
   beforeAll(async () => {
     originalAuthMode = process.env.AUTH_MODE;
-    originalOidcIssuer = process.env.OIDC_ISSUER;
+    originalOidcDiscoveryUrl = process.env.OIDC_DISCOVERY_URL;
+    originalOidcClientId = process.env.OIDC_CLIENT_ID;
+    originalOidcClientSecret = process.env.OIDC_CLIENT_SECRET;
+    originalOidcRedirectUri = process.env.OIDC_REDIRECT_URI;
     originalCorsOrigins = process.env.CORS_ORIGINS;
     process.env.AUTH_MODE = 'prod';
-    process.env.OIDC_ISSUER = 'https://test.example.com';
+    process.env.OIDC_DISCOVERY_URL = 'https://test.example.com/.well-known/openid-configuration';
+    process.env.OIDC_CLIENT_ID = 'test-client';
+    process.env.OIDC_CLIENT_SECRET = 'test-secret';
+    process.env.OIDC_REDIRECT_URI = 'https://test.example.com/auth/callback';
     process.env.CORS_ORIGINS = 'https://test.example.com';
 
     vi.resetModules();
@@ -26,11 +35,15 @@ describe('dev auth disabled', () => {
   });
 
   afterAll(async () => {
-    await app.close();
-    await prisma.$disconnect();
+    await app?.close();
+    await prisma?.$disconnect();
     process.env.AUTH_MODE = originalAuthMode;
-    process.env.OIDC_ISSUER = originalOidcIssuer;
+    process.env.OIDC_DISCOVERY_URL = originalOidcDiscoveryUrl;
+    process.env.OIDC_CLIENT_ID = originalOidcClientId;
+    process.env.OIDC_CLIENT_SECRET = originalOidcClientSecret;
+    process.env.OIDC_REDIRECT_URI = originalOidcRedirectUri;
     process.env.CORS_ORIGINS = originalCorsOrigins;
+    vi.resetModules();
   });
 
   it('returns 404 for dev login', async () => {

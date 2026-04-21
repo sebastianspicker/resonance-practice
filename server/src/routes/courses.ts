@@ -1,5 +1,4 @@
-import type { S3Client } from '@aws-sdk/client-s3';
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { ErrorCodes } from '../errorCodes.js';
 import { ApiError } from '../errors.js';
@@ -9,10 +8,64 @@ import { requireCourseRole } from '../validation.js';
 const REVIEW_QUEUE_DEFAULT_LIMIT = 20;
 const REVIEW_QUEUE_MAX_LIMIT = 100;
 
+/** Pagination defaults for the entries list. */
+const ENTRIES_DEFAULT_LIMIT = 50;
+const ENTRIES_MAX_LIMIT = 200;
+
+// ── Cursor-pagination helpers ────────────────────────────────────────
+
+/**
+ * Parse and clamp a `limit` query parameter.
+ * Returns the clamped limit or the provided default when the param is absent.
+ */
+function parseLimitParam(raw: string | undefined, defaultLimit: number, maxLimit: number): number {
+  if (raw === undefined) return defaultLimit;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'limit must be a positive integer');
+  }
+  return Math.min(Math.floor(parsed), maxLimit);
+}
+
+/**
+ * Look up a cursor entry and build a Prisma `OR` clause that selects only entries
+ * ordered strictly after the cursor in (practiceDate DESC, createdAt DESC, id DESC) order.
+ * Returns `undefined` when no cursor is provided.
+ */
+async function buildCursorWhere(
+  prisma: PrismaClient,
+  cursor: string | undefined
+): Promise<Prisma.PracticeEntryWhereInput['OR'] | undefined> {
+  if (!cursor) return undefined;
+
+  const cursorEntry = await prisma.practiceEntry.findUnique({
+    where: { id: cursor },
+    select: { practiceDate: true, createdAt: true, id: true },
+  });
+  if (!cursorEntry) {
+    throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid cursor: entry not found');
+  }
+
+  // "After" in descending order means entries whose sort tuple is strictly less than the cursor's.
+  return [
+    { practiceDate: { lt: cursorEntry.practiceDate } },
+    {
+      practiceDate: cursorEntry.practiceDate,
+      createdAt: { lt: cursorEntry.createdAt },
+    },
+    {
+      practiceDate: cursorEntry.practiceDate,
+      createdAt: cursorEntry.createdAt,
+      id: { lt: cursorEntry.id },
+    },
+  ];
+}
+
+// ────────────────────────────────────────────────────────────────────
+
 export function registerCourseRoutes(
   app: FastifyInstance,
   prisma: PrismaClient,
-  _s3: S3Client,
   requireAuth: (request: FastifyRequest) => Promise<void>
 ) {
   app.get('/courses', { preHandler: requireAuth }, async (request) => {
@@ -39,6 +92,8 @@ export function registerCourseRoutes(
     return course;
   });
 
+  // BREAKING CHANGE (v0.2): Response shape changed from `[...]` to `{ items: [...], nextCursor: string | null }`.
+  // iOS client must be updated to decode the new paginated envelope.
   app.get('/courses/:courseId/entries', { preHandler: requireAuth }, async (request) => {
     const user = request.user!;
     const courseId = (request.params as { courseId: string }).courseId;
@@ -47,7 +102,8 @@ export function registerCourseRoutes(
     // Optional status filter: ?status=draft | submitted | reviewed
     const validStatuses = ['draft', 'submitted', 'reviewed'] as const;
     type ValidStatus = (typeof validStatuses)[number];
-    const queryStatus = (request.query as { status?: string }).status;
+    const queryParams = request.query as { status?: string; limit?: string; cursor?: string };
+    const queryStatus = queryParams.status;
     if (queryStatus !== undefined && !validStatuses.includes(queryStatus as ValidStatus)) {
       throw new ApiError(
         400,
@@ -57,10 +113,11 @@ export function registerCourseRoutes(
     }
     const statusFilter = queryStatus as ValidStatus | undefined;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = { courseId, deletedAt: null };
+    const limit = parseLimitParam(queryParams.limit, ENTRIES_DEFAULT_LIMIT, ENTRIES_MAX_LIMIT);
+    const cursor = queryParams.cursor;
+
+    const where: Prisma.PracticeEntryWhereInput = { courseId, deletedAt: null };
     if (role === 'teacher') {
-      // Default to 'submitted' for teachers when no filter is provided
       where.status = statusFilter ?? 'submitted';
     } else {
       where.studentId = user.id;
@@ -69,23 +126,22 @@ export function registerCourseRoutes(
       }
     }
 
-    const query = request.query as { cursor?: string };
-    const cursor = query.cursor;
+    const cursorOR = await buildCursorWhere(prisma, cursor);
+    if (cursorOR) where.OR = cursorOR;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const findOptions: any = {
+    const entries = await prisma.practiceEntry.findMany({
       where,
       include: { artifacts: true },
-      orderBy: [{ practiceDate: 'desc' }, { id: 'desc' }],
-      take: 200,
-    };
-    if (cursor) {
-      findOptions.cursor = { id: cursor };
-      findOptions.skip = 1;
-    }
+      orderBy: [{ practiceDate: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+    });
 
-    const entries = await prisma.practiceEntry.findMany(findOptions);
-    return entries;
+    const hasMore = entries.length > limit;
+    const pageEntries = hasMore ? entries.slice(0, limit) : entries;
+    const lastEntry = pageEntries[pageEntries.length - 1];
+    const nextCursor = hasMore && lastEntry ? lastEntry.id : null;
+
+    return { items: pageEntries, nextCursor };
   });
 
   // BREAKING CHANGE (v0.2): Response shape changed from `[...]` to `{ items: [...], nextCursor: string | null }`.
@@ -98,51 +154,20 @@ export function registerCourseRoutes(
       throw new ApiError(403, ErrorCodes.TEACHER_ONLY, 'Only teachers can access the review queue');
     }
 
-    const query = request.query as { limit?: string; cursor?: string };
-
-    // Parse and clamp limit
-    let limit = REVIEW_QUEUE_DEFAULT_LIMIT;
-    if (query.limit !== undefined) {
-      const parsed = Number(query.limit);
-      if (!Number.isFinite(parsed) || parsed < 1) {
-        throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'limit must be a positive integer');
-      }
-      limit = Math.min(Math.floor(parsed), REVIEW_QUEUE_MAX_LIMIT);
-    }
-
-    const cursor = query.cursor;
+    const { limit: limitParam, cursor } = request.query as { limit?: string; cursor?: string };
+    const limit = parseLimitParam(limitParam, REVIEW_QUEUE_DEFAULT_LIMIT, REVIEW_QUEUE_MAX_LIMIT);
 
     // Build the where clause; if a cursor is provided, filter to entries
     // ordered after the cursor entry using the same sort order
     // (practiceDate desc, createdAt desc, id as tiebreaker).
-    const where: Record<string, unknown> = { courseId, status: 'submitted', deletedAt: null };
+    const where: Prisma.PracticeEntryWhereInput = {
+      courseId,
+      status: 'submitted',
+      deletedAt: null,
+    };
 
-    if (cursor) {
-      // Look up the cursor entry to obtain its sort-key values
-      const cursorEntry = await prisma.practiceEntry.findUnique({
-        where: { id: cursor },
-        select: { practiceDate: true, createdAt: true, id: true },
-      });
-      if (!cursorEntry) {
-        throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid cursor: entry not found');
-      }
-      // "After" in descending order means entries whose sort tuple is strictly less than the cursor's.
-      // SQL equivalent: (practiceDate < cursorDate)
-      //   OR (practiceDate = cursorDate AND createdAt < cursorCreatedAt)
-      //   OR (practiceDate = cursorDate AND createdAt = cursorCreatedAt AND id < cursorId)
-      where.OR = [
-        { practiceDate: { lt: cursorEntry.practiceDate } },
-        {
-          practiceDate: cursorEntry.practiceDate,
-          createdAt: { lt: cursorEntry.createdAt },
-        },
-        {
-          practiceDate: cursorEntry.practiceDate,
-          createdAt: cursorEntry.createdAt,
-          id: { lt: cursorEntry.id },
-        },
-      ];
-    }
+    const cursorOR = await buildCursorWhere(prisma, cursor);
+    if (cursorOR) where.OR = cursorOR;
 
     // Fetch one extra row to determine if there are more results
     const entries = await prisma.practiceEntry.findMany({
@@ -169,6 +194,9 @@ export function registerCourseRoutes(
         practiceDate: entry.practiceDate,
         goalText: entry.goalText,
         notes: entry.notes,
+        tags: entry.tags,
+        durationSeconds: entry.durationSeconds,
+        status: entry.status,
         artifacts: entry.artifacts,
       })),
       nextCursor,

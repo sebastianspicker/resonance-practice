@@ -1,4 +1,3 @@
-import type { S3Client } from '@aws-sdk/client-s3';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { nanoid } from 'nanoid';
@@ -16,7 +15,6 @@ import {
 export function registerFeedbackRoutes(
   app: FastifyInstance,
   prisma: PrismaClient,
-  _s3: S3Client,
   requireAuth: (request: FastifyRequest) => Promise<void>
 ) {
   app.post('/feedback', { preHandler: requireAuth }, async (request, reply) => {
@@ -47,6 +45,7 @@ export function registerFeedbackRoutes(
     }
     for (const marker of markers) {
       requireNumber(marker?.timeSeconds, 'marker.timeSeconds', {
+        integer: true,
         min: 0,
         max: limits.maxMarkerTimeSeconds,
       });

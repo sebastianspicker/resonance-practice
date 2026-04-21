@@ -5,7 +5,8 @@ struct CalendarView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \CalendarEvent.startDate) private var events: [CalendarEvent]
     @StateObject private var calendarService = CalendarService()
-    @State private var icalURLString: String = UserDefaults.standard.string(forKey: "icalURL") ?? ""
+    @State private var icalURLString: String = CalendarSubscriptionStore.load()
+    @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -16,7 +17,7 @@ struct CalendarView: View {
                             .accessibilityLabel("iCal URL")
                             .accessibilityHint("Enter your ASIMUT calendar URL")
                         Button("Save & Refresh") {
-                            UserDefaults.standard.set(icalURLString, forKey: "icalURL")
+                            CalendarSubscriptionStore.save(icalURLString)
                             Task { await refresh() }
                         }
                         .accessibilityLabel("Save and refresh calendar")
@@ -39,6 +40,16 @@ struct CalendarView: View {
                 }
             }
             .navigationTitle("Calendar")
+            .alert("Calendar refresh failed", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) {
+                    errorMessage = nil
+                }
+            } message: {
+                Text(errorMessage ?? "Unknown error")
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Refresh") { Task { await refresh() } }
@@ -51,6 +62,11 @@ struct CalendarView: View {
 
     private func refresh() async {
         guard let url = URL(string: icalURLString), !icalURLString.isEmpty else { return }
-        await calendarService.refresh(from: url, modelContext: modelContext)
+        do {
+            try await calendarService.refresh(from: url, modelContext: modelContext)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }

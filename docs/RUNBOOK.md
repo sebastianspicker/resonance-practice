@@ -146,3 +146,71 @@ Reset demo records only:
 
 Screenshot instructions:
 - See `docs/RELEASE_CANDIDATE_SCREENSHOTS.md`
+
+## Production Deployment
+
+> ⚠️ Production SSO (Shibboleth/OIDC) is not yet implemented. The steps below apply once an SSO bridge is in place.
+
+### Prerequisites
+- A reachable PostgreSQL instance (RDS, managed DB, etc.)
+- An S3-compatible object store (AWS S3 or MinIO in server mode)
+- TLS termination (reverse proxy: nginx, Caddy, or a load balancer)
+- Secrets injected via environment variables — **never hardcode in config files**
+
+### Required Environment Variables (Production)
+
+```bash
+DATABASE_URL=postgresql://<user>:<pass>@<host>:5432/<db>
+
+# Generate with: openssl rand -base64 48
+JWT_SECRET=<strong-random-secret-at-least-32-chars>
+JWT_REFRESH_SECRET=<separate-strong-random-secret>
+
+AUTH_MODE=prod
+APP_BASE_URL=https://<your-domain>
+CORS_ORIGINS=https://<your-domain>
+
+S3_ENDPOINT=https://s3.<region>.amazonaws.com   # or MinIO server URL
+S3_REGION=<region>
+S3_BUCKET=<bucket-name>
+S3_ACCESS_KEY=<aws-access-key-id>
+S3_SECRET_KEY=<aws-secret-access-key>
+S3_FORCE_PATH_STYLE=false  # true only for MinIO path-style
+```
+
+### Deploy Steps
+
+1. **Database**: Run migrations against the production database:
+   ```bash
+   cd server
+   DATABASE_URL=<prod-url> npx prisma migrate deploy
+   ```
+
+2. **Build**:
+   ```bash
+   cd server
+   npm ci --production
+   npm run prisma:generate
+   npm run build
+   ```
+
+3. **Start**:
+   ```bash
+   npm run start
+   ```
+   The server listens on `PORT` (default 4000). Put it behind a TLS-terminating reverse proxy.
+
+4. **Health check**: Confirm the server is up:
+   ```bash
+   curl -fsS https://<your-domain>/health
+   ```
+
+5. **Secrets**: Never use `CHANGE-ME` values or `minioadmin`/`resonance` credentials in production. Rotate secrets after any suspected exposure.
+
+6. **SSO**: Set `AUTH_MODE=prod` and wire the university Shibboleth/OIDC bridge at `/auth/session`. See `docs/SECURITY.md` for the documented production auth contract.
+
+### Hardening Reminders
+- Set `CORS_ORIGINS` to explicit allowed origins (empty = fail-closed).
+- Postgres and S3 should be encrypted at rest.
+- Dev auth endpoints (`/dev/*`) are compiled in but will 404 when `AUTH_MODE` is not `dev`.
+- Run `npm audit --audit-level=high` before each deployment.

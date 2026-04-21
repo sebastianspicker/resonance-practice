@@ -56,6 +56,14 @@ struct LoginView: View {
                     .padding(.top, 8)
                     .accessibilityLabel("Sign in to your account")
                     .accessibilityHint("Double-tap to sign in with your university credentials")
+
+                    if let authError = authManager.authError {
+                        Text(authError)
+                            .font(.footnote)
+                            .foregroundStyle(.red.opacity(0.95))
+                            .multilineTextAlignment(.center)
+                            .accessibilityLabel("Authentication error: \(authError)")
+                    }
                     
                     Text("Environment: \(AppConfig.apiBaseURL.host() ?? AppConfig.apiBaseURL.absoluteString)")
                         .font(.caption2)

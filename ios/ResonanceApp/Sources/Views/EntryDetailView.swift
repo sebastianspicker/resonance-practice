@@ -3,6 +3,7 @@ import SwiftData
 
 struct EntryDetailView: View {
     @Bindable var entry: LocalPracticeEntry
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var syncManager: SyncManager
@@ -126,20 +127,20 @@ struct EntryDetailView: View {
                                                 .foregroundStyle(.white.opacity(0.5))
                                         }
                                         Spacer()
-                                        Button(player.isPlaying ? "Stop" : "Play") {
-                                            if player.isPlaying {
+                                        Button(isPlaying(artifact) ? "Stop" : "Play") {
+                                            if isPlaying(artifact) {
                                                 player.stop()
                                             } else {
                                                 player.play(url: URL(fileURLWithPath: artifact.localPath))
                                             }
                                         }
                                         .buttonStyle(SubtleGlassButtonStyle())
-                                        .accessibilityLabel(player.isPlaying ? "Stop playback" : "Play \(artifact.type.rawValue) recording")
-                                        .accessibilityHint(player.isPlaying ? "Double-tap to stop playback" : "Double-tap to play this recording")
+                                        .accessibilityLabel(isPlaying(artifact) ? "Stop playback" : "Play \(artifact.type.rawValue) recording")
+                                        .accessibilityHint(isPlaying(artifact) ? "Double-tap to stop playback" : "Double-tap to play this recording")
                                     }
 
                                     // Mini player with seek
-                                    if player.isPlaying && player.duration > 0 {
+                                    if isPlaying(artifact) && player.duration > 0 {
                                         VStack(spacing: 4) {
                                             Slider(
                                                 value: Binding(
@@ -323,7 +324,15 @@ struct EntryDetailView: View {
 
     private func stopRecording() {
         recorder.stopRecording()
-        guard let url = recorder.lastURL else { return }
+        guard let url = recorder.lastURL else {
+            appState.reportError(NSError(domain: "Resonance", code: 0, userInfo: [NSLocalizedDescriptionKey: "Recording file is unavailable."]))
+            return
+        }
+        guard recorder.duration > 0, FileManager.default.fileExists(atPath: url.path) else {
+            FileStore.deleteFileIfExists(atPath: url.path)
+            appState.reportError(NSError(domain: "Resonance", code: 0, userInfo: [NSLocalizedDescriptionKey: "Recording did not complete, so no audio was attached."]))
+            return
+        }
         let artifact = LocalArtifact(id: UUID().uuidString, entryId: entry.id, type: .audio, durationSeconds: Int(recorder.duration), localPath: url.path)
         entry.artifacts.append(artifact)
         modelContext.insert(artifact)
@@ -339,6 +348,11 @@ struct EntryDetailView: View {
     private func submitEntry() {
         guard !entry.artifacts.isEmpty else {
             appState.reportError(NSError(domain: "Resonance", code: 0, userInfo: [NSLocalizedDescriptionKey: "At least one recording is required before submitting."]))
+            return
+        }
+        let hasFailedArtifacts = entry.artifacts.contains { $0.uploadState == .failed }
+        if hasFailedArtifacts {
+            appState.reportError(NSError(domain: "Resonance", code: 0, userInfo: [NSLocalizedDescriptionKey: "Some recordings failed to sync. Retry them before submitting."]))
             return
         }
         let hasUnfinishedArtifacts = entry.artifacts.contains { $0.uploadState != .uploaded }
@@ -357,57 +371,21 @@ struct EntryDetailView: View {
     }
 
     private func deleteEntry() {
-        // Check if there are pending createEntry sync items for this entry.
-        // If so, the entry was never synced to the server -- remove those items
-        // and skip enqueuing a server-side delete.
-        let entryId = entry.id
-        let createType = SyncTaskType.createEntry.rawValue
-        let pendingValue = SyncStatus.pending.rawValue
-        let descriptor = FetchDescriptor<SyncQueueItem>(predicate: #Predicate {
-            $0.status == pendingValue && $0.type == createType
-        })
-        let pendingCreates = (try? modelContext.fetch(descriptor)) ?? []
-        let hasUnsyncedCreate = pendingCreates.contains { item in
-            guard let data = item.payloadJSON.data(using: .utf8),
-                  let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
-            return (payload["entryId"] as? String) == entryId
+        player.stop()
+        if recorder.isRecording {
+            recorder.stopRecording()
+            if let lastURL = recorder.lastURL {
+                FileStore.deleteFileIfExists(atPath: lastURL.path)
+            }
         }
 
-        entry.deletedAt = Date()
         do {
-            try modelContext.save()
+            _ = try EntryDeletionCoordinator.delete(entry: entry, modelContext: modelContext) { type, payload in
+                syncManager.enqueue(type: type, payload: payload)
+            }
+            dismiss()
         } catch {
             appState.reportError(error)
-            return
-        }
-
-        // Remove pending sync items for this entry's artifacts
-        let artifactIds = Set(entry.artifacts.map { $0.id })
-        if !artifactIds.isEmpty {
-            let allPendingDescriptor = FetchDescriptor<SyncQueueItem>(predicate: #Predicate {
-                $0.status == pendingValue
-            })
-            let allPendingItems = (try? modelContext.fetch(allPendingDescriptor)) ?? []
-            for item in allPendingItems {
-                guard let data = item.payloadJSON.data(using: .utf8),
-                      let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let artifactId = payload["artifactId"] as? String,
-                      artifactIds.contains(artifactId) else { continue }
-                modelContext.delete(item)
-            }
-        }
-
-        if hasUnsyncedCreate {
-            // Remove pending create items -- no server-side delete needed
-            for item in pendingCreates {
-                guard let data = item.payloadJSON.data(using: .utf8),
-                      let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      (payload["entryId"] as? String) == entryId else { continue }
-                modelContext.delete(item)
-            }
-            try? modelContext.save()
-        } else {
-            syncManager.enqueue(type: .deleteEntry, payload: ["entryId": entryId])
         }
     }
 
@@ -448,6 +426,10 @@ struct EntryDetailView: View {
         let mins = Int(seconds) / 60
         let secs = Int(seconds) % 60
         return String(format: "%d:%02d", mins, secs)
+    }
+
+    private func isPlaying(_ artifact: LocalArtifact) -> Bool {
+        player.isPlaying && player.currentFilePath == artifact.localPath
     }
 
     private func statusLabel(_ status: EntryStatus) -> String {

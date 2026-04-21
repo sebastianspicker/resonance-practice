@@ -48,10 +48,10 @@ export function requireString(
     );
   }
   const max = options?.max ?? 10000;
-  if (value.length > max) {
+  if (trimmed.length > max) {
     throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `String too long: ${name} (max ${max})`);
   }
-  return value;
+  return trimmed;
 }
 
 export function requireEnum<T extends string>(value: unknown, name: string, allowed: readonly T[]) {
@@ -80,22 +80,61 @@ export function requireStringArray(value: unknown, name: string, options?: { max
 
 export function requireValidDate(value: unknown, name: string): Date {
   const str = String(value);
-  // ISO 8601: date-only (parsed as UTC midnight) or full datetime with explicit timezone.
-  // Requiring Z or ±HH:MM when a time component is present avoids Node.js treating
-  // timezone-less strings as local time, which would cause silent drift on non-UTC servers.
-  const isoRegex = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?(Z|[+-]\d{2}:\d{2}))?$/;
-  if (!isoRegex.test(str)) {
+  const dateOnlyMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const dateTimeMatch = str.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d{3})?(Z|([+-])(\d{2}):(\d{2}))$/
+  );
+
+  if (!dateOnlyMatch && !dateTimeMatch) {
     throw new ApiError(
       400,
       ErrorCodes.VALIDATION_ERROR,
       `Invalid date format: ${name}, expected ISO 8601`
     );
   }
+
+  const year = Number((dateOnlyMatch ?? dateTimeMatch)?.[1]);
+  const month = Number((dateOnlyMatch ?? dateTimeMatch)?.[2]);
+  const day = Number((dateOnlyMatch ?? dateTimeMatch)?.[3]);
+  if (!isValidCalendarDate(year, month, day)) {
+    throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `Invalid date: ${name}`);
+  }
+
+  if (dateTimeMatch) {
+    const hour = Number(dateTimeMatch[4]);
+    const minute = Number(dateTimeMatch[5]);
+    const second = Number(dateTimeMatch[6]);
+    if (hour > 23 || minute > 59 || second > 59) {
+      throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `Invalid date: ${name}`);
+    }
+
+    if (dateTimeMatch[8] !== 'Z') {
+      const offsetHour = Number(dateTimeMatch[10]);
+      const offsetMinute = Number(dateTimeMatch[11]);
+      if (offsetHour > 23 || offsetMinute > 59) {
+        throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `Invalid date: ${name}`);
+      }
+    }
+  }
+
   const date = new Date(str);
   if (Number.isNaN(date.getTime())) {
     throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `Invalid date: ${name}`);
   }
   return date;
+}
+
+function isValidCalendarDate(year: number, month: number, day: number): boolean {
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
+    return false;
+  }
+
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  return (
+    candidate.getUTCFullYear() === year &&
+    candidate.getUTCMonth() === month - 1 &&
+    candidate.getUTCDate() === day
+  );
 }
 
 export function requireNumber(

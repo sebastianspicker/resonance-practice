@@ -41,7 +41,7 @@ describe('GET /courses/:courseId/entries status filter', () => {
       .get('/courses/COURSE_101/entries?status=draft')
       .set('Authorization', `Bearer ${accessToken}`);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(Array.isArray(res.body.items)).toBe(true);
   });
 
   it('accepts valid status filter (submitted)', async () => {
@@ -49,7 +49,7 @@ describe('GET /courses/:courseId/entries status filter', () => {
       .get('/courses/COURSE_101/entries?status=submitted')
       .set('Authorization', `Bearer ${accessToken}`);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(Array.isArray(res.body.items)).toBe(true);
   });
 
   it('accepts valid status filter (reviewed)', async () => {
@@ -57,7 +57,7 @@ describe('GET /courses/:courseId/entries status filter', () => {
       .get('/courses/COURSE_101/entries?status=reviewed')
       .set('Authorization', `Bearer ${accessToken}`);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(Array.isArray(res.body.items)).toBe(true);
   });
 
   it('returns all entries when no status filter is provided (student)', async () => {
@@ -65,6 +65,16 @@ describe('GET /courses/:courseId/entries status filter', () => {
       .get('/courses/COURSE_101/entries')
       .set('Authorization', `Bearer ${accessToken}`);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(Array.isArray(res.body.items)).toBe(true);
+  });
+
+  it('rejects unknown cursor id with VALIDATION_ERROR', async () => {
+    // cursor references a non-existent entry → 400 invalid cursor
+    const res = await request(app.server)
+      .get('/courses/COURSE_101/entries?cursor=nonexistent-entry')
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.message).toContain('cursor');
   });
 });

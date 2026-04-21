@@ -170,10 +170,12 @@ describe('validation helpers (unit)', () => {
       expect(() => requireValidDate('not-a-date', 'date')).toThrow(ApiError);
     });
 
+    it('rejects impossible calendar dates instead of normalizing them', () => {
+      expect(() => requireValidDate('2025-02-30', 'date')).toThrow(ApiError);
+      expect(() => requireValidDate('2025-04-31', 'date')).toThrow(ApiError);
+    });
+
     it('rejects invalid calendar dates that parse to NaN', () => {
-      // 2025-02-30 matches the regex but is not a real date
-      // However, JS Date may still parse it (rolls over). The regex check passes.
-      // Only truly unparseable values will hit the NaN branch.
       expect(() => requireValidDate('0000-00-00', 'date')).toThrow(ApiError);
     });
 
@@ -202,6 +204,11 @@ describe('validation helpers (unit)', () => {
 
     it('throws for NaN', () => {
       expect(() => requireNumber(NaN, 'n')).toThrow(ApiError);
+    });
+
+    it('enforces integer constraint when requested', () => {
+      expect(requireNumber(42, 'n', { integer: true })).toBe(42);
+      expect(() => requireNumber(3.14, 'n', { integer: true })).toThrow(ApiError);
     });
 
     it('enforces min constraint', () => {

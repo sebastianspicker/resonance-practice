@@ -207,6 +207,7 @@ struct MainSplitView: View {
             let remoteCourses = try await appState.apiClient.fetchCourses(accessToken: session.accessToken)
             let existing = (try? modelContext.fetch(FetchDescriptor<LocalCourse>())) ?? []
             let existingMap = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
+            let remoteCourseIds = Set(remoteCourses.map(\.id))
 
             for course in remoteCourses {
                 if let local = existingMap[course.id] {
@@ -217,7 +218,16 @@ struct MainSplitView: View {
                     modelContext.insert(record)
                 }
             }
+
+            for localCourse in existing where remoteCourseIds.contains(localCourse.id) == false {
+                modelContext.delete(localCourse)
+            }
+
             try modelContext.save()
+
+            if let selectionId, remoteCourseIds.contains(selectionId) == false {
+                self.selectionId = remoteCourses.first?.id
+            }
         } catch {
             appState.reportError(error)
         }

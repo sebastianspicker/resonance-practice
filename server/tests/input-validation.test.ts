@@ -123,6 +123,37 @@ describe('input validation', () => {
         });
       expect(res.status).toBe(400);
     });
+
+    it('rejects decimal durationSeconds', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .post('/courses/COURSE_TEST/entries')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'entry-decimal-dur',
+          practiceDate: new Date().toISOString(),
+          goalText: 'Test',
+          tags: [],
+          durationSeconds: 1.5,
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects impossible calendar dates', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .post('/courses/COURSE_TEST/entries')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'entry-impossible-date',
+          practiceDate: '2025-02-30',
+          goalText: 'Test',
+          tags: [],
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    });
   });
 
   // ── PATCH /entries/:entryId ──
@@ -219,6 +250,16 @@ describe('input validation', () => {
       expect(res.status).toBe(409);
       expect(res.body.error?.code).toBe('ENTRY_LOCKED');
     });
+
+    it('rejects decimal durationSeconds in PATCH', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .patch(`/entries/${entryId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ durationSeconds: 12.5 });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    });
   });
 
   // ── POST /entries/:entryId/artifacts ──
@@ -268,6 +309,16 @@ describe('input validation', () => {
         .set('Authorization', `Bearer ${token}`)
         .send({ id: 'artifact-neg', type: 'audio', durationSeconds: -5 });
       expect(res.status).toBe(400);
+    });
+
+    it('rejects decimal durationSeconds', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .post(`/entries/${entryId}/artifacts`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ id: 'artifact-decimal', type: 'audio', durationSeconds: 12.25 });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
     });
   });
 
@@ -382,6 +433,22 @@ describe('input validation', () => {
         });
       expect(res.status).toBe(400);
     });
+
+    it('rejects marker with decimal timeSeconds', async () => {
+      const token = await login('teacher');
+      const res = await request(app.server)
+        .post('/feedback')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          targetType: 'entry',
+          targetId: entryId,
+          status: 'ok',
+          commentsText: 'Review',
+          markers: [{ timeSeconds: 12.5, text: 'Half second' }],
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    });
   });
 
   // ── POST /auth/session ──
@@ -425,6 +492,23 @@ describe('input validation', () => {
       const res = await request(app.server)
         .post('/auth/refresh')
         .send({ refreshToken: 'a'.repeat(2049) });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    });
+  });
+
+  describe('POST /auth/logout', () => {
+    it('rejects non-object bodies', async () => {
+      const res = await request(app.server)
+        .post('/auth/logout')
+        .set('Content-Type', 'application/json')
+        .send('"token"');
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects non-string refreshToken', async () => {
+      const res = await request(app.server).post('/auth/logout').send({ refreshToken: 12345 });
       expect(res.status).toBe(400);
       expect(res.body.error?.code).toBe('VALIDATION_ERROR');
     });

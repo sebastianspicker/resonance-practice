@@ -7,6 +7,7 @@ This index is the canonical entry point for Resonance documentation.
 - [Architecture](./ARCHITECTURE.md)
 - [API](./API.md)
 - [Security](./SECURITY.md)
+- [SSO Bridge](./SSO_BRIDGE.md)
 - [UI](./UI.md)
 - [Runbook](./RUNBOOK.md)
 - [Release Candidate Demo](./RELEASE_CANDIDATE_DEMO.md)

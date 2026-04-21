@@ -35,6 +35,15 @@ describe('config validation', () => {
       );
     });
 
+    it('rejects localhost prefix tricks', () => {
+      expect(() => validateDevCallbackUrl('http://localhost.evil.test/callback')).toThrow(
+        'DEV_LOGIN_CALLBACK_URL must start with "resonance://" or "http://localhost"'
+      );
+      expect(() => validateDevCallbackUrl('http://localhost@evil.test/callback')).toThrow(
+        'DEV_LOGIN_CALLBACK_URL must start with "resonance://" or "http://localhost"'
+      );
+    });
+
     it('rejects ftp:// scheme', () => {
       expect(() => validateDevCallbackUrl('ftp://server/file')).toThrow(
         'DEV_LOGIN_CALLBACK_URL must start with "resonance://" or "http://localhost"'

@@ -47,6 +47,7 @@ export function registerEntryRoutes(
       body?.durationSeconds === undefined
         ? null
         : requireNumber(body?.durationSeconds, 'durationSeconds', {
+            integer: true,
             min: 0,
             max: limits.maxDurationSeconds,
           });
@@ -70,6 +71,17 @@ export function registerEntryRoutes(
       { conflictMessage: 'An entry with this ID already exists' }
     );
     return reply.status(201).send(created);
+  });
+
+  app.get('/entries/:entryId', { preHandler: requireAuth }, async (request) => {
+    const user = request.user!;
+    const entryId = (request.params as { entryId: string }).entryId;
+    const entry = await requireEntryAccess(prisma, user, entryId);
+    const artifacts = await prisma.artifact.findMany({
+      where: { entryId: entry.id },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    return { ...entry, artifacts };
   });
 
   app.patch('/entries/:entryId', { preHandler: requireAuth }, async (request) => {
@@ -111,6 +123,7 @@ export function registerEntryRoutes(
         updateData.durationSeconds = null;
       } else {
         updateData.durationSeconds = requireNumber(body.durationSeconds, 'durationSeconds', {
+          integer: true,
           min: 0,
           max: limits.maxDurationSeconds,
         });
@@ -190,19 +203,13 @@ export function registerEntryRoutes(
     const user = request.user!;
     const entryId = (request.params as { entryId: string }).entryId;
     const entry = await requireEntryAccess(prisma, user, entryId);
-    if (entry.roleInCourse === 'student' && entry.studentId !== user.id) {
-      throw new ApiError(
-        403,
-        ErrorCodes.ENTRY_ACCESS_DENIED,
-        'Students can only view feedback on their own entries'
-      );
-    }
     const feedback = await prisma.feedback.findMany({
-      where: { targetType: 'entry', targetId: entry.id },
+      where: { entryId: entry.id },
       include: {
         markers: true,
         teacher: { select: { displayName: true } },
       },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
     return feedback.map((item) => ({
       id: item.id,

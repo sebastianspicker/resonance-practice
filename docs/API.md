@@ -30,7 +30,7 @@ Request:
 { "code": "string", "redirectUri": "string" }
 ```
 - `code` (required) — authorization code, max 2048 characters.
-- `redirectUri` (optional) — the server accepts this but does not validate it in the current (dev) auth implementation. When production auth is introduced, `redirectUri` must be validated against an allowlist or exact match to the registered callback, per OAuth best practice.
+- `redirectUri` (optional) — validated in production mode against the registered OIDC callback URI (`OIDC_REDIRECT_URI`) or the app custom scheme (`resonance://auth-callback`). Ignored in dev mode.
 
 Response:
 ```json
@@ -42,7 +42,7 @@ Response:
 ```
 
 ### POST /auth/refresh
-Rotate refresh token.
+Rotate refresh token. Works in both dev and production modes.
 
 Rate limit: 10 requests per minute.
 
@@ -76,12 +76,29 @@ Response:
 { "success": true }
 ```
 
-### Production Auth (Design)
-- University SSO (Shibboleth) is bridged to an OIDC-compatible authorization server.
-- App opens the SSO authorization URL via ASWebAuthenticationSession.
-- After login, the server redirects to `resonance://auth-callback?code=...`.
-- App exchanges code via `POST /auth/session` using `redirectUri` validation.
-- Server validates the authorization code and issues short-lived access token + rotated refresh token.
+### GET /auth/oidc/login _(production only)_
+Initiates the OIDC authorization flow. Redirects the client to the configured university IdP.
+
+Only available when `OIDC_DISCOVERY_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_REDIRECT_URI` are set. Returns `501 AUTH_NOT_CONFIGURED` otherwise.
+
+Response: `302 Redirect` → university IdP authorization URL.
+
+### GET /auth/oidc/callback _(production only)_
+OIDC callback endpoint. Exchanges the authorization code for an ID token, upserts the user, issues an internal single-use auth code, and redirects to the iOS app custom URL scheme.
+
+Response: `302 Redirect` → `resonance://auth-callback?code=<internal-code>`
+
+The internal code must be exchanged via `POST /auth/session` within 5 minutes.
+
+See [docs/SSO_BRIDGE.md](./SSO_BRIDGE.md) for the full deployment guide.
+
+### Production Auth Flow
+1. iOS opens `/auth/oidc/login` via `ASWebAuthenticationSession`.
+2. Server redirects to university IdP.
+3. User authenticates; IdP redirects to `/auth/oidc/callback`.
+4. Server validates, upserts user, issues internal code, redirects to `resonance://auth-callback?code=...`.
+5. `ASWebAuthenticationSession` captures the `resonance://` redirect.
+6. iOS calls `POST /auth/session { code }` to receive JWT tokens.
 
 ### Dev Auth Routes (dev only)
 
@@ -137,6 +154,27 @@ Optional query parameters:
 - `status` — filter by entry status: `draft`, `submitted`, or `reviewed`. Invalid values return `400 VALIDATION_ERROR`.
   - **Students:** without a filter, all of the student's entries are returned. With a filter, only entries matching that status are returned.
   - **Teachers:** without a filter, only `submitted` entries are returned. With a filter, entries matching that status are returned.
+- `limit` — max number of items per page (default: 50, max: 200).
+- `cursor` — entry ID of the last item on the previous page. Omit for the first page.
+
+Response shape:
+```json
+{
+  "items": [ /* entry objects with nested artifacts */ ],
+  "nextCursor": "entry-id-or-null"
+}
+```
+
+Sort order: `practiceDate DESC`, `createdAt DESC`, `id DESC`.
+
+### GET /entries/:entryId
+Fetch a single entry by ID, including nested `artifacts`.
+
+Authorization:
+- Students can only fetch their own entries.
+- Teachers can fetch any entry in a course they belong to.
+
+Returns `404 ENTRY_NOT_FOUND` if the entry does not exist, `403 ENTRY_ACCESS_DENIED` if the user is not allowed to see it, and `410 ENTRY_DELETED` if the entry has been soft-deleted.
 
 ### POST /courses/:courseId/entries
 Create an entry. Only students can create entries.
@@ -250,6 +288,9 @@ Response:
       "practiceDate": "...",
       "goalText": "...",
       "notes": "...",
+      "tags": ["..."],
+      "durationSeconds": 1800,
+      "status": "submitted",
       "artifacts": [...]
     }
   ],

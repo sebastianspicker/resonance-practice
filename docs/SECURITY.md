@@ -10,7 +10,7 @@ We will acknowledge receipt within 7 days and provide a remediation timeline.
 
 ## Supported Versions
 
-This is an MVP prototype. Only the `main` branch is supported.
+This is an MVP prototype. Security fixes are tracked on the active `dev` branch and then included in release snapshots.
 
 ## Security Controls (Current)
 
@@ -22,7 +22,7 @@ This is an MVP prototype. Only the `main` branch is supported.
 
 ## Scope Notes
 
-- Production auth is not implemented yet.
+- Production auth uses OIDC. Configure `OIDC_DISCOVERY_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_REDIRECT_URI` to enable. See [docs/SSO_BRIDGE.md](./SSO_BRIDGE.md).
 - Environment variables are required for secrets and must not be committed.
 
 ## Threat Model (MVP)
@@ -43,8 +43,8 @@ This is an MVP prototype. Only the `main` branch is supported.
 - Artifact upload integrity: presign/confirm are restricted to the owning student of the artifact entry.
 - Token theft: short-lived access tokens, refresh rotation, token hashes stored server-side, no tokens in logs.
 - Media exposure: pre-signed URLs limited to short TTL; object keys are unguessable UUIDs; server verifies upload by HEAD.
-- Offline device loss: iOS File Protection (`NSFileProtectionComplete`) for local media; OS-level device encryption.
-- CSRF/redirect abuse in SSO: ASWebAuthenticationSession with strict callback URL scheme; server does not currently validate `redirectUri` in dev auth flow. When introducing production OAuth/SSO, implement `redirectUri` validation (allowlist or exact match to registered callback).
+- Offline device loss: iOS File Protection (`NSFileProtectionComplete`) for local media and exports; calendar subscription URLs are stored in Keychain instead of plain app defaults.
+- CSRF/redirect abuse in SSO: ASWebAuthenticationSession with strict callback URL scheme; `redirectUri` is validated in production mode against the registered OIDC callback URI and `resonance://` app scheme. Dev auth flow intentionally skips `redirectUri` validation (localhost only).
 - **Dev auth:** Use `AUTH_MODE=dev` only on localhost. Dev routes (`/dev/*`) are restricted to loopback clients and must never be exposed in reachable environments.
 
 ## GDPR Controls

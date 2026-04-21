@@ -1,6 +1,6 @@
 # Resonance – Practice & Feedback
 
-[![CI](https://github.com/02-mid/02_mid_resonance/actions/workflows/ci.yml/badge.svg)](https://github.com/02-mid/02_mid_resonance/actions/workflows/ci.yml)
+[![CI](https://github.com/sebastianspicker/resonance/actions/workflows/ci.yml/badge.svg)](https://github.com/sebastianspicker/resonance/actions/workflows/ci.yml)
 
 Offline-first, iPad-first MVP for a university of music. Students capture short practice evidence (audio/video snippets), submit to a course, receive structured teacher feedback, and export summaries.
 
@@ -131,7 +131,7 @@ cd server
 npm test
 ```
 
-iOS unit tests can be run from Xcode with the `ResonanceAppTests` scheme.
+iOS unit tests can be run from Xcode by opening `ios/ResonanceApp/Package.swift` and using the `ResonanceAppTests` scheme. The repository does not currently track an `.xcodeproj` or `.xcworkspace`, so the CLI iOS build is skipped by local CI unless one exists.
 
 ## Validation (build / run / test)
 
@@ -141,14 +141,18 @@ To verify the repo end-to-end:
 # Infra + backend: build and test
 docker compose -f infra/docker-compose.yml up -d
 cd server && npm install && npm run prisma:generate && npm run prisma:migrate && npm run prisma:seed
-npm run build && npm test
+npm run build && npm run start &
+curl -fsS http://127.0.0.1:4000/health
+npm test
 
-# Optional: full CI-style check from repo root (starts Postgres if needed)
+# Full CI-style check from repo root (starts Postgres if needed, includes iOS build when Xcode is available)
 ./scripts/ci-local.sh --with-docker
 
 # Secret scan (from repo root)
 ./scripts/secret-scan.sh
 ```
+
+`./scripts/ci-local.sh` defaults `DATABASE_URL` to `resonance_test` to match CI and the Vitest safety guard.
 
 ## RC Demo Bootstrap (Mock University)
 
@@ -189,6 +193,7 @@ Stored in `docs/assets/screenshots/rc/`.
 ## Security
 
 - Dev auth endpoints (`/dev/*`) are disabled unless `AUTH_MODE=dev` and are restricted to localhost requests.
+- Local docker-compose ports are bound to `127.0.0.1`, and the bundled Postgres/MinIO credentials are for local development only.
 - Secret scanning: `./scripts/secret-scan.sh`
 - Dependency audit: `npm audit --audit-level=high` (in `server/`)
 - SAST: CodeQL runs in GitHub Actions (`.github/workflows/codeql.yml`)

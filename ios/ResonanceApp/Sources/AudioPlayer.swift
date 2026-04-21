@@ -9,6 +9,7 @@ final class AudioPlayer: NSObject, ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
+    @Published private(set) var currentFilePath: String?
 
     private var player: AVAudioPlayer?
     private var timer: Timer?
@@ -25,11 +26,18 @@ final class AudioPlayer: NSObject, ObservableObject {
             player = try AVAudioPlayer(contentsOf: url)
             player?.delegate = self
             duration = player?.duration ?? 0
-            player?.play()
+            guard player?.play() == true else {
+                resetPlaybackState()
+                deactivateAudioSession()
+                return
+            }
             isPlaying = true
+            currentFilePath = url.path
             startTimer()
         } catch {
             logger.error("Audio playback failed for \(url.lastPathComponent): \(error.localizedDescription)")
+            resetPlaybackState()
+            deactivateAudioSession()
         }
     }
 
@@ -39,6 +47,8 @@ final class AudioPlayer: NSObject, ObservableObject {
         player = nil
         isPlaying = false
         currentTime = 0
+        currentFilePath = nil
+        duration = 0
         deactivateAudioSession()
     }
 
@@ -51,14 +61,26 @@ final class AudioPlayer: NSObject, ObservableObject {
     private func startTimer() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            self.currentTime = self.player?.currentTime ?? 0
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.currentTime = self.player?.currentTime ?? 0
+            }
         }
     }
 
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
+    }
+
+    private func resetPlaybackState() {
+        player?.stop()
+        stopTimer()
+        player = nil
+        isPlaying = false
+        currentTime = 0
+        duration = 0
+        currentFilePath = nil
     }
 
     private func deactivateAudioSession() {
@@ -76,6 +98,7 @@ extension AudioPlayer: AVAudioPlayerDelegate {
             guard let self else { return }
             self.isPlaying = false
             self.currentTime = 0
+            self.currentFilePath = nil
             self.stopTimer()
             self.deactivateAudioSession()
         }

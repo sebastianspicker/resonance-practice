@@ -65,7 +65,7 @@ async function deleteFeedbackCascade(
 }
 
 /**
- * Delete S3 objects for the given storage keys.
+ * Delete S3 objects for the given storage keys concurrently.
  * Logs failures but does not throw — orphaned objects can be cleaned up later.
  */
 export async function cleanupS3Objects(
@@ -73,11 +73,13 @@ export async function cleanupS3Objects(
   storageKeys: string[],
   logger: { error: (obj: object, msg: string) => void }
 ) {
-  for (const storageKey of storageKeys) {
-    try {
-      await s3.send(new DeleteObjectCommand({ Bucket: config.s3.bucket, Key: storageKey }));
-    } catch (err) {
-      logger.error({ err, storageKey }, 'Failed to delete S3 object after entry deletion');
-    }
-  }
+  await Promise.allSettled(
+    storageKeys.map(async (storageKey) => {
+      try {
+        await s3.send(new DeleteObjectCommand({ Bucket: config.s3.bucket, Key: storageKey }));
+      } catch (err) {
+        logger.error({ err, storageKey }, 'Failed to delete S3 object after entry deletion');
+      }
+    })
+  );
 }

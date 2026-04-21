@@ -1,4 +1,3 @@
-import type { S3Client } from '@aws-sdk/client-s3';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import {
@@ -9,10 +8,20 @@ import {
   rotateRefreshToken,
   upsertDevUser,
 } from '../auth.js';
-import { config, limits } from '../config.js';
+import { config, oidcConfig, limits } from '../config.js';
 import { ErrorCodes } from '../errorCodes.js';
 import { ApiError } from '../errors.js';
-import { requireField, requireString } from '../validation.js';
+import { requireEnum, requireField, requireString } from '../validation.js';
+import {
+  consumeOidcState,
+  consumeProdAuthCode,
+  displayNameFromClaims,
+  getOidcClient,
+  issueProdAuthCode,
+  issueOidcState,
+  roleFromClaims,
+  ssoUserId,
+} from '../oidc.js';
 
 const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -20,7 +29,6 @@ const escapeHtml = (s: string) =>
 export function registerAuthRoutes(
   app: FastifyInstance,
   prisma: PrismaClient,
-  _s3: S3Client,
   requireAuth: (request: FastifyRequest) => Promise<void>
 ) {
   const isLoopbackAddress = (ip: string | undefined) => {
@@ -77,11 +85,21 @@ export function registerAuthRoutes(
 
   app.post('/dev/issue', async (request) => {
     requireLocalDevAuth(request);
-    const body = request.body as { role?: 'student' | 'teacher'; userId?: string };
-    const role = body?.role ?? 'student';
+    if (
+      request.body !== undefined &&
+      (typeof request.body !== 'object' || request.body === null || Array.isArray(request.body))
+    ) {
+      throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid request body');
+    }
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const role =
+      body.role === undefined
+        ? 'student'
+        : requireEnum(body.role, 'role', ['student', 'teacher'] as const);
+    const userId = body.userId === undefined ? undefined : requireString(body.userId, 'userId');
     let user;
-    if (body?.userId) {
-      user = await prisma.user.findUnique({ where: { id: body.userId } });
+    if (userId) {
+      user = await prisma.user.findUnique({ where: { id: userId } });
       if (!user) {
         throw new ApiError(404, ErrorCodes.USER_NOT_FOUND, 'User not found');
       }
@@ -91,6 +109,82 @@ export function registerAuthRoutes(
     const code = issueDevAuthCode(user.id);
     return { code };
   });
+
+  // ── OIDC routes (production only) ───────────────────────────────────────────
+
+  app.get('/auth/oidc/login', async (request, reply) => {
+    if (!oidcConfig) {
+      throw new ApiError(
+        501,
+        ErrorCodes.AUTH_NOT_CONFIGURED,
+        'OIDC is not configured on this server'
+      );
+    }
+    const client = await getOidcClient();
+    const state = issueOidcState();
+    const authorizationUrl = client.authorizationUrl({
+      scope: oidcConfig.scopes,
+      state,
+    });
+    reply.redirect(authorizationUrl);
+  });
+
+  app.get('/auth/oidc/callback', async (request, reply) => {
+    if (!oidcConfig) {
+      throw new ApiError(
+        501,
+        ErrorCodes.AUTH_NOT_CONFIGURED,
+        'OIDC is not configured on this server'
+      );
+    }
+    const client = await getOidcClient();
+    const params = client.callbackParams(request.raw);
+    const state = typeof params.state === 'string' ? params.state : undefined;
+
+    if (!state || !consumeOidcState(state)) {
+      throw new ApiError(
+        400,
+        ErrorCodes.VALIDATION_ERROR,
+        'Invalid or expired OIDC state parameter'
+      );
+    }
+
+    let tokenSet;
+    try {
+      tokenSet = await client.oauthCallback(oidcConfig.redirectUri, params, { state });
+    } catch (err) {
+      request.log.warn({ err }, 'oidc_callback_failed');
+      throw new ApiError(401, ErrorCodes.INVALID_CODE, 'OIDC token exchange failed');
+    }
+
+    const claims = tokenSet.claims();
+    const sub = claims.sub;
+    if (!sub) {
+      throw new ApiError(401, ErrorCodes.INVALID_TOKEN, 'OIDC token missing sub claim');
+    }
+
+    const userId = ssoUserId(sub);
+    const displayName = displayNameFromClaims(claims as Record<string, unknown>);
+    const globalRole = roleFromClaims(claims as Record<string, unknown>);
+
+    await prisma.user.upsert({
+      where: { id: userId },
+      update: { displayName, globalRole },
+      create: { id: userId, displayName, globalRole },
+    });
+
+    const code = issueProdAuthCode(userId);
+    const callbackUrl = new URL(config.appBaseUrl.replace(/\/$/, '') + '/auth/oidc/complete');
+    callbackUrl.searchParams.set('code', code);
+
+    // Redirect to the app's custom URL scheme with the internal code.
+    // The iOS app registers resonance:// so ASWebAuthenticationSession captures this redirect.
+    const appCallbackUrl = new URL('resonance://auth-callback');
+    appCallbackUrl.searchParams.set('code', code);
+    reply.redirect(appCallbackUrl.toString());
+  });
+
+  // ── Session exchange ─────────────────────────────────────────────────────────
 
   app.post(
     '/auth/session',
@@ -104,24 +198,27 @@ export function registerAuthRoutes(
       const code = requireString(requireField(body?.code, 'code'), 'code', {
         max: limits.maxAuthCodeLength,
       });
-      const _redirectUri = body?.redirectUri;
 
-      if (config.authMode !== 'dev') {
-        // Production auth: validate redirectUri against allowlist
-        // The redirectUri must match one of the registered callback URLs for the client
-        // Example: if (!config.allowedRedirectUris.includes(redirectUri)) { throw ... }
-        // For now, production auth is not implemented
-        throw new ApiError(501, ErrorCodes.AUTH_NOT_CONFIGURED, 'Production auth not configured');
+      // Validate redirectUri in production against the configured callback URI.
+      const redirectUri = body?.redirectUri;
+      if (config.authMode === 'prod' && oidcConfig && redirectUri) {
+        if (redirectUri !== oidcConfig.redirectUri && redirectUri !== 'resonance://auth-callback') {
+          throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid redirectUri');
+        }
       }
 
-      // Dev mode: redirectUri validation is intentionally skipped for development convenience
-      // The redirectUri is not used in dev mode - tokens are returned directly
-      // SECURITY NOTE: When implementing production auth, redirectUri MUST be validated
+      let userId: string | null = null;
 
-      const userId = consumeDevAuthCode(code);
+      if (config.authMode === 'dev') {
+        userId = consumeDevAuthCode(code);
+      } else {
+        userId = consumeProdAuthCode(code);
+      }
+
       if (!userId) {
         throw new ApiError(401, ErrorCodes.INVALID_CODE, 'Invalid or expired auth code');
       }
+
       const user = await prisma.user.findUnique({ where: { id: userId } });
       if (!user) {
         throw new ApiError(401, ErrorCodes.USER_NOT_FOUND, 'User not found');
@@ -142,9 +239,6 @@ export function registerAuthRoutes(
       },
     },
     async (request) => {
-      if (config.authMode !== 'dev') {
-        throw new ApiError(501, ErrorCodes.AUTH_NOT_CONFIGURED, 'Production auth not configured');
-      }
       const body = request.body as { refreshToken?: string };
       const refreshToken = requireString(
         requireField(body?.refreshToken, 'refreshToken'),
@@ -181,12 +275,24 @@ export function registerAuthRoutes(
   });
 
   app.post('/auth/logout', async (request) => {
-    const body = request.body as { refreshToken?: string } | undefined;
+    if (
+      request.body !== undefined &&
+      request.body !== null &&
+      (typeof request.body !== 'object' || Array.isArray(request.body))
+    ) {
+      throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid request body');
+    }
+    const body = request.body as Record<string, unknown> | undefined;
 
     // If a refresh token is provided, revoke the token family without requiring auth.
     // This allows clients to revoke tokens even when the access token has expired.
-    if (body?.refreshToken) {
-      const tokenHash = hashToken(body.refreshToken);
+    if (body && 'refreshToken' in body) {
+      const refreshToken = requireString(
+        requireField(body.refreshToken, 'refreshToken'),
+        'refreshToken',
+        { max: limits.maxAuthCodeLength }
+      );
+      const tokenHash = hashToken(refreshToken);
       const token = await prisma.refreshToken.findFirst({
         where: { tokenHash },
       });

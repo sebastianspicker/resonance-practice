@@ -42,4 +42,15 @@ describe('dev auth localhost restriction', () => {
     expect(res.statusCode).toBe(403);
     expect(res.json().error?.code).toBe('DEV_AUTH_LOCAL_ONLY');
   });
+
+  it('rejects invalid roles on /dev/issue', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/dev/issue',
+      remoteAddress: '127.0.0.1',
+      payload: { role: 'admin' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error?.code).toBe('VALIDATION_ERROR');
+  });
 });

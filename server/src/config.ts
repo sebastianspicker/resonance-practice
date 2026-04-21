@@ -16,13 +16,28 @@ function requireEnv(name: string): string {
  * Exported for testing.
  */
 export function validateDevCallbackUrl(url: string): string {
-  if (!url.startsWith('resonance://') && !url.startsWith('http://localhost')) {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
     throw new Error(
       'DEV_LOGIN_CALLBACK_URL must start with "resonance://" or "http://localhost". ' +
         `Got: "${url}"`
     );
   }
-  return url;
+
+  if (parsed.protocol === 'resonance:') {
+    return url;
+  }
+
+  if (parsed.protocol === 'http:' && parsed.hostname === 'localhost') {
+    return url;
+  }
+
+  throw new Error(
+    'DEV_LOGIN_CALLBACK_URL must start with "resonance://" or "http://localhost". ' +
+      `Got: "${url}"`
+  );
 }
 
 export const config = {
@@ -82,13 +97,41 @@ if (config.jwtRefreshSecret.length < 32) {
   throw new Error('JWT_REFRESH_SECRET must be at least 32 characters');
 }
 
-if (config.authMode === 'prod' && !process.env.OIDC_ISSUER) {
-  throw new Error('Production auth requires OIDC_ISSUER to be configured');
-}
-
 if (config.authMode === 'prod' && config.corsOrigins.length === 0) {
   throw new Error('Production requires CORS_ORIGINS to be configured');
 }
+
+export const oidcConfig = (() => {
+  const discoveryUrl = process.env.OIDC_DISCOVERY_URL;
+  const clientId = process.env.OIDC_CLIENT_ID;
+  const clientSecret = process.env.OIDC_CLIENT_SECRET;
+  const redirectUri = process.env.OIDC_REDIRECT_URI;
+
+  if (config.authMode === 'prod') {
+    if (!discoveryUrl || !clientId || !clientSecret || !redirectUri) {
+      throw new Error(
+        'AUTH_MODE=prod requires OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, and OIDC_REDIRECT_URI to be set.'
+      );
+    }
+  }
+
+  if (!discoveryUrl || !clientId || !clientSecret || !redirectUri) {
+    return null;
+  }
+
+  return {
+    discoveryUrl,
+    clientId,
+    clientSecret,
+    redirectUri,
+    /** OIDC claim name used to determine the user's role. Default: "role". */
+    roleClaim: process.env.OIDC_ROLE_CLAIM ?? 'role',
+    /** Claim value that maps to the teacher role. Default: "teacher". */
+    teacherValue: process.env.OIDC_TEACHER_VALUE ?? 'teacher',
+    /** Scopes to request from the IdP. */
+    scopes: 'openid profile email',
+  };
+})();
 
 /** Application limits — extracted from inline magic numbers. */
 export const limits = {
@@ -116,4 +159,6 @@ export const limits = {
   authRateLimitMax: 10,
   /** Rate-limit window for auth endpoints */
   authRateLimitWindow: '1 minute',
+  /** Maximum upload size for a single artifact in bytes (100 MB) */
+  maxUploadSizeBytes: 104_857_600,
 } as const;

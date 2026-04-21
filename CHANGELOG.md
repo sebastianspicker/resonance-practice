@@ -4,6 +4,10 @@ All notable changes to this project are documented here. For detailed bug report
 
 ## [Unreleased]
 
+<!-- Move items here for the next release. -->
+
+## [0.1.0-rc.1] – 2026-04-20
+
 ### Security Hardening
 - JWT validation constraints: issuer, audience, and algorithm restrictions.
 - Auth endpoint rate limiting (10 requests/min per IP).
@@ -46,7 +50,7 @@ All notable changes to this project are documented here. For detailed bug report
 - Offline-sync reliability: logging, network guard, token refresh, idempotency documentation.
 
 ### Test Coverage
-- Server: 25 → 339 tests across 23 test files.
+- Server: 25 → 355 tests across 25 test files.
 - Unit tests: validation, auth, error handling.
 - Integration tests: all CRUD endpoints, ACL, uploads, storage, CORS, dev-auth.
 - Edge cases: 54 boundary and error-path tests.

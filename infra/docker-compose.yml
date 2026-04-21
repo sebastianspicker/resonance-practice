@@ -3,11 +3,12 @@ services:
     image: postgres:16
     container_name: resonance-postgres
     environment:
+      # Local development defaults only. Replace for any shared environment.
       POSTGRES_USER: resonance
       POSTGRES_PASSWORD: resonance
       POSTGRES_DB: resonance
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -18,15 +19,16 @@ services:
       start_period: 10s
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: resonance-minio
     environment:
+      # Local development defaults only. Replace for any shared environment.
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     command: server /data --console-address ":9001"
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - minio-data:/data
     healthcheck:

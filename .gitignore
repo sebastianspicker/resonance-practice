@@ -32,6 +32,7 @@ pnpm-debug.log*
 *.swp
 .cursor/
 .codex/
+.kilo/
 
 # Local docs (findings/logs/decisions)
 DECISIONS.md
@@ -62,6 +63,9 @@ server/prisma/dev.db
 
 # Screenshot capture output (staged here, copy to docs/assets/ before committing)
 artifacts/screenshots/
+
+# Internal audit/findings docs (may contain local paths or org-internal details)
+deprecated/
 
 # Coverage
 coverage/

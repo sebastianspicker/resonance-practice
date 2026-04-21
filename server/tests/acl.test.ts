@@ -57,7 +57,7 @@ describe('acl', () => {
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.find((e: any) => e.id === 'entry-foreign')).toBeUndefined();
+    expect(res.body.items.find((e: any) => e.id === 'entry-foreign')).toBeUndefined();
   });
 
   it('allows teacher to view review queue', async () => {

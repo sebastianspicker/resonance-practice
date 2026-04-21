@@ -89,14 +89,8 @@ struct ExportView: View {
         do {
             try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
 
-            // Clean up previously generated PDFs to avoid unbounded disk usage
-            if let existingFiles = try? FileManager.default.contentsOfDirectory(at: exportDir, includingPropertiesForKeys: nil) {
-                for file in existingFiles where file.pathExtension == "pdf" {
-                    try? FileManager.default.removeItem(at: file)
-                }
-            }
-
             try PDFExporter.export(entries: entries, to: url)
+            FileStore.setFileProtection(url: url)
             exportURL = url
         } catch {
             errorMessage = error.localizedDescription

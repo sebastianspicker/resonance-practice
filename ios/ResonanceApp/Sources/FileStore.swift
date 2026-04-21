@@ -49,4 +49,16 @@ enum FileStore {
             logger.error("Failed to set data protection for \(url.path): \(error.localizedDescription)")
         }
     }
+
+    static func deleteFileIfExists(atPath path: String) {
+        guard FileManager.default.fileExists(atPath: path) else {
+            return
+        }
+
+        do {
+            try FileManager.default.removeItem(atPath: path)
+        } catch {
+            logger.error("Failed to delete file at \(path): \(error.localizedDescription)")
+        }
+    }
 }

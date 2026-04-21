@@ -6,6 +6,17 @@ private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "resonanc
 
 @MainActor
 final class AudioRecorder: NSObject, ObservableObject {
+    enum RecorderError: LocalizedError {
+        case failedToStart
+
+        var errorDescription: String? {
+            switch self {
+            case .failedToStart:
+                return "Recording could not be started"
+            }
+        }
+    }
+
     @Published var isRecording: Bool = false
     @Published var duration: TimeInterval = 0
 
@@ -31,8 +42,15 @@ final class AudioRecorder: NSObject, ObservableObject {
             try? session.setActive(false, options: .notifyOthersOnDeactivation)
             throw error
         }
+
+        guard recorder?.record() == true else {
+            recorder = nil
+            lastURL = nil
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            throw RecorderError.failedToStart
+        }
+
         lastURL = url
-        recorder?.record()
         isRecording = true
         startTimer()
     }
@@ -56,8 +74,10 @@ final class AudioRecorder: NSObject, ObservableObject {
         duration = 0
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            self.duration = self.recorder?.currentTime ?? 0
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.duration = self.recorder?.currentTime ?? 0
+            }
         }
     }
 

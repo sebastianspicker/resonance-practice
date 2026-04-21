@@ -140,20 +140,28 @@ describe('auth routes & server branch coverage', () => {
 // These tests need AUTH_MODE=prod, so they run in a separate server
 // ═══════════════════════════════════════════════════════════════════
 
-describe('production auth mode — session and refresh return 501', () => {
+describe('production auth mode — session and refresh reject invalid input', () => {
   let prodApp: any;
   let prodPrisma: any;
   let originalAuthMode: string | undefined;
-
-  let originalOidcIssuer: string | undefined;
+  let originalOidcDiscoveryUrl: string | undefined;
+  let originalOidcClientId: string | undefined;
+  let originalOidcClientSecret: string | undefined;
+  let originalOidcRedirectUri: string | undefined;
   let originalCorsOrigins: string | undefined;
 
   beforeAll(async () => {
     originalAuthMode = process.env.AUTH_MODE;
-    originalOidcIssuer = process.env.OIDC_ISSUER;
+    originalOidcDiscoveryUrl = process.env.OIDC_DISCOVERY_URL;
+    originalOidcClientId = process.env.OIDC_CLIENT_ID;
+    originalOidcClientSecret = process.env.OIDC_CLIENT_SECRET;
+    originalOidcRedirectUri = process.env.OIDC_REDIRECT_URI;
     originalCorsOrigins = process.env.CORS_ORIGINS;
     process.env.AUTH_MODE = 'prod';
-    process.env.OIDC_ISSUER = 'https://test.example.com';
+    process.env.OIDC_DISCOVERY_URL = 'https://test.example.com/.well-known/openid-configuration';
+    process.env.OIDC_CLIENT_ID = 'test-client';
+    process.env.OIDC_CLIENT_SECRET = 'test-secret';
+    process.env.OIDC_REDIRECT_URI = 'https://test.example.com/auth/callback';
     process.env.CORS_ORIGINS = 'https://test.example.com';
 
     vi.resetModules();
@@ -166,28 +174,31 @@ describe('production auth mode — session and refresh return 501', () => {
   });
 
   afterAll(async () => {
-    await prodApp.close();
-    await prodPrisma.$disconnect();
+    await prodApp?.close();
+    await prodPrisma?.$disconnect();
     process.env.AUTH_MODE = originalAuthMode;
-    process.env.OIDC_ISSUER = originalOidcIssuer;
+    process.env.OIDC_DISCOVERY_URL = originalOidcDiscoveryUrl;
+    process.env.OIDC_CLIENT_ID = originalOidcClientId;
+    process.env.OIDC_CLIENT_SECRET = originalOidcClientSecret;
+    process.env.OIDC_REDIRECT_URI = originalOidcRedirectUri;
     process.env.CORS_ORIGINS = originalCorsOrigins;
+    vi.resetModules();
   });
 
-  it('POST /auth/session returns 501 AUTH_NOT_CONFIGURED in prod mode', async () => {
+  it('POST /auth/session rejects a mismatched redirectUri in prod mode', async () => {
     const res = await request(prodApp.server)
       .post('/auth/session')
       .send({ code: 'some-code', redirectUri: 'https://example.com' });
-    expect(res.status).toBe(501);
-    expect(res.body.error.code).toBe('AUTH_NOT_CONFIGURED');
-    expect(res.body.error.message).toBe('Production auth not configured');
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.message).toBe('Invalid redirectUri');
   });
 
-  it('POST /auth/refresh returns 501 AUTH_NOT_CONFIGURED in prod mode', async () => {
+  it('POST /auth/refresh rejects an unknown refresh token in prod mode', async () => {
     const res = await request(prodApp.server)
       .post('/auth/refresh')
       .send({ refreshToken: 'some-token-value-that-is-long-enough' });
-    expect(res.status).toBe(501);
-    expect(res.body.error.code).toBe('AUTH_NOT_CONFIGURED');
-    expect(res.body.error.message).toBe('Production auth not configured');
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('INVALID_REFRESH');
   });
 });

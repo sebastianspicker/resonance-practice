@@ -167,6 +167,7 @@ final class AuthManager: NSObject, ObservableObject {
             try await refreshTask!.value
         } catch {
             Self.logger.error("Token refresh failed, signing out: \(error.localizedDescription)")
+            authError = "Session expired. Sign in again."
             signOut()
         }
     }
