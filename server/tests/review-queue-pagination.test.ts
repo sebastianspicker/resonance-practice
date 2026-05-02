@@ -205,6 +205,38 @@ describe('GET /courses/:courseId/review-queue pagination', () => {
     expect(res.body.error.message).toContain('cursor');
   });
 
+  it('rejects cursor IDs from courses outside the review queue scope', async () => {
+    const otherStudent = await prisma.user.create({
+      data: { id: 'student-other-course', displayName: 'Other Student', globalRole: 'student' },
+    });
+    const otherCourse = await prisma.course.create({
+      data: { id: 'COURSE_OTHER', title: 'Other Course' },
+    });
+    await prisma.membership.create({
+      data: { userId: otherStudent.id, courseId: otherCourse.id, roleInCourse: 'student' },
+    });
+    await prisma.practiceEntry.create({
+      data: {
+        id: 'foreign-course-cursor',
+        courseId: otherCourse.id,
+        studentId: otherStudent.id,
+        practiceDate: new Date('2025-06-01T10:00:00.000Z'),
+        goalText: 'Foreign course entry',
+        tags: [],
+        status: 'submitted',
+      },
+    });
+
+    const token = await login('teacher');
+    const res = await request(app.server)
+      .get('/courses/COURSE_TEST/review-queue?cursor=foreign-course-cursor')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.message).toContain('cursor');
+  });
+
   // ── nextCursor is null when results fit in one page ──
 
   it('returns null nextCursor when all results fit in one page', async () => {

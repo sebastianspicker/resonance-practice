@@ -38,7 +38,7 @@
     "prisma": "^5.19.1"
   },
   "overrides": {
-    "fast-xml-parser": "5.5.8"
+    "fast-xml-parser": "5.7.2"
   },
   "devDependencies": {
     "@types/jsonwebtoken": "^9.0.6",

@@ -56,6 +56,7 @@ describe('GET /entries/:entryId/feedback completeness', () => {
         entryId: 'entry-feedback-parent',
         status: 'ok',
         commentsText: 'Entry-level note',
+        createdAt: new Date('2025-04-01T11:00:00.000Z'),
       },
     });
 
@@ -68,6 +69,7 @@ describe('GET /entries/:entryId/feedback completeness', () => {
         entryId: 'entry-feedback-parent',
         status: 'needs_revision',
         commentsText: 'Artifact-level note',
+        createdAt: new Date('2025-04-01T11:01:00.000Z'),
       },
     });
 

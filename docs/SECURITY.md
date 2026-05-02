@@ -40,6 +40,7 @@ This is an MVP prototype. Security fixes are tracked on the active `dev` branch 
 
 ### Threats & Mitigations
 - IDOR on course/entry IDs: server enforces membership checks on every request.
+- Pagination cursors for entry lists are resolved inside the same authorized course/user/status scope as the result set; out-of-scope cursors fail like nonexistent cursors.
 - Artifact upload integrity: presign/confirm are restricted to the owning student of the artifact entry.
 - Token theft: short-lived access tokens, refresh rotation, token hashes stored server-side, no tokens in logs.
 - Media exposure: pre-signed URLs limited to short TTL; object keys are unguessable UUIDs; server verifies upload by HEAD.

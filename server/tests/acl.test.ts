@@ -60,6 +60,36 @@ describe('acl', () => {
     expect(res.body.items.find((e: any) => e.id === 'entry-foreign')).toBeUndefined();
   });
 
+  it('rejects student entries cursors outside the student-owned result scope', async () => {
+    const otherStudent = await prisma.user.create({
+      data: { id: 'student-2', displayName: 'Other Student', globalRole: 'student' },
+    });
+    await prisma.membership.create({
+      data: { userId: otherStudent.id, courseId: 'COURSE_TEST', roleInCourse: 'student' },
+    });
+
+    await prisma.practiceEntry.create({
+      data: {
+        id: 'entry-foreign-cursor',
+        courseId: 'COURSE_TEST',
+        studentId: otherStudent.id,
+        practiceDate: new Date(),
+        goalText: 'Other student entry',
+        tags: ['tag'],
+        status: 'submitted',
+      },
+    });
+
+    const token = await login('student');
+    const res = await request(app.server)
+      .get('/courses/COURSE_TEST/entries?cursor=entry-foreign-cursor')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.message).toContain('cursor');
+  });
+
   it('allows teacher to view review queue', async () => {
     await prisma.practiceEntry.create({
       data: {

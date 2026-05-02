@@ -28,18 +28,20 @@ function parseLimitParam(raw: string | undefined, defaultLimit: number, maxLimit
 }
 
 /**
- * Look up a cursor entry and build a Prisma `OR` clause that selects only entries
- * ordered strictly after the cursor in (practiceDate DESC, createdAt DESC, id DESC) order.
+ * Look up a cursor entry inside the already-authorized result scope and build
+ * a Prisma `OR` clause that selects only entries ordered strictly after the
+ * cursor in (practiceDate DESC, createdAt DESC, id DESC) order.
  * Returns `undefined` when no cursor is provided.
  */
 async function buildCursorWhere(
   prisma: PrismaClient,
-  cursor: string | undefined
+  cursor: string | undefined,
+  cursorScope: Prisma.PracticeEntryWhereInput
 ): Promise<Prisma.PracticeEntryWhereInput['OR'] | undefined> {
   if (!cursor) return undefined;
 
-  const cursorEntry = await prisma.practiceEntry.findUnique({
-    where: { id: cursor },
+  const cursorEntry = await prisma.practiceEntry.findFirst({
+    where: { ...cursorScope, id: cursor },
     select: { practiceDate: true, createdAt: true, id: true },
   });
   if (!cursorEntry) {
@@ -126,7 +128,7 @@ export function registerCourseRoutes(
       }
     }
 
-    const cursorOR = await buildCursorWhere(prisma, cursor);
+    const cursorOR = await buildCursorWhere(prisma, cursor, where);
     if (cursorOR) where.OR = cursorOR;
 
     const entries = await prisma.practiceEntry.findMany({
@@ -166,7 +168,7 @@ export function registerCourseRoutes(
       deletedAt: null,
     };
 
-    const cursorOR = await buildCursorWhere(prisma, cursor);
+    const cursorOR = await buildCursorWhere(prisma, cursor, where);
     if (cursorOR) where.OR = cursorOR;
 
     // Fetch one extra row to determine if there are more results
