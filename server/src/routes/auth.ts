@@ -24,7 +24,35 @@ import {
 } from '../oidc.js';
 
 const escapeHtml = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const buildDevLoginHtml = (universityName: string) => {
+  const safeName = escapeHtml(universityName);
+  return [
+    '<!doctype html>',
+    '<html>',
+    '  <head><title>',
+    safeName,
+    ' - Resonance Dev Login</title></head>',
+    '  <body>',
+    '    <h1>',
+    safeName,
+    '</h1>',
+    '    <p>Resonance RC Demo Login</p>',
+    '    <p>Select a persona to continue.</p>',
+    '    <ul>',
+    '      <li><a href="/dev/authorize?role=student">Login as Student Persona</a></li>',
+    '      <li><a href="/dev/authorize?role=teacher">Login as Teacher Persona</a></li>',
+    '    </ul>',
+    '  </body>',
+    '</html>',
+  ].join('\n');
+};
 
 export function registerAuthRoutes(
   app: FastifyInstance,
@@ -51,23 +79,19 @@ export function registerAuthRoutes(
     }
   };
 
+  app.get('/auth/login', async (request, reply) => {
+    // Keep the iOS app on one stable login URL. The server owns whether that
+    // means localhost-only dev auth or the production OIDC redirect.
+    if (config.authMode === 'dev') {
+      requireLocalDevAuth(request);
+      return reply.redirect('/dev/login');
+    }
+    return reply.redirect('/auth/oidc/login');
+  });
+
   app.get('/dev/login', async (request, reply) => {
     requireLocalDevAuth(request);
-    const safeName = escapeHtml(config.devUniversityName);
-    const html = `<!doctype html>
-<html>
-  <head><title>${safeName} - Resonance Dev Login</title></head>
-  <body>
-    <h1>${safeName}</h1>
-    <p>Resonance RC Demo Login</p>
-    <p>Select a persona to continue.</p>
-    <ul>
-      <li><a href="/dev/authorize?role=student">Login as Student Persona</a></li>
-      <li><a href="/dev/authorize?role=teacher">Login as Teacher Persona</a></li>
-    </ul>
-  </body>
-</html>`;
-    reply.type('text/html').send(html);
+    reply.type('text/html').send(buildDevLoginHtml(config.devUniversityName));
   });
 
   app.get('/dev/authorize', async (request, reply) => {
@@ -174,8 +198,6 @@ export function registerAuthRoutes(
     });
 
     const code = issueProdAuthCode(userId);
-    const callbackUrl = new URL(config.appBaseUrl.replace(/\/$/, '') + '/auth/oidc/complete');
-    callbackUrl.searchParams.set('code', code);
 
     // Redirect to the app's custom URL scheme with the internal code.
     // The iOS app registers resonance:// so ASWebAuthenticationSession captures this redirect.
@@ -199,7 +221,9 @@ export function registerAuthRoutes(
         max: limits.maxAuthCodeLength,
       });
 
-      // Validate redirectUri in production against the configured callback URI.
+      // This exchange consumes an internal one-time code, not the raw OIDC code.
+      // In production, still pin redirectUri to the registered OIDC callback or
+      // app scheme so clients cannot replay codes through an unexpected target.
       const redirectUri = body?.redirectUri;
       if (config.authMode === 'prod' && oidcConfig && redirectUri) {
         if (redirectUri !== oidcConfig.redirectUri && redirectUri !== 'resonance://auth-callback') {

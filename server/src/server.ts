@@ -18,6 +18,51 @@ import { registerFeedbackRoutes } from './routes/feedback.js';
 /** HTTP methods that carry a request body and must send application/json. */
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH']);
 
+type FastifyErrorShape = { statusCode?: number; code?: string; message?: string };
+
+function errorResponse(status: number, code: string, message: string) {
+  return {
+    status,
+    body: {
+      error: {
+        code,
+        message,
+        details: {},
+      },
+    },
+  };
+}
+
+function contentTypeErrorResponse(code: string) {
+  if (code === 'FST_ERR_CTP_INVALID_JSON_BODY') {
+    return errorResponse(400, ErrorCodes.VALIDATION_ERROR, 'Invalid JSON in request body');
+  }
+  if (code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
+    return errorResponse(413, ErrorCodes.VALIDATION_ERROR, 'Request body is too large');
+  }
+  return errorResponse(415, ErrorCodes.VALIDATION_ERROR, 'Unsupported content type');
+}
+
+function classifyFastifyError(error: FastifyErrorShape) {
+  if (error.statusCode === 429) {
+    return errorResponse(
+      429,
+      ErrorCodes.RATE_LIMITED,
+      'Too many requests — please try again later'
+    );
+  }
+  if (typeof error.code === 'string' && error.code.startsWith('FST_ERR_CTP')) {
+    return contentTypeErrorResponse(error.code);
+  }
+
+  const status = error.statusCode ?? 500;
+  return errorResponse(
+    status,
+    status >= 500 ? ErrorCodes.INTERNAL_ERROR : ErrorCodes.VALIDATION_ERROR,
+    status >= 500 ? 'Unexpected error' : error.message || 'Bad request'
+  );
+}
+
 export function buildServer(prisma: PrismaClient, s3: S3Client) {
   const app = Fastify({
     logger: {
@@ -89,8 +134,8 @@ export function buildServer(prisma: PrismaClient, s3: S3Client) {
     if (BODY_METHODS.has(request.method)) {
       const ct = request.headers['content-type'];
       // Allow empty bodies (some POSTs like /entries/:id/submit have no body)
-      // and multipart for future file uploads, but otherwise require JSON.
-      if (ct && !ct.startsWith('application/json') && !ct.startsWith('multipart/')) {
+      // but otherwise require JSON.
+      if (ct && !ct.startsWith('application/json')) {
         throw new ApiError(
           415,
           ErrorCodes.VALIDATION_ERROR,
@@ -106,66 +151,15 @@ export function buildServer(prisma: PrismaClient, s3: S3Client) {
       return sendError(reply, error);
     }
 
-    // Cast to access Fastify error properties (statusCode, code)
-    const fastifyErr = error as { statusCode?: number; code?: string };
-
-    // Fastify rate-limit errors have statusCode 429
-    if (fastifyErr.statusCode === 429) {
-      return reply.code(429).send({
-        error: {
-          code: ErrorCodes.RATE_LIMITED,
-          message: 'Too many requests — please try again later',
-          details: {},
-        },
-      });
-    }
-
-    // Fastify content-type parser errors -- differentiate by sub-type
-    if (typeof fastifyErr.code === 'string' && fastifyErr.code.startsWith('FST_ERR_CTP')) {
-      // Invalid JSON body -> 400
-      if (fastifyErr.code === 'FST_ERR_CTP_INVALID_JSON_BODY') {
-        return reply.code(400).send({
-          error: {
-            code: ErrorCodes.VALIDATION_ERROR,
-            message: 'Invalid JSON in request body',
-            details: {},
-          },
-        });
-      }
-      // Body too large -> 413
-      if (fastifyErr.code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
-        return reply.code(413).send({
-          error: {
-            code: ErrorCodes.VALIDATION_ERROR,
-            message: 'Request body is too large',
-            details: {},
-          },
-        });
-      }
-      // All other CTP errors (invalid media type, empty type, etc.) -> 415
-      return reply.code(415).send({
-        error: {
-          code: ErrorCodes.VALIDATION_ERROR,
-          message: 'Unsupported content type',
-          details: {},
-        },
-      });
-    }
-
+    const fastifyErr = error as FastifyErrorShape;
+    const errorResult = classifyFastifyError(fastifyErr);
     // Log only unexpected (5xx) errors at error level; 4xx are client mistakes
-    const status = fastifyErr.statusCode ?? 500;
-    if (status >= 500) {
+    if (errorResult.status >= 500) {
       request.log.error(error);
     } else {
       request.log.warn(error);
     }
-    return reply.code(status).send({
-      error: {
-        code: status >= 500 ? ErrorCodes.INTERNAL_ERROR : ErrorCodes.VALIDATION_ERROR,
-        message: status >= 500 ? 'Unexpected error' : (error as Error).message || 'Bad request',
-        details: {},
-      },
-    });
+    return reply.code(errorResult.status).send(errorResult.body);
   });
 
   app.setNotFoundHandler((_request, reply) => {

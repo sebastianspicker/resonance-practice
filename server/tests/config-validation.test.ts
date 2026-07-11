@@ -17,6 +17,16 @@ describe('config validation', () => {
       expect(validateDevCallbackUrl('resonance://auth-callback')).toBe('resonance://auth-callback');
     });
 
+    it('accepts resonance:// with query string', () => {
+      expect(validateDevCallbackUrl('resonance://auth-callback?foo=bar')).toBe(
+        'resonance://auth-callback?foo=bar'
+      );
+    });
+
+    it('accepts http://localhost without a port', () => {
+      expect(validateDevCallbackUrl('http://localhost')).toBe('http://localhost');
+    });
+
     it('accepts http://localhost scheme', () => {
       expect(validateDevCallbackUrl('http://localhost:3000/callback')).toBe(
         'http://localhost:3000/callback'

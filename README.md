@@ -2,11 +2,12 @@
 
 [![CI](https://github.com/sebastianspicker/resonance/actions/workflows/ci.yml/badge.svg)](https://github.com/sebastianspicker/resonance/actions/workflows/ci.yml)
 
-Offline-first, iPad-first MVP for a university of music. Students capture short practice evidence (audio/video snippets), submit to a course, receive structured teacher feedback, and export summaries.
+Offline-first, iPad-first MVP for a university of music. Students capture short audio practice evidence or consented teaching-lesson video, submit to a course, receive structured teacher feedback, and export summaries.
 
 ## Target Audience
 
 - **Music university students** -- capture and submit practice evidence (audio recordings) with goals, notes, and tags. Track submission status and review teacher feedback with timestamped markers.
+- **Music teacher education students** -- attach consented teaching-lesson videos for course review and reflect on lesson flow, modelling, participation, and next teaching steps.
 - **Music teachers / professors** -- review submitted practice entries, leave structured feedback with time-aligned markers, and manage a course review queue.
 
 ## Screenshots
@@ -20,32 +21,43 @@ Offline-first, iPad-first MVP for a university of music. Students capture short 
 
 > See [docs/RELEASE_CANDIDATE_SCREENSHOTS.md](docs/RELEASE_CANDIDATE_SCREENSHOTS.md) for the full screenshot matrix and capture playbook.
 
-> Production auth (university SSO via Shibboleth/OIDC) is documented but not wired up. The included server handles everything else; connect your SSO bridge when deploying.
+Production auth uses university SSO via OIDC. The app opens the server's `/auth/login` entrypoint, which routes to dev auth locally and OIDC in production.
 
 ## Features (MVP)
+
 - Offline-first iPad app with local storage and sync queue
 - Course membership and entry submission workflow
-- Pre-signed uploads to S3-compatible storage (MinIO in dev)
+- Pre-signed audio/video uploads to S3-compatible storage (MinIO in dev)
+- Teaching-lesson entries with consent metadata, capture profiles, and manual lesson-contour markers before submission
 - Teacher review queue + feedback with timestamped markers
-- Token-based auth with refresh rotation (dev auth flow only)
+- Token-based auth with refresh rotation; local dev auth and production OIDC entrypoints
 
 ## Monorepo Layout
-- `ios/ResonanceApp/` — SwiftUI iPad app (Swift Package)
+
+- `ios/ResonanceApp/` — SwiftUI iPad app with a native Xcode project and shared scheme
 - `server/` — Node.js TypeScript backend (Fastify + Prisma)
 - `infra/` — Docker Compose for Postgres + MinIO
-- `docs/` — Product, architecture, security, and status docs
+- `docs/` — Current product, architecture, security, release, and operations docs
 - `scripts/` — Helper scripts
 
+## Main Workflows for Maintainers
+
+- **Login/session:** iOS opens `GET /auth/login`. The server chooses the concrete flow: localhost dev auth in `AUTH_MODE=dev`, university OIDC in `AUTH_MODE=prod`, then `POST /auth/session` exchanges the internal code for app tokens.
+- **Student capture and sync:** entries and media artifacts are created locally first. Practice audio uploads through the normal sync queue; teaching-lesson video stays local until consent is confirmed and the student starts submission. `SyncManager` coordinates auth/network/retry, `QueueStore` owns SwiftData queue state, and `TaskExecutor` performs API calls plus S3-compatible uploads.
+- **Teacher review:** teachers read submitted entries through cursor-paginated course endpoints and create feedback. Any entry-level or artifact-level feedback marks the parent entry as reviewed.
+- **Deletion:** iOS removes local entries and queued child work first. The backend then performs database cascade cleanup in one transaction and deletes object-storage files after the transaction returns their storage keys.
+
 ## Requirements
+
 - Node.js 20.x + npm
 - Docker Desktop (Postgres + MinIO)
-- Xcode 16+ with iPad simulator runtime (the app targets iPad)
+- Xcode 16+ with an iOS 17 simulator runtime (the app is designed for iPad)
 
 ## Quick Start (Local Dev)
 
 ### 1) Backend
 
-1. Copy env file and set dev auth:
+#### Step 1: Copy the environment file and set dev auth
 
 ```bash
 cp server/.env.example server/.env
@@ -53,13 +65,13 @@ cp server/.env.example server/.env
 
 Make sure `AUTH_MODE=dev` is set in `server/.env` for local development.
 
-2. Start Postgres + MinIO:
+#### Step 2: Start Postgres and MinIO
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d
 ```
 
-3. Install deps, generate Prisma client, migrate, and seed:
+#### Step 3: Install dependencies, generate Prisma, migrate, and seed
 
 ```bash
 cd server
@@ -69,7 +81,7 @@ npm run prisma:migrate
 npm run prisma:seed
 ```
 
-4. Start the API:
+#### Step 4: Start the API
 
 ```bash
 npm run dev
@@ -79,10 +91,10 @@ API runs on `http://localhost:4000`.
 
 ### 2) iOS (iPad) app
 
-Open the Swift Package in Xcode:
+Open the tracked Xcode project:
 
 ```bash
-open ios/ResonanceApp/Package.swift
+open ios/ResonanceApp/ResonanceApp.xcodeproj
 ```
 
 1. Select the **ResonanceApp** scheme and an **iPad simulator** as the run destination.
@@ -111,6 +123,7 @@ npm run build        # TypeScript build
 npm run start        # run compiled server
 npm run clean        # remove local build/test artifacts in server/
 npm test             # run tests (requires Postgres)
+npm run test:e2e     # run process-level HTTP E2E tests (requires Postgres + MinIO)
 npm run lint         # ESLint
 npm run format       # Prettier (write)
 npm run format:check # Prettier (check)
@@ -131,7 +144,24 @@ cd server
 npm test
 ```
 
-iOS unit tests can be run from Xcode by opening `ios/ResonanceApp/Package.swift` and using the `ResonanceAppTests` scheme. The repository does not currently track an `.xcodeproj` or `.xcworkspace`, so the CLI iOS build is skipped by local CI unless one exists.
+iOS tests run through the tracked `ResonanceApp.xcodeproj` and shared `ResonanceApp` scheme. The verification script selects an available iPhone simulator deterministically, uses isolated DerivedData, and executes XCTest:
+
+```bash
+./scripts/verify-ios.sh
+```
+
+Set `IOS_DESTINATION` to override the selected simulator when needed.
+
+Process-level E2E tests run the built server on a temporary local port and drive real HTTP requests against local Postgres and MinIO:
+
+```bash
+docker compose -f infra/docker-compose.yml up -d
+cd server
+DATABASE_URL=postgresql://resonance:resonance@localhost:5432/resonance_test npm run prisma:migrate
+DATABASE_URL=postgresql://resonance:resonance@localhost:5432/resonance_test npm run test:e2e
+```
+
+`./scripts/ci-local.sh --with-docker` runs this E2E suite as part of the full local verification path.
 
 ## Validation (build / run / test)
 
@@ -144,8 +174,9 @@ cd server && npm install && npm run prisma:generate && npm run prisma:migrate &&
 npm run build && npm run start &
 curl -fsS http://127.0.0.1:4000/health
 npm test
+npm run test:e2e
 
-# Full CI-style check from repo root (starts Postgres if needed, includes iOS build when Xcode is available)
+# Full CI-style check from repo root (starts Postgres and MinIO if needed)
 ./scripts/ci-local.sh --with-docker
 
 # Secret scan (from repo root)
@@ -172,23 +203,7 @@ To reset demo records only:
 
 ## RC Demo Screenshots
 
-Stored in `docs/assets/screenshots/rc/`.
-
-### Student Persona
-
-![Student Sign In](docs/assets/screenshots/rc/rc-0.1.0-rc-student-login-01.png)
-![Student Courses](docs/assets/screenshots/rc/rc-0.1.0-rc-student-courses-01.png)
-![Student Entry List](docs/assets/screenshots/rc/rc-0.1.0-rc-student-entry-list-01.png)
-![Student Entry Detail](docs/assets/screenshots/rc/rc-0.1.0-rc-student-entry-detail-01.png)
-![Student Export](docs/assets/screenshots/rc/rc-0.1.0-rc-student-export-01.png)
-![Student Settings](docs/assets/screenshots/rc/rc-0.1.0-rc-student-settings-01.png)
-![Student Queue](docs/assets/screenshots/rc/rc-0.1.0-rc-student-queue-01.png)
-
-### Teacher Persona
-
-![Teacher Courses](docs/assets/screenshots/rc/rc-0.1.0-rc-teacher-courses-01.png)
-![Teacher Review Queue](docs/assets/screenshots/rc/rc-0.1.0-rc-teacher-teacher-review-queue-01.png)
-![Teacher Feedback Editor](docs/assets/screenshots/rc/rc-0.1.0-rc-teacher-feedback-editor-01.png)
+Stored in `docs/assets/screenshots/rc/`. See [docs/RELEASE_CANDIDATE_SCREENSHOTS.md](docs/RELEASE_CANDIDATE_SCREENSHOTS.md) for the full matrix and capture workflow.
 
 ## Security
 
@@ -201,7 +216,7 @@ Stored in `docs/assets/screenshots/rc/`.
 ## API Notes
 
 - `DELETE /entries/:entryId` hard-deletes entries and associated artifacts/feedback, and deletes storage objects.
-- Production auth is not implemented yet; `/auth/session` returns `AUTH_NOT_CONFIGURED` when `AUTH_MODE=prod`.
+- `GET /auth/login` is the app-facing login entrypoint. In local dev it redirects to `/dev/login`; in production it redirects to the configured OIDC flow.
 
 ## Troubleshooting
 
@@ -211,18 +226,19 @@ Stored in `docs/assets/screenshots/rc/`.
 - **CORS issues in prod**: Set `CORS_ORIGINS` to explicit allowed origins.
 
 ## Docs
+
 - `docs/INDEX.md` — Canonical documentation entry point
 - `docs/PRD.md` — Product requirements
 - `docs/ARCHITECTURE.md` — Architecture
 - `docs/API.md` — API reference
 - `docs/UI.md` — UI spec
 - `docs/SECURITY.md` — Security documentation
+- `docs/SCIENTIFIC_AUDIT.md` — evidence matrix for teaching-lesson video and music teacher education
 - `docs/RUNBOOK.md` — Ops runbook
 - `docs/RELEASE_CANDIDATE_DEMO.md` — RC demo bootstrap and preflight
 - `docs/RELEASE_CANDIDATE_SCREENSHOTS.md` — screenshot matrix and capture playbook
 - `docs/RELEASE_CHECKLIST.md` — release gates checklist
-- `docs/BUGS_AND_FIXES.md` — Known bugs and required fixes (issue source)
-- `docs/archive/` — Archived historical docs
 
 ## License
+
 MIT.

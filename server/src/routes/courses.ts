@@ -8,6 +8,35 @@ import { requireCourseRole } from '../validation.js';
 const REVIEW_QUEUE_DEFAULT_LIMIT = 20;
 const REVIEW_QUEUE_MAX_LIMIT = 100;
 
+type ReviewQueueEntry = Prisma.PracticeEntryGetPayload<{
+  include: {
+    artifacts: true;
+    student: { select: { displayName: true } };
+    _count: { select: { captureMarkers: true } };
+  };
+}>;
+
+function toReviewQueueEntry(entry: ReviewQueueEntry) {
+  return {
+    id: entry.id,
+    courseId: entry.courseId,
+    studentId: entry.studentId,
+    studentName: entry.student.displayName,
+    kind: entry.kind,
+    practiceDate: entry.practiceDate,
+    goalText: entry.goalText,
+    notes: entry.notes,
+    tags: entry.tags,
+    durationSeconds: entry.durationSeconds,
+    status: entry.status,
+    consentConfirmedAt: entry.consentConfirmedAt,
+    consentScope: entry.consentScope,
+    captureProfile: entry.captureProfile,
+    captureMarkerCount: entry._count.captureMarkers,
+    artifacts: entry.artifacts,
+  };
+}
+
 /** Pagination defaults for the entries list. */
 const ENTRIES_DEFAULT_LIMIT = 50;
 const ENTRIES_MAX_LIMIT = 200;
@@ -28,20 +57,19 @@ function parseLimitParam(raw: string | undefined, defaultLimit: number, maxLimit
 }
 
 /**
- * Look up a cursor entry inside the already-authorized result scope and build
- * a Prisma `OR` clause that selects only entries ordered strictly after the
- * cursor in (practiceDate DESC, createdAt DESC, id DESC) order.
+ * Look up a cursor entry and build a Prisma `OR` clause that selects only entries
+ * ordered strictly after the cursor in (practiceDate DESC, createdAt DESC, id DESC) order.
  * Returns `undefined` when no cursor is provided.
  */
 async function buildCursorWhere(
   prisma: PrismaClient,
   cursor: string | undefined,
-  cursorScope: Prisma.PracticeEntryWhereInput
+  visibleWhere: Prisma.PracticeEntryWhereInput
 ): Promise<Prisma.PracticeEntryWhereInput['OR'] | undefined> {
   if (!cursor) return undefined;
 
   const cursorEntry = await prisma.practiceEntry.findFirst({
-    where: { ...cursorScope, id: cursor },
+    where: { ...visibleWhere, id: cursor },
     select: { practiceDate: true, createdAt: true, id: true },
   });
   if (!cursorEntry) {
@@ -94,14 +122,15 @@ export function registerCourseRoutes(
     return course;
   });
 
-  // BREAKING CHANGE (v0.2): Response shape changed from `[...]` to `{ items: [...], nextCursor: string | null }`.
-  // iOS client must be updated to decode the new paginated envelope.
+  // Course entries and review queue intentionally share the same paginated
+  // envelope so clients can reuse cursor handling.
   app.get('/courses/:courseId/entries', { preHandler: requireAuth }, async (request) => {
     const user = request.user!;
     const courseId = (request.params as { courseId: string }).courseId;
     const role = await requireCourseRole(prisma, user.id, courseId);
 
-    // Optional status filter: ?status=draft | submitted | reviewed
+    // Teacher default mirrors the review queue: show submitted work unless an
+    // explicit status filter is requested. Students see only their own entries.
     const validStatuses = ['draft', 'submitted', 'reviewed'] as const;
     type ValidStatus = (typeof validStatuses)[number];
     const queryParams = request.query as { status?: string; limit?: string; cursor?: string };
@@ -146,8 +175,8 @@ export function registerCourseRoutes(
     return { items: pageEntries, nextCursor };
   });
 
-  // BREAKING CHANGE (v0.2): Response shape changed from `[...]` to `{ items: [...], nextCursor: string | null }`.
-  // iOS client must be updated to decode the new paginated envelope.
+  // Review queue uses the same cursor contract as the entries list but is
+  // teacher-only and always scoped to submitted work.
   app.get('/courses/:courseId/review-queue', { preHandler: requireAuth }, async (request) => {
     const user = request.user!;
     const courseId = (request.params as { courseId: string }).courseId;
@@ -177,6 +206,7 @@ export function registerCourseRoutes(
       include: {
         artifacts: true,
         student: { select: { displayName: true } },
+        _count: { select: { captureMarkers: true } },
       },
       orderBy: [{ practiceDate: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
@@ -188,19 +218,7 @@ export function registerCourseRoutes(
     const nextCursor = hasMore && lastEntry ? lastEntry.id : null;
 
     return {
-      items: pageEntries.map((entry) => ({
-        id: entry.id,
-        courseId: entry.courseId,
-        studentId: entry.studentId,
-        studentName: entry.student.displayName,
-        practiceDate: entry.practiceDate,
-        goalText: entry.goalText,
-        notes: entry.notes,
-        tags: entry.tags,
-        durationSeconds: entry.durationSeconds,
-        status: entry.status,
-        artifacts: entry.artifacts,
-      })),
+      items: pageEntries.map(toReviewQueueEntry),
       nextCursor,
     };
   });

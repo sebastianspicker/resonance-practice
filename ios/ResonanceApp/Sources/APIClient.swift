@@ -69,41 +69,42 @@ final class APIClient {
         let url = AppConfig.apiBaseURL.appendingPathComponent("courses/\(courseId)/entries")
         struct Body: Encodable {
             let id: String
+            let kind: String
             let practiceDate: Date
             let goalText: String
             let durationSeconds: Int?
             let tags: [String]
             let notes: String?
-            
-            // Custom encoding to properly handle optional values
-            func encode(to encoder: Encoder) throws {
-                var container = encoder.container(keyedBy: CodingKeys.self)
-                try container.encode(id, forKey: .id)
-                try container.encode(practiceDate, forKey: .practiceDate)
-                try container.encode(goalText, forKey: .goalText)
-                try container.encode(tags, forKey: .tags)
-                // Only encode non-nil optionals
-                if let durationSeconds = durationSeconds {
-                    try container.encode(durationSeconds, forKey: .durationSeconds)
-                }
-                if let notes = notes {
-                    try container.encode(notes, forKey: .notes)
-                }
-            }
-            
-            enum CodingKeys: String, CodingKey {
-                case id, practiceDate, goalText, durationSeconds, tags, notes
-            }
+            let consentConfirmed: Bool?
+            let consentScope: String?
+            let captureProfile: String?
         }
         let body = Body(
             id: entry.id,
+            kind: entry.kind.rawValue,
             practiceDate: entry.practiceDate,
             goalText: entry.goalText,
             durationSeconds: entry.durationSeconds,
             tags: entry.tags,
-            notes: entry.notes
+            notes: entry.notes,
+            consentConfirmed: entry.consentConfirmedAt == nil ? nil : true,
+            consentScope: entry.consentScope?.rawValue,
+            captureProfile: entry.captureProfile?.rawValue
         )
         return try await send(url: url, method: "POST", body: body, accessToken: accessToken)
+    }
+
+    func updateEntryCaptureProfile(accessToken: String, entryId: String, captureProfile: CaptureProfile?) async throws -> EntryResponse {
+        let url = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entryId)")
+        struct Body: Encodable {
+            let captureProfile: String?
+        }
+        return try await send(
+            url: url,
+            method: "PATCH",
+            body: Body(captureProfile: captureProfile?.rawValue),
+            accessToken: accessToken
+        )
     }
 
     func createArtifact(accessToken: String, entryId: String, artifact: LocalArtifact) async throws -> ArtifactResponse {
@@ -136,13 +137,38 @@ final class APIClient {
         return try await send(url: url, method: "POST", body: Optional<EmptyBody>.none, accessToken: accessToken)
     }
 
+    func syncCaptureMarkers(accessToken: String, entryId: String, markers: [LocalCaptureMarker]) async throws -> [CaptureMarkerResponse] {
+        let url = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entryId)/capture-markers")
+        struct MarkerBody: Encodable {
+            let id: String
+            let artifactId: String
+            let timeSeconds: Int
+            let kind: String
+            let note: String?
+        }
+        struct Body: Encodable {
+            let markers: [MarkerBody]
+        }
+        let body = Body(
+            markers: markers.map {
+                MarkerBody(
+                    id: $0.id,
+                    artifactId: $0.artifactId,
+                    timeSeconds: $0.timeSeconds,
+                    kind: $0.kind.rawValue,
+                    note: $0.note
+                )
+            }
+        )
+        return try await send(url: url, method: "PUT", body: body, accessToken: accessToken)
+    }
+
     func deleteEntry(accessToken: String, entryId: String) async throws {
         let url = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entryId)")
         try await sendNoContent(url: url, method: "DELETE", accessToken: accessToken)
     }
 
-    /// Fetch paginated review queue. Returns items and an optional cursor for the next page.
-    /// BREAKING CHANGE (v0.2): Server now returns `{ items, nextCursor }` instead of a bare array.
+    /// Fetch the teacher review queue using the API's cursor-paginated envelope.
     func fetchReviewQueue(accessToken: String, courseId: String, limit: Int? = nil, cursor: String? = nil) async throws -> PaginatedResponse<ReviewQueueEntry> {
         var components = URLComponents(url: AppConfig.apiBaseURL.appendingPathComponent("courses/\(courseId)/review-queue"), resolvingAgainstBaseURL: false)!
         var queryItems: [URLQueryItem] = []
@@ -153,13 +179,14 @@ final class APIClient {
         return try await send(url: url, method: "GET", body: Optional<EmptyBody>.none, accessToken: accessToken)
     }
 
-    func createFeedback(accessToken: String, targetType: String, targetId: String, status: FeedbackStatus, commentsText: String, markers: [LocalMarker]) async throws -> FeedbackResponse {
+    func createFeedback(accessToken: String, submission: FeedbackSubmission) async throws -> FeedbackResponse {
         let url = AppConfig.apiBaseURL.appendingPathComponent("feedback")
         struct MarkerBody: Encodable {
             let timeSeconds: Int
             let text: String
         }
         struct Body: Encodable {
+            let id: String?
             let targetType: String
             let targetId: String
             let status: String
@@ -167,11 +194,12 @@ final class APIClient {
             let markers: [MarkerBody]
         }
         let body = Body(
-            targetType: targetType,
-            targetId: targetId,
-            status: status.rawValue,
-            commentsText: commentsText,
-            markers: markers.map { MarkerBody(timeSeconds: $0.timeSeconds, text: $0.text) }
+            id: submission.feedbackId,
+            targetType: submission.targetType,
+            targetId: submission.targetId,
+            status: submission.status.rawValue,
+            commentsText: submission.commentsText,
+            markers: submission.markers.map { MarkerBody(timeSeconds: $0.timeSeconds, text: $0.text) }
         )
         return try await send(url: url, method: "POST", body: body, accessToken: accessToken)
     }
@@ -236,6 +264,15 @@ final class APIClient {
         let data = try await perform(request)
         return try JSONDecoder.apiDecoder.decode(Response.self, from: data)
     }
+}
+
+struct FeedbackSubmission {
+    let feedbackId: String?
+    let targetType: String
+    let targetId: String
+    let status: FeedbackStatus
+    let commentsText: String
+    let markers: [LocalMarker]
 }
 
 extension JSONEncoder {

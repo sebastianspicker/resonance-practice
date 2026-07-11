@@ -7,6 +7,14 @@ struct EntryDeletionResult {
 
 @MainActor
 enum EntryDeletionCoordinator {
+    /// Delete a local entry without leaving orphaned queue work behind.
+    ///
+    /// Offline deletion has two cases:
+    /// - Unsynced entries only exist locally, so their pending create/artifact/feedback tasks are removed.
+    /// - Already-synced entries need one remote delete task, but duplicate delete tasks are avoided.
+    ///
+    /// Local audio files are removed immediately because the queue no longer has
+    /// any valid task that can upload them after the parent entry is gone.
     static func delete(
         entry: LocalPracticeEntry,
         modelContext: ModelContext,

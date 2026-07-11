@@ -78,50 +78,75 @@ export function requireStringArray(value: unknown, name: string, options?: { max
   return value as string[];
 }
 
+const DATE_ONLY_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
+const DATE_TIME_REGEX =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d{3})?(Z|([+-])(\d{2}):(\d{2}))$/;
+
+type IsoDateMatch = {
+  match: RegExpMatchArray;
+  hasTime: boolean;
+};
+
 export function requireValidDate(value: unknown, name: string): Date {
   const str = String(value);
-  const dateOnlyMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  const dateTimeMatch = str.match(
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d{3})?(Z|([+-])(\d{2}):(\d{2}))$/
-  );
-
-  if (!dateOnlyMatch && !dateTimeMatch) {
-    throw new ApiError(
-      400,
-      ErrorCodes.VALIDATION_ERROR,
-      `Invalid date format: ${name}, expected ISO 8601`
-    );
-  }
-
-  const year = Number((dateOnlyMatch ?? dateTimeMatch)?.[1]);
-  const month = Number((dateOnlyMatch ?? dateTimeMatch)?.[2]);
-  const day = Number((dateOnlyMatch ?? dateTimeMatch)?.[3]);
-  if (!isValidCalendarDate(year, month, day)) {
-    throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `Invalid date: ${name}`);
-  }
-
-  if (dateTimeMatch) {
-    const hour = Number(dateTimeMatch[4]);
-    const minute = Number(dateTimeMatch[5]);
-    const second = Number(dateTimeMatch[6]);
-    if (hour > 23 || minute > 59 || second > 59) {
-      throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `Invalid date: ${name}`);
-    }
-
-    if (dateTimeMatch[8] !== 'Z') {
-      const offsetHour = Number(dateTimeMatch[10]);
-      const offsetMinute = Number(dateTimeMatch[11]);
-      if (offsetHour > 23 || offsetMinute > 59) {
-        throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `Invalid date: ${name}`);
-      }
-    }
-  }
-
+  const isoMatch = requireIsoDateMatch(str, name);
+  validateIsoDateParts(isoMatch, name);
   const date = new Date(str);
   if (Number.isNaN(date.getTime())) {
     throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `Invalid date: ${name}`);
   }
   return date;
+}
+
+function requireIsoDateMatch(str: string, name: string): IsoDateMatch {
+  const dateOnlyMatch = str.match(DATE_ONLY_REGEX);
+  if (dateOnlyMatch) {
+    return { match: dateOnlyMatch, hasTime: false };
+  }
+
+  const dateTimeMatch = str.match(DATE_TIME_REGEX);
+  if (dateTimeMatch) {
+    return { match: dateTimeMatch, hasTime: true };
+  }
+
+  throw new ApiError(
+    400,
+    ErrorCodes.VALIDATION_ERROR,
+    `Invalid date format: ${name}, expected ISO 8601`
+  );
+}
+
+function validateIsoDateParts(isoMatch: IsoDateMatch, name: string) {
+  const year = Number(isoMatch.match[1]);
+  const month = Number(isoMatch.match[2]);
+  const day = Number(isoMatch.match[3]);
+  if (!isValidCalendarDate(year, month, day)) {
+    throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `Invalid date: ${name}`);
+  }
+  if (isoMatch.hasTime) {
+    validateIsoTimeParts(isoMatch.match, name);
+    validateIsoOffsetParts(isoMatch.match, name);
+  }
+}
+
+function validateIsoTimeParts(match: RegExpMatchArray, name: string) {
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  if (hour > 23 || minute > 59 || second > 59) {
+    throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `Invalid date: ${name}`);
+  }
+}
+
+function validateIsoOffsetParts(match: RegExpMatchArray, name: string) {
+  if (match[8] === 'Z') {
+    return;
+  }
+  const offsetHour = Number(match[10]);
+  const offsetMinute = Number(match[11]);
+  if (offsetHour > 23 || offsetMinute > 59) {
+    throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `Invalid date: ${name}`);
+  }
 }
 
 function isValidCalendarDate(year: number, month: number, day: number): boolean {
@@ -153,6 +178,13 @@ export function requireNumber(
   }
   if (options?.max !== undefined && value > options.max) {
     throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `Number too large: ${name}`);
+  }
+  return value;
+}
+
+export function requireBoolean(value: unknown, name: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `Invalid boolean: ${name}`);
   }
   return value;
 }
@@ -206,16 +238,4 @@ export async function requireStudentOwner(
   if (roleInCourse !== 'student' || entry.studentId !== userId) {
     throw new ApiError(403, ErrorCodes.STUDENT_ONLY, `Only the student owner can ${action}`);
   }
-}
-
-/**
- * Require that the user is a teacher in the specified course.
- * Throws 403 if the user is not a teacher or admin.
- */
-export async function requireTeacherRole(prisma: PrismaClient, userId: string, courseId: string) {
-  const roleInCourse = await requireCourseRole(prisma, userId, courseId);
-  if (roleInCourse !== 'teacher') {
-    throw new ApiError(403, ErrorCodes.TEACHER_REQUIRED, 'Only teachers can perform this action');
-  }
-  return roleInCourse;
 }

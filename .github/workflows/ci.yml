@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["dev"]
+    branches: ["main"]
   pull_request:
 
 permissions:
@@ -33,7 +33,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: resonance
-          POSTGRES_PASSWORD: resonance
+          POSTGRES_PASSWORD: resonance-${{ github.run_id }}-${{ github.run_attempt }}
           POSTGRES_DB: resonance_test
         ports:
           - 5432:5432
@@ -44,16 +44,12 @@ jobs:
           --health-retries=5
 
     env:
-      DATABASE_URL: postgresql://resonance:resonance@localhost:5432/resonance_test
       PORT: 4000
       AUTH_MODE: dev
-      # CI-only test value — not a real secret; never use CHANGE-ME values in production
-      JWT_SECRET: CHANGE-ME-generate-a-real-secret-at-least-32-chars
       DEV_UNIVERSITY_NAME: Mock University Conservatory
       DEV_LOGIN_CALLBACK_URL: resonance://auth-callback
-      APP_BASE_URL: http://localhost:4000
       # CI-only local MinIO credentials — not used in production
-      S3_ENDPOINT: http://127.0.0.1:9000
+      S3_ENDPOINT: http://localhost:9000
       S3_REGION: us-east-1
       S3_BUCKET: resonance-dev
       S3_ACCESS_KEY: minioadmin
@@ -61,6 +57,17 @@ jobs:
       S3_FORCE_PATH_STYLE: "true"
 
     steps:
+      - name: Initialize ephemeral test credentials
+        env:
+          POSTGRES_PASSWORD: resonance-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          jwt_secret="$(openssl rand -hex 32)"
+          database_url="postgresql://resonance:${POSTGRES_PASSWORD}@localhost:5432/resonance_test"
+          {
+            echo "DATABASE_URL=$database_url"
+            echo "JWT_SECRET=$jwt_secret"
+          } >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -115,21 +122,21 @@ jobs:
         working-directory: server
         run: npm run build
 
-      - name: Start MinIO for runtime probe
+      - name: Start MinIO
         run: |
-          docker run -d --name resonance-ci-minio \
+          docker run -d --name resonance-minio \
+            -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin \
-            -p 9000:9000 \
-            -p 9001:9001 \
-            minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e server /data --console-address ":9001"
+            minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e \
+            server /data
           for _ in {1..30}; do
             if curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null; then
               exit 0
             fi
             sleep 1
           done
-          docker logs resonance-ci-minio
+          docker logs resonance-minio
           exit 1
 
       - name: Runtime health probe
@@ -140,6 +147,10 @@ jobs:
         working-directory: server
         run: npx vitest run --coverage
 
+      - name: E2E tests
+        working-directory: server
+        run: npm run test:e2e
+
   ios:
     name: iOS Build
     runs-on: macos-15
@@ -149,10 +160,4 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Build iOS package for simulator
-        working-directory: ios/ResonanceApp
-        run: |
-          if find . -maxdepth 2 \( -name '*.xcodeproj' -o -name '*.xcworkspace' \) | grep -q .; then
-            xcodebuild -scheme ResonanceApp -destination 'generic/platform=iOS Simulator' build-for-testing
-          else
-            echo "Skipping iOS CLI build: open Package.swift in Xcode; no project/workspace is tracked."
-          fi
+        run: ./scripts/verify-ios.sh

@@ -33,6 +33,14 @@ pnpm-debug.log*
 .cursor/
 .codex/
 .kilo/
+.serena/
+.codegraph/
+
+# Local agent instructions and private working material
+AGENTS.md
+internal/
+private/
+privat/
 
 # Local docs (findings/logs/decisions)
 DECISIONS.md
@@ -40,9 +48,20 @@ FINDINGS.md
 LOG.md
 REFACTOR_PLAN.md
 progress.md
+docs/*-audit.md
+docs/*-ledger.md
+docs/*-status.md
+docs/architecture-map.md
+docs/code-index.md
+docs/refactor-plan.md
+docs/verification-baseline.md
+docs/agent/
+docs/archive/
+plan.md
 
 # Xcode
 DerivedData/
+*.xcresult/
 *.xcworkspace
 *.xcodeproj/xcuserdata
 *.xcodeproj/project.xcworkspace
@@ -60,9 +79,12 @@ DerivedData/
 # Prisma / SQLite
 server/prisma/dev.db
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 
-# Screenshot capture output (staged here, copy to docs/assets/ before committing)
-artifacts/screenshots/
+# Screenshot capture output (copy selected release assets to docs/assets/ before committing)
+artifacts/
 
 # Internal audit/findings docs (may contain local paths or org-internal details)
 deprecated/
@@ -76,9 +98,30 @@ junit-*.xml
 reports/
 .cache/
 .tmp/
+tmp/
+temp/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+*.tmp
+*.bak
+*.orig
+*.rej
+*.patch
+*.jsonl
+*.sarif
+
+# Codacy local analysis output; keep checked-in config files visible.
+.codacy/.gitignore
+.codacy/cli-config.yaml
+.codacy/codacy.yaml
+.codacy/configure-*.json
+.codacy/*-summary.json
+.codacy/tools-configs/
+.codacy/generated/
+.codacy/logs/
+.codacy/tmp/
+.codacy/cache/
 
 # MinIO
 infra/minio-data/

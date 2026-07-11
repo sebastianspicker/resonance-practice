@@ -54,9 +54,9 @@ describe('GET /entries/:entryId/feedback completeness', () => {
         targetId: 'entry-feedback-parent',
         teacherId: 'teacher-1',
         entryId: 'entry-feedback-parent',
+        createdAt: new Date('2025-04-01T10:01:00.000Z'),
         status: 'ok',
         commentsText: 'Entry-level note',
-        createdAt: new Date('2025-04-01T11:00:00.000Z'),
       },
     });
 
@@ -67,9 +67,9 @@ describe('GET /entries/:entryId/feedback completeness', () => {
         targetId: 'artifact-feedback-child',
         teacherId: 'teacher-1',
         entryId: 'entry-feedback-parent',
+        createdAt: new Date('2025-04-01T10:02:00.000Z'),
         status: 'needs_revision',
         commentsText: 'Artifact-level note',
-        createdAt: new Date('2025-04-01T11:01:00.000Z'),
       },
     });
 

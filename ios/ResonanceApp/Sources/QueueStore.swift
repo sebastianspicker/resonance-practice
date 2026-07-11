@@ -6,7 +6,7 @@ import SwiftData
 /// and local artifacts.
 ///
 /// `SyncManager` delegates every model-context interaction here so that queue
-/// access is encapsulated behind a single seam and testable in isolation.
+/// access has one persistence boundary and can be tested in isolation.
 @MainActor
 final class QueueStore {
     private static let logger = Logger(
@@ -165,6 +165,14 @@ final class QueueStore {
         try fetchFirst(FetchDescriptor<LocalArtifact>(predicate: #Predicate { $0.id == id }))
     }
 
+    func fetchCaptureMarkers(entryId: String) throws -> [LocalCaptureMarker] {
+        var descriptor = FetchDescriptor<LocalCaptureMarker>(
+            predicate: #Predicate { $0.entryId == entryId }
+        )
+        descriptor.sortBy = [SortDescriptor(\.timeSeconds, order: .forward)]
+        return try modelContext.fetch(descriptor)
+    }
+
     // MARK: - Artifact state helpers
 
     /// Mark the artifact referenced by `item`'s payload as permanently failed.
@@ -183,17 +191,14 @@ final class QueueStore {
         guard let artifactId = artifactId(from: item),
               let artifact = try? fetchArtifact(id: artifactId) else { return }
         artifact.uploadState = .pending
-        artifact.syncPhase = item.type == SyncTaskType.confirmArtifact.rawValue ? .confirming : .queued
+        artifact.syncPhase = .queued
         save()
     }
 
     // MARK: - Private helpers
 
     private func isArtifactTask(_ item: SyncQueueItem) -> Bool {
-        item.type == SyncTaskType.createArtifact.rawValue
-            || item.type == SyncTaskType.uploadArtifact.rawValue
-            || item.type == SyncTaskType.confirmArtifact.rawValue
-            || item.type == SyncTaskType.syncArtifact.rawValue
+        item.type == SyncTaskType.syncArtifact.rawValue
     }
 
     private func artifactId(from item: SyncQueueItem) -> String? {

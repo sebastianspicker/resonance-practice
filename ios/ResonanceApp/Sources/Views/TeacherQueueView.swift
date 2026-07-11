@@ -44,6 +44,11 @@ struct TeacherQueueView: View {
                                 Text("• \(entry.artifacts.count) artifacts")
                                     .font(.caption)
                                     .foregroundStyle(.white.opacity(0.65))
+                                if let captureMarkerCount = entry.captureMarkerCount, captureMarkerCount > 0 {
+                                    Text("• \(captureMarkerCount) lesson markers")
+                                        .font(.caption)
+                                        .foregroundStyle(AppTheme.accentVibrant.opacity(0.85))
+                                }
                             }
                         }
                         .padding(.leading, 20)
@@ -52,7 +57,7 @@ struct TeacherQueueView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(entry.studentName), \(entry.goalText), \(entry.artifacts.count) artifacts")
+                    .accessibilityLabel("\(entry.studentName), \(entry.goalText), \(entry.artifacts.count) artifacts, \(entry.captureMarkerCount ?? 0) lesson markers")
                     .accessibilityHint("Double-tap to review this submission")
                     .listRowInsets(EdgeInsets(top: 6, leading: 14, bottom: 6, trailing: 14))
                     .listRowBackground(Color.white.opacity(0.08).cornerRadius(12).padding(.vertical, 4))

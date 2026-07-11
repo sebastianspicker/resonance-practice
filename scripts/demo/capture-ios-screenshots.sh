@@ -8,7 +8,8 @@ OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/artifacts/screenshots/rc-local}"
 DERIVED_DATA_DIR="${DERIVED_DATA_DIR:-$ROOT_DIR/.tmp/derived-data-rc-screenshots}"
 RC_VERSION="${RC_VERSION:-0.1.0-rc}"
 DEVICE_NAME="${IOS_SIM_DEVICE_NAME:-Resonance RC iPad}"
-DEVICE_TYPE="${IOS_SIM_DEVICE_TYPE:-iPad Pro 11-inch (M5)}"
+DEFAULT_DEVICE_TYPE='iPad Pro 11-inch (M5)'
+DEVICE_TYPE="${IOS_SIM_DEVICE_TYPE:-$DEFAULT_DEVICE_TYPE}"
 API_BASE="${RESONANCE_API_BASE:-http://localhost:4000}"
 DEMO_UNIVERSITY_NAME="${RESONANCE_DEMO_UNIVERSITY_NAME:-Mock University Conservatory}"
 

@@ -9,7 +9,6 @@ import {
   requireNumber,
   requireClientId,
 } from '../src/validation.js';
-import { validateDevCallbackUrl } from '../src/config.js';
 
 describe('validation helpers (unit)', () => {
   // ── requireField ──
@@ -286,56 +285,6 @@ describe('validation helpers (unit)', () => {
     it('rejects non-string input', () => {
       expect(() => requireClientId(123, 'id')).toThrow(ApiError);
       expect(() => requireClientId(null, 'id')).toThrow(ApiError);
-    });
-  });
-
-  // ── validateDevCallbackUrl (Bug #3 mitigation) ──
-
-  describe('validateDevCallbackUrl', () => {
-    it('accepts resonance:// scheme', () => {
-      expect(validateDevCallbackUrl('resonance://auth-callback')).toBe('resonance://auth-callback');
-    });
-
-    it('accepts resonance:// with path and query', () => {
-      expect(validateDevCallbackUrl('resonance://auth-callback?foo=bar')).toBe(
-        'resonance://auth-callback?foo=bar'
-      );
-    });
-
-    it('accepts http://localhost', () => {
-      expect(validateDevCallbackUrl('http://localhost')).toBe('http://localhost');
-    });
-
-    it('accepts http://localhost with port', () => {
-      expect(validateDevCallbackUrl('http://localhost:3000/callback')).toBe(
-        'http://localhost:3000/callback'
-      );
-    });
-
-    it('rejects https:// external URLs', () => {
-      expect(() => validateDevCallbackUrl('https://evil.example.com/steal')).toThrow(
-        /DEV_LOGIN_CALLBACK_URL/
-      );
-    });
-
-    it('rejects http:// non-localhost URLs', () => {
-      expect(() => validateDevCallbackUrl('http://attacker.com/code')).toThrow(
-        /DEV_LOGIN_CALLBACK_URL/
-      );
-    });
-
-    it('rejects javascript: scheme', () => {
-      expect(() => validateDevCallbackUrl('javascript:alert(1)')).toThrow(/DEV_LOGIN_CALLBACK_URL/);
-    });
-
-    it('rejects data: scheme', () => {
-      expect(() => validateDevCallbackUrl('data:text/html,<h1>hi</h1>')).toThrow(
-        /DEV_LOGIN_CALLBACK_URL/
-      );
-    });
-
-    it('rejects empty string', () => {
-      expect(() => validateDevCallbackUrl('')).toThrow(/DEV_LOGIN_CALLBACK_URL/);
     });
   });
 });

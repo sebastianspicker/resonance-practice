@@ -46,7 +46,7 @@ export async function teardownApp() {
 export async function resetDb() {
   assertTestDatabase();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE "Marker", "Feedback", "Artifact", "PracticeEntry", "Membership", "Course", "User", "RefreshToken" CASCADE;'
+    'TRUNCATE "CaptureMarker", "Marker", "Feedback", "Artifact", "PracticeEntry", "Membership", "Course", "User", "RefreshToken" CASCADE;'
   );
 }
 

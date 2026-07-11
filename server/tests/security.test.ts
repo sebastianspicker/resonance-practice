@@ -361,6 +361,16 @@ describe('security', () => {
       expect(res.status).toBe(415);
     });
 
+    it('rejects POST with multipart/form-data content-type', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .post('/courses/COURSE_TEST/entries')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Content-Type', 'multipart/form-data; boundary=resonance-test')
+        .send('--resonance-test\r\n\r\n--resonance-test--');
+      expect(res.status).toBe(415);
+    });
+
     it('allows POST with application/json content-type', async () => {
       const token = await login('student');
       const res = await request(app.server)

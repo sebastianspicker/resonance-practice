@@ -55,4 +55,10 @@ describe('dev auth disabled', () => {
     const res = await request(app.server).post('/dev/issue').send({ role: 'student' });
     expect(res.status).toBe(404);
   });
+
+  it('redirects app login to the OIDC login route', async () => {
+    const res = await request(app.server).get('/auth/login');
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/auth/oidc/login');
+  });
 });

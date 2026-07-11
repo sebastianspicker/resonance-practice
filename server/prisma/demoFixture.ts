@@ -33,6 +33,9 @@ export interface DemoFixture {
     tags: string[];
     notes: string | null;
     status: 'draft' | 'submitted' | 'reviewed';
+    kind?: 'practice' | 'teaching_lesson';
+    consentConfirmedAt?: string | null;
+    consentScope?: 'private_course_review' | null;
   }>;
   artifacts: Array<{
     id: string;

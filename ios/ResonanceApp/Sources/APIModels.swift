@@ -32,17 +32,20 @@ struct EntryResponse: Decodable {
     let id: String
     let courseId: String
     let studentId: String
+    let kind: String?
     let practiceDate: Date
     let goalText: String
     let durationSeconds: Int?
     let tags: [String]
     let notes: String?
     let status: String
+    let consentConfirmedAt: Date?
+    let consentScope: String?
+    let captureProfile: String?
+    let captureMarkers: [CaptureMarkerResponse]?
 }
 
 /// Generic paginated response envelope returned by cursor-based pagination endpoints.
-/// BREAKING CHANGE (v0.2): The review-queue endpoint now returns `{ items, nextCursor }`
-/// instead of a bare array.
 struct PaginatedResponse<T: Decodable>: Decodable {
     let items: [T]
     let nextCursor: String?
@@ -53,9 +56,14 @@ struct ReviewQueueEntry: Decodable {
     let courseId: String
     let studentId: String
     let studentName: String
+    let kind: String?
     let practiceDate: Date
     let goalText: String
     let notes: String?
+    let consentConfirmedAt: Date?
+    let consentScope: String?
+    let captureProfile: String?
+    let captureMarkerCount: Int?
     let artifacts: [ArtifactResponse]
 }
 
@@ -91,4 +99,15 @@ struct MarkerResponse: Decodable {
     let id: String
     let timeSeconds: Int
     let text: String
+}
+
+struct CaptureMarkerResponse: Decodable {
+    let id: String
+    let entryId: String
+    let artifactId: String
+    let studentId: String
+    let timeSeconds: Int
+    let kind: String
+    let note: String?
+    let createdAt: Date
 }

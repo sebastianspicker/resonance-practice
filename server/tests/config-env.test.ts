@@ -115,4 +115,40 @@ describe('config top-level validation (subprocess)', () => {
     const stderr = importConfigWithEnv({ JWT_SECRET: undefined });
     expect(stderr).toContain('Missing environment variable: JWT_SECRET');
   });
+
+  it('rejects non-positive S3 presign TTL values', () => {
+    const stderr = importConfigWithEnv({ S3_PRESIGN_TTL_SECONDS: '0' });
+    expect(stderr).toContain('S3_PRESIGN_TTL_SECONDS must be positive');
+  });
+
+  it('rejects JWT_REFRESH_SECRET shorter than 32 characters', () => {
+    const stderr = importConfigWithEnv({ JWT_REFRESH_SECRET: 'short-refresh-secret' });
+    expect(stderr).toContain('JWT_REFRESH_SECRET must be at least 32 characters');
+  });
+
+  it('rejects production mode without CORS_ORIGINS', () => {
+    const stderr = importConfigWithEnv({
+      AUTH_MODE: 'prod',
+      CORS_ORIGINS: undefined,
+      OIDC_DISCOVERY_URL: 'https://idp.example.test/.well-known/openid-configuration',
+      OIDC_CLIENT_ID: 'client',
+      OIDC_CLIENT_SECRET: 'secret',
+      OIDC_REDIRECT_URI: 'https://api.example.test/auth/oidc/callback',
+    });
+    expect(stderr).toContain('Production requires CORS_ORIGINS to be configured');
+  });
+
+  it('rejects production mode without complete OIDC configuration', () => {
+    const stderr = importConfigWithEnv({
+      AUTH_MODE: 'prod',
+      CORS_ORIGINS: 'https://app.example.test',
+      OIDC_DISCOVERY_URL: 'https://idp.example.test/.well-known/openid-configuration',
+      OIDC_CLIENT_ID: 'client',
+      OIDC_CLIENT_SECRET: undefined,
+      OIDC_REDIRECT_URI: 'https://api.example.test/auth/oidc/callback',
+    });
+    expect(stderr).toContain(
+      'AUTH_MODE=prod requires OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, and OIDC_REDIRECT_URI to be set.'
+    );
+  });
 });

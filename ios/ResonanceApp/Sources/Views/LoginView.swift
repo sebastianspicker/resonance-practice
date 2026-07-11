@@ -1,7 +1,5 @@
 import SwiftUI
 
-// TODO: Localization — All user-facing strings in this view should be wrapped with
-// LocalizedStringKey / NSLocalizedString for i18n support.
 struct LoginView: View {
     @EnvironmentObject var authManager: AuthManager
 

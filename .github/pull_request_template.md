@@ -1,14 +1,26 @@
 ## Summary
-- What does this change do?
+
+- What changed?
+- Why is it needed?
 
 ## Testing
-- [ ] `npm run build` (server)
-- [ ] `npm test` (server)
-- [ ] iOS tests (ResonanceAppTests)
+
+- [ ] Server build/typecheck: `cd server && npm run build`
+- [ ] Server tests: `cd server && npm test`
+- [ ] Server lint/format where relevant: `cd server && npm run lint && npm run format:check`
+- [ ] iOS simulator XCTest where relevant: `./scripts/verify-ios.sh`
+- [ ] Docs/GitHub-only change: no runtime verification needed
 
 ## Risk
-- Any behavior changes or migrations?
+
+- Runtime/API/storage/schema behavior changed?
+- Migration, auth, sync, media, or data-retention impact?
+- Rollback or manual verification notes?
 
 ## Checklist
+
 - [ ] No secrets/PII in logs or commits
 - [ ] Docs updated (README/RUNBOOK/SECURITY as needed)
+- [ ] Deprecated or superseded docs removed from the public tree or retained in issue/PR history
+- [ ] Local-only status, ledger, and generated analysis files are not tracked
+- [ ] No generated, private, internal, editor, or analyzer-state files are included

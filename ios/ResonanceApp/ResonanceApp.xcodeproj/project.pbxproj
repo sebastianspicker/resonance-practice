@@ -1,0 +1,159 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* mock-university.json in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* mock-university.json */; };
+		A10000000000000000000002 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* AppConfig.swift */; };
+		A10000000000000000000003 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* NetworkMonitor.swift */; };
+		A10000000000000000000004 /* CourseDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* CourseDetailView.swift */; };
+		A10000000000000000000005 /* CalendarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* CalendarView.swift */; };
+		A10000000000000000000006 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* ContentView.swift */; };
+		A10000000000000000000007 /* SyncQueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* SyncQueueView.swift */; };
+		A10000000000000000000008 /* TeacherQueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* TeacherQueueView.swift */; };
+		A10000000000000000000009 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* Theme.swift */; };
+		A10000000000000000000010 /* EntryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* EntryDetailView.swift */; };
+		A10000000000000000000011 /* EntryListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* EntryListView.swift */; };
+		A10000000000000000000012 /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* ExportView.swift */; };
+		A10000000000000000000013 /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* EmptyStateView.swift */; };
+		A10000000000000000000014 /* GlassTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* GlassTextField.swift */; };
+		A10000000000000000000015 /* MainSplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* MainSplitView.swift */; };
+		A10000000000000000000016 /* NewEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* NewEntryView.swift */; };
+		A10000000000000000000017 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* LoginView.swift */; };
+		A10000000000000000000018 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* SettingsView.swift */; };
+		A10000000000000000000019 /* TeachingLessonCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* TeachingLessonCameraView.swift */; };
+		A10000000000000000000020 /* FeedbackEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* FeedbackEditorView.swift */; };
+		A10000000000000000000021 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* AudioRecorder.swift */; };
+		A10000000000000000000022 /* DemoDataManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* DemoDataManager.swift */; };
+		A10000000000000000000023 /* CalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* CalendarService.swift */; };
+		A10000000000000000000024 /* AuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000024 /* AuthManager.swift */; };
+		A10000000000000000000025 /* QueueStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000025 /* QueueStore.swift */; };
+		A10000000000000000000026 /* ScreenshotScenario.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000026 /* ScreenshotScenario.swift */; };
+		A10000000000000000000027 /* FileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000027 /* FileStore.swift */; };
+		A10000000000000000000028 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000028 /* Models.swift */; };
+		A10000000000000000000029 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000029 /* KeychainStore.swift */; };
+		A10000000000000000000030 /* ResonanceApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000030 /* ResonanceApp.swift */; };
+		A10000000000000000000031 /* CalendarSubscriptionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000031 /* CalendarSubscriptionStore.swift */; };
+		A10000000000000000000032 /* PDFExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000032 /* PDFExporter.swift */; };
+		A10000000000000000000033 /* TaskExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000033 /* TaskExecutor.swift */; };
+		A10000000000000000000034 /* RetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000034 /* RetryPolicy.swift */; };
+		A10000000000000000000035 /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000035 /* APIModels.swift */; };
+		A10000000000000000000036 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000036 /* APIClient.swift */; };
+		A10000000000000000000037 /* Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000037 /* Persistence.swift */; };
+		A10000000000000000000038 /* ICalParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000038 /* ICalParser.swift */; };
+		A10000000000000000000039 /* EntryDeletionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000039 /* EntryDeletionCoordinator.swift */; };
+		A10000000000000000000040 /* SyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000040 /* SyncManager.swift */; };
+		A10000000000000000000041 /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000041 /* AudioPlayer.swift */; };
+		A10000000000000000000042 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000042 /* AppState.swift */; };
+		A10000000000000000000043 /* ResonanceAppTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000043 /* ResonanceAppTests.swift */; };
+		A10000000000000000000044 /* AuditRemediationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000044 /* AuditRemediationTests.swift */; };
+		A10000000000000000000045 /* ResonanceAppAPITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000047 /* ResonanceAppAPITests.swift */; };
+		A10000000000000000000046 /* ResonanceAppAdditionalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000048 /* ResonanceAppAdditionalTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000001 /* mock-university.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "Resources/mock-university.json"; sourceTree = "<group>"; };
+		A20000000000000000000002 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
+		A20000000000000000000004 /* CourseDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/CourseDetailView.swift"; sourceTree = "<group>"; };
+		A20000000000000000000005 /* CalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/CalendarView.swift"; sourceTree = "<group>"; };
+		A20000000000000000000006 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/ContentView.swift"; sourceTree = "<group>"; };
+		A20000000000000000000007 /* SyncQueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/SyncQueueView.swift"; sourceTree = "<group>"; };
+		A20000000000000000000008 /* TeacherQueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/TeacherQueueView.swift"; sourceTree = "<group>"; };
+		A20000000000000000000009 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/Theme.swift"; sourceTree = "<group>"; };
+		A20000000000000000000010 /* EntryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/EntryDetailView.swift"; sourceTree = "<group>"; };
+		A20000000000000000000011 /* EntryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/EntryListView.swift"; sourceTree = "<group>"; };
+		A20000000000000000000012 /* ExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/ExportView.swift"; sourceTree = "<group>"; };
+		A20000000000000000000013 /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/Components/EmptyStateView.swift"; sourceTree = "<group>"; };
+		A20000000000000000000014 /* GlassTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/Components/GlassTextField.swift"; sourceTree = "<group>"; };
+		A20000000000000000000015 /* MainSplitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/MainSplitView.swift"; sourceTree = "<group>"; };
+		A20000000000000000000016 /* NewEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/NewEntryView.swift"; sourceTree = "<group>"; };
+		A20000000000000000000017 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/LoginView.swift"; sourceTree = "<group>"; };
+		A20000000000000000000018 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/SettingsView.swift"; sourceTree = "<group>"; };
+		A20000000000000000000019 /* TeachingLessonCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/TeachingLessonCameraView.swift"; sourceTree = "<group>"; };
+		A20000000000000000000020 /* FeedbackEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/FeedbackEditorView.swift"; sourceTree = "<group>"; };
+		A20000000000000000000021 /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
+		A20000000000000000000022 /* DemoDataManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoDataManager.swift; sourceTree = "<group>"; };
+		A20000000000000000000023 /* CalendarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarService.swift; sourceTree = "<group>"; };
+		A20000000000000000000024 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
+		A20000000000000000000025 /* QueueStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000026 /* ScreenshotScenario.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotScenario.swift; sourceTree = "<group>"; };
+		A20000000000000000000027 /* FileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000028 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		A20000000000000000000029 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000030 /* ResonanceApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResonanceApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000031 /* CalendarSubscriptionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarSubscriptionStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000032 /* PDFExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFExporter.swift; sourceTree = "<group>"; };
+		A20000000000000000000033 /* TaskExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskExecutor.swift; sourceTree = "<group>"; };
+		A20000000000000000000034 /* RetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetryPolicy.swift; sourceTree = "<group>"; };
+		A20000000000000000000035 /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
+		A20000000000000000000036 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		A20000000000000000000037 /* Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Persistence.swift; sourceTree = "<group>"; };
+		A20000000000000000000038 /* ICalParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICalParser.swift; sourceTree = "<group>"; };
+		A20000000000000000000039 /* EntryDeletionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryDeletionCoordinator.swift; sourceTree = "<group>"; };
+		A20000000000000000000040 /* SyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncManager.swift; sourceTree = "<group>"; };
+		A20000000000000000000041 /* AudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayer.swift; sourceTree = "<group>"; };
+		A20000000000000000000042 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		A20000000000000000000043 /* ResonanceAppTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResonanceAppTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000044 /* AuditRemediationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuditRemediationTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000045 /* ResonanceApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ResonanceApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000046 /* ResonanceAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ResonanceAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000047 /* ResonanceAppAPITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResonanceAppAPITests.swift; sourceTree = "<group>"; };
+		A20000000000000000000048 /* ResonanceAppAdditionalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResonanceAppAdditionalTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A30000000000000000000002 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A40000000000000000000001 = {isa = PBXGroup; children = (A40000000000000000000002 /* Sources */, A40000000000000000000003 /* Tests */, A40000000000000000000004 /* Products */); sourceTree = "<group>"; };
+		A40000000000000000000002 /* Sources */ = {isa = PBXGroup; children = (
+			A20000000000000000000001, A20000000000000000000002, A20000000000000000000003, A20000000000000000000004, A20000000000000000000005, A20000000000000000000006, A20000000000000000000007, A20000000000000000000008, A20000000000000000000009, A20000000000000000000010, A20000000000000000000011, A20000000000000000000012, A20000000000000000000013, A20000000000000000000014, A20000000000000000000015, A20000000000000000000016, A20000000000000000000017, A20000000000000000000018, A20000000000000000000019, A20000000000000000000020, A20000000000000000000021, A20000000000000000000022, A20000000000000000000023, A20000000000000000000024, A20000000000000000000025, A20000000000000000000026, A20000000000000000000027, A20000000000000000000028, A20000000000000000000029, A20000000000000000000030, A20000000000000000000031, A20000000000000000000032, A20000000000000000000033, A20000000000000000000034, A20000000000000000000035, A20000000000000000000036, A20000000000000000000037, A20000000000000000000038, A20000000000000000000039, A20000000000000000000040, A20000000000000000000041, A20000000000000000000042); path = Sources; sourceTree = "<group>"; };
+		A40000000000000000000003 /* Tests */ = {isa = PBXGroup; children = (A20000000000000000000043, A20000000000000000000044, A20000000000000000000047, A20000000000000000000048); path = Tests; sourceTree = "<group>"; };
+		A40000000000000000000004 /* Products */ = {isa = PBXGroup; children = (A20000000000000000000045, A20000000000000000000046); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A50000000000000000000001 /* ResonanceApp */ = {isa = PBXNativeTarget; buildConfigurationList = A60000000000000000000001; buildPhases = (A70000000000000000000001 /* Sources */, A30000000000000000000001 /* Frameworks */, A80000000000000000000001 /* Resources */); buildRules = (); dependencies = (); name = ResonanceApp; productName = ResonanceApp; productReference = A20000000000000000000045; productType = "com.apple.product-type.application"; };
+		A50000000000000000000002 /* ResonanceAppTests */ = {isa = PBXNativeTarget; buildConfigurationList = A60000000000000000000002; buildPhases = (A70000000000000000000002 /* Sources */, A30000000000000000000002 /* Frameworks */); buildRules = (); dependencies = (A90000000000000000000001 /* PBXTargetDependency */); name = ResonanceAppTests; productName = ResonanceAppTests; productReference = A20000000000000000000046; productType = "com.apple.product-type.bundle.unit-test"; };
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AA00000000000000000000001 /* Project object */ = {isa = PBXProject; attributes = { LastSwiftUpdateCheck = 2630; LastUpgradeCheck = 2630; TargetAttributes = { A50000000000000000000001 = { CreatedOnToolsVersion = 26.3; }; A50000000000000000000002 = { CreatedOnToolsVersion = 26.3; TestTargetID = A50000000000000000000001; }; }; }; buildConfigurationList = A60000000000000000000003; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = A40000000000000000000001; productRefGroup = A40000000000000000000004; projectDirPath = ""; projectRoot = ""; targets = (A50000000000000000000001, A50000000000000000000002); };
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A80000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001 /* mock-university.json in Resources */); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A70000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000002,A10000000000000000000003,A10000000000000000000004,A10000000000000000000005,A10000000000000000000006,A10000000000000000000007,A10000000000000000000008,A10000000000000000000009,A10000000000000000000010,A10000000000000000000011,A10000000000000000000012,A10000000000000000000013,A10000000000000000000014,A10000000000000000000015,A10000000000000000000016,A10000000000000000000017,A10000000000000000000018,A10000000000000000000019,A10000000000000000000020,A10000000000000000000021,A10000000000000000000022,A10000000000000000000023,A10000000000000000000024,A10000000000000000000025,A10000000000000000000026,A10000000000000000000027,A10000000000000000000028,A10000000000000000000029,A10000000000000000000030,A10000000000000000000031,A10000000000000000000032,A10000000000000000000033,A10000000000000000000034,A10000000000000000000035,A10000000000000000000036,A10000000000000000000037,A10000000000000000000038,A10000000000000000000039,A10000000000000000000040,A10000000000000000000041,A10000000000000000000042); runOnlyForDeploymentPostprocessing = 0; };
+		A70000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000043,A10000000000000000000044,A10000000000000000000045,A10000000000000000000046); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AB00000000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; SWIFT_VERSION = 5.9; }; name = Debug; };
+		AB00000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; SWIFT_VERSION = 5.9; }; name = Release; };
+		AB00000000000000000000003 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = ""; ENABLE_TESTABILITY = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Sources/Resources/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = edu.university.resonance; PRODUCT_NAME = ResonanceApp; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.9; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
+		AB00000000000000000000004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = ""; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Sources/Resources/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = edu.university.resonance; PRODUCT_NAME = ResonanceApp; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.9; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Release; };
+		AB00000000000000000000005 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = ""; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = edu.university.resonance.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.9; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ResonanceApp.app/ResonanceApp"; }; name = Debug; };
+		AB00000000000000000000006 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = ""; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = edu.university.resonance.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.9; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ResonanceApp.app/ResonanceApp"; }; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A60000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (AB00000000000000000000003, AB00000000000000000000004); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A60000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (AB00000000000000000000005, AB00000000000000000000006); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A60000000000000000000003 = {isa = XCConfigurationList; buildConfigurations = (AB00000000000000000000001, AB00000000000000000000002); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+
+/* Begin PBXTargetDependency section */
+		A90000000000000000000001 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A50000000000000000000001 /* ResonanceApp */; };
+/* End PBXTargetDependency section */
+	};
+	rootObject = AA00000000000000000000001 /* Project object */;
+}

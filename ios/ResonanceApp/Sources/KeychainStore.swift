@@ -5,6 +5,8 @@ import Security
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "resonance", category: "KeychainStore")
 
 enum KeychainStore {
+    static let itemAccessibility = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+
     static func accountKey(for key: String) -> String {
         "\(AppConfig.keychainNamespace).\(key)"
     }
@@ -16,7 +18,7 @@ enum KeychainStore {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: accountKey,
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+            kSecAttrAccessible as String: itemAccessibility
         ]
         let deleteStatus = SecItemDelete(query as CFDictionary)
         if deleteStatus != errSecSuccess && deleteStatus != errSecItemNotFound {
@@ -40,7 +42,7 @@ enum KeychainStore {
         var item: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         if status == errSecSuccess, let data = item as? Data {
-            return String(decoding: data, as: UTF8.self)
+            return String(bytes: data, encoding: .utf8)
         }
         if status != errSecSuccess && status != errSecItemNotFound {
             logger.error("Keychain get error for \(accountKey): OSStatus \(status)")

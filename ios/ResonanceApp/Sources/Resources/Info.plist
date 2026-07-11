@@ -4,8 +4,12 @@
 <dict>
     <key>CFBundleName</key>
     <string>Resonance</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
     <string>edu.university.resonance</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleShortVersionString</key>
@@ -36,5 +40,7 @@
     </dict>
     <key>NSMicrophoneUsageDescription</key>
     <string>Recording practice audio requires microphone access.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Recording consented teaching lessons requires camera access.</string>
 </dict>
 </plist>

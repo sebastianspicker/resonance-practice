@@ -8,20 +8,38 @@ PATTERNS=(
   "server/dist/**"
   "server/node_modules/**"
   "ios/ResonanceApp/.build/**"
+  ".codacy/generated/**"
+  ".codacy/logs/**"
+  ".codacy/tmp/**"
+  ".codacy/tools-configs/**"
+  ".codacy/cli-config.yaml"
+  ".codacy/codacy.yaml"
+  ".codacy/configure-*.json"
+  ".codacy/*-summary.json"
+  ".codegraph/**"
+  ".serena/**"
+  "docs/archive/**"
+  "AGENTS.md"
+  "internal/**"
+  "private/**"
+  "privat/**"
 )
 
 violations=0
 for pattern in "${PATTERNS[@]}"; do
-  if git ls-files -- "$pattern" | grep -q .; then
-    echo "Tracked build artifact matches pattern: $pattern" >&2
-    git ls-files -- "$pattern" >&2
-    violations=1
-  fi
+  matches="$(git ls-files -- "$pattern")"
+  while IFS= read -r path; do
+    if [[ -n "$path" && -e "$path" ]]; then
+      echo "Tracked publication-boundary violation matches pattern: $pattern" >&2
+      echo "$path" >&2
+      violations=1
+    fi
+  done <<< "$matches"
 done
 
 if [[ "$violations" -ne 0 ]]; then
-  echo "Build artifact guard failed." >&2
+  echo "Publication-boundary guard failed." >&2
   exit 1
 fi
 
-echo "Build artifact guard passed."
+echo "Publication-boundary guard passed."

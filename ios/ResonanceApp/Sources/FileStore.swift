@@ -28,6 +28,12 @@ enum FileStore {
         return mediaDirectory().appendingPathComponent(filename)
     }
 
+    static func createVideoFileURL(entryId: String, fileExtension: String = "mp4") -> URL {
+        let safeExtension = fileExtension.isEmpty ? "mp4" : fileExtension
+        let filename = "video_\(entryId)_\(UUID().uuidString).\(safeExtension)"
+        return mediaDirectory().appendingPathComponent(filename)
+    }
+
     static func setFileProtection(url: URL) {
         // Guard against applying attributes to a path that does not yet exist on disk.
         guard FileManager.default.fileExists(atPath: url.path) else {

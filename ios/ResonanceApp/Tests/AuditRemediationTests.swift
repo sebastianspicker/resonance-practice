@@ -1,5 +1,6 @@
 import XCTest
 import Foundation
+import Security
 import SwiftData
 @testable import ResonanceApp
 
@@ -136,6 +137,28 @@ final class CalendarRefreshSafetyTests: XCTestCase {
     }
 
     @MainActor
+    func testOversizedCalendarContentDoesNotClearExistingEvents() async throws {
+        let container = PersistenceController.createContainer(inMemory: true)
+        insertCalendarEvent(id: "existing", into: container.mainContext)
+
+        let url = URL(string: "https://calendar.example.test/feed.ics")!
+        let oversized = "BEGIN:VCALENDAR\n" + String(repeating: "A", count: 1_048_577)
+        let service = CalendarService(session: makeSession(for: url) { _ in
+            (HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(oversized.utf8))
+        })
+
+        do {
+            try await service.refresh(from: url, modelContext: container.mainContext)
+            XCTFail("Expected refresh to throw for oversized calendar content")
+        } catch let error as CalendarError {
+            XCTAssertEqual(error, .calendarDataTooLarge)
+        }
+
+        let events = try container.mainContext.fetch(FetchDescriptor<CalendarEvent>())
+        XCTAssertEqual(events.map(\.id), ["existing"])
+    }
+
+    @MainActor
     private func insertCalendarEvent(id: String, into modelContext: ModelContext) {
         let event = CalendarEvent(
             id: id,
@@ -159,6 +182,164 @@ final class CalendarRefreshSafetyTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
         return URLSession(configuration: configuration)
+    }
+}
+
+final class LocalAuthSecurityTests: XCTestCase {
+    func testRefreshTokensUseDeviceOnlyKeychainAccessibility() {
+        XCTAssertEqual(
+            KeychainStore.itemAccessibility as String,
+            kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
+        )
+    }
+
+    @MainActor
+    func testSignOutClearsInMemorySessionImmediately() {
+        let authManager = AuthManager(apiClient: APIClient())
+        authManager.session = AuthSession(
+            accessToken: makeUnexpiredJWT(),
+            refreshToken: "refresh-token",
+            userId: "student-1",
+            displayName: "Student",
+            globalRole: "student"
+        )
+
+        authManager.signOut()
+
+        XCTAssertNil(authManager.session)
+    }
+}
+
+final class SubmitEntryStateTests: XCTestCase {
+    override func tearDown() {
+        MockURLProtocol.requestHandler = nil
+        super.tearDown()
+    }
+
+    @MainActor
+    func testSubmitEntryMarksLocalEntrySubmittedOnlyAfterServerSuccess() async throws {
+        let container = PersistenceController.createContainer(inMemory: true)
+        let modelContext = container.mainContext
+        let entry = makeSubmittableEntry(id: "entry-submit-success")
+        modelContext.insert(entry)
+        try modelContext.save()
+
+        let expectedURL = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entry.id)/submit")
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url, expectedURL)
+            XCTAssertEqual(request.httpMethod, "POST")
+            return (
+                HTTPURLResponse(url: expectedURL, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                submitEntryResponseJSON(id: entry.id, status: "submitted")
+            )
+        }
+
+        let executor = makeSubmitExecutor(modelContext: modelContext)
+        let item = makeSubmitQueueItem(entryId: entry.id)
+
+        try await executor.execute(item: item, accessToken: "access-token")
+
+        XCTAssertEqual(entry.status, .submitted)
+    }
+
+    @MainActor
+    func testSubmitEntryFailureLeavesLocalEntryDraft() async throws {
+        let container = PersistenceController.createContainer(inMemory: true)
+        let modelContext = container.mainContext
+        let entry = makeSubmittableEntry(id: "entry-submit-rejected")
+        modelContext.insert(entry)
+        try modelContext.save()
+
+        let expectedURL = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entry.id)/submit")
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url, expectedURL)
+            XCTAssertEqual(request.httpMethod, "POST")
+            let body = """
+            {
+                "error": {
+                    "code": "ARTIFACTS_NOT_UPLOADED",
+                    "message": "All artifacts must be uploaded before submitting"
+                }
+            }
+            """.data(using: .utf8)!
+            return (
+                HTTPURLResponse(url: expectedURL, statusCode: 409, httpVersion: nil, headerFields: nil)!,
+                body
+            )
+        }
+
+        let executor = makeSubmitExecutor(modelContext: modelContext)
+        let item = makeSubmitQueueItem(entryId: entry.id)
+
+        do {
+            try await executor.execute(item: item, accessToken: "access-token")
+            XCTFail("Expected submit to throw the server rejection")
+        } catch let error as APIError {
+            XCTAssertEqual(error.error.code, "ARTIFACTS_NOT_UPLOADED")
+        }
+
+        XCTAssertEqual(entry.status, .draft)
+    }
+
+    @MainActor
+    private func makeSubmitExecutor(modelContext: ModelContext) -> TaskExecutor {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        return TaskExecutor(
+            apiClient: APIClient(session: URLSession(configuration: configuration)),
+            store: QueueStore(modelContext: modelContext),
+            session: URLSession(configuration: .ephemeral)
+        )
+    }
+
+    private func makeSubmittableEntry(id: String) -> LocalPracticeEntry {
+        let entry = LocalPracticeEntry(
+            id: id,
+            courseId: "course-1",
+            studentId: "student-1",
+            details: PracticeEntryDetails(practiceDate: Date(timeIntervalSince1970: 1_771_848_000), goalText: "Submitted only after server success", durationSeconds: nil, tags: ["tone"], notes: nil),
+            status: .draft
+        )
+        let artifact = LocalArtifact(
+            id: "\(id)-artifact",
+            entryId: id,
+            type: .audio,
+            durationSeconds: 30,
+            localPath: "/tmp/\(id).m4a"
+        )
+        artifact.uploadState = .uploaded
+        artifact.syncPhase = .uploaded
+        entry.artifacts.append(artifact)
+        return entry
+    }
+
+    private func makeSubmitQueueItem(entryId: String) -> SyncQueueItem {
+        guard let data = try? JSONSerialization.data(withJSONObject: ["entryId": entryId]) else {
+            preconditionFailure("A string-only submission payload must be JSON-serializable")
+        }
+        guard let payloadJSON = String(bytes: data, encoding: .utf8) else {
+            preconditionFailure("A JSON submission payload must be valid UTF-8")
+        }
+        return SyncQueueItem(
+            id: "\(entryId)-submit",
+            type: SyncTaskType.submitEntry.rawValue,
+            payloadJSON: payloadJSON
+        )
+    }
+}
+
+final class CameraPrivacyConfigurationTests: XCTestCase {
+    func testInfoPlistDeclaresCameraUsageDescription() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let packageRoot = testFile.deletingLastPathComponent().deletingLastPathComponent()
+        let infoPlistURL = packageRoot.appendingPathComponent("Sources/Resources/Info.plist")
+        let data = try Data(contentsOf: infoPlistURL)
+        let plist = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        )
+
+        let cameraPurpose = try XCTUnwrap(plist["NSCameraUsageDescription"] as? String)
+        XCTAssertFalse(cameraPurpose.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 }
 
@@ -217,7 +398,7 @@ final class EntryDeletionCoordinatorTests: XCTestCase {
         entry.artifacts.append(artifact)
         modelContext.insert(entry)
         modelContext.insert(artifact)
-        modelContext.insert(makeQueueItem(id: "upload-artifact", type: .uploadArtifact, payload: ["artifactId": artifact.id], status: .failed))
+        modelContext.insert(makeQueueItem(id: "sync-artifact", type: .syncArtifact, payload: ["artifactId": artifact.id], status: .failed))
         try modelContext.save()
 
         let result = try EntryDeletionCoordinator.delete(entry: entry, modelContext: modelContext) { type, payload in
@@ -240,11 +421,7 @@ final class EntryDeletionCoordinatorTests: XCTestCase {
             id: id,
             courseId: "course-1",
             studentId: "student-1",
-            practiceDate: Date(),
-            goalText: "Goal",
-            durationSeconds: nil,
-            tags: [],
-            notes: nil,
+            details: PracticeEntryDetails(practiceDate: Date(), goalText: "Goal", durationSeconds: nil, tags: [], notes: nil),
             status: .draft
         )
     }
@@ -255,8 +432,13 @@ final class EntryDeletionCoordinatorTests: XCTestCase {
         payload: [String: Any],
         status: SyncStatus
     ) -> SyncQueueItem {
-        let data = try! JSONSerialization.data(withJSONObject: payload)
-        let item = SyncQueueItem(id: id, type: type.rawValue, payloadJSON: String(decoding: data, as: UTF8.self))
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else {
+            preconditionFailure("The supplied queue payload must be JSON-serializable")
+        }
+        guard let payloadJSON = String(bytes: data, encoding: .utf8) else {
+            preconditionFailure("A JSON queue payload must be valid UTF-8")
+        }
+        let item = SyncQueueItem(id: id, type: type.rawValue, payloadJSON: payloadJSON)
         item.status = status.rawValue
         return item
     }
@@ -290,6 +472,27 @@ private final class MockURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+private func submitEntryResponseJSON(id: String, status: String) -> Data {
+    """
+    {
+        "id": "\(id)",
+        "courseId": "course-1",
+        "studentId": "student-1",
+        "kind": "practice",
+        "practiceDate": "2026-02-23T12:00:00Z",
+        "goalText": "Submitted only after server success",
+        "durationSeconds": null,
+        "tags": ["tone"],
+        "notes": null,
+        "status": "\(status)",
+        "consentConfirmedAt": null,
+        "consentScope": null,
+        "captureProfile": null,
+        "captureMarkers": []
+    }
+    """.data(using: .utf8)!
 }
 
 private func makeUnexpiredJWT() -> String {

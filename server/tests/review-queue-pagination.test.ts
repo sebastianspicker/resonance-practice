@@ -205,23 +205,21 @@ describe('GET /courses/:courseId/review-queue pagination', () => {
     expect(res.body.error.message).toContain('cursor');
   });
 
-  it('rejects cursor IDs from courses outside the review queue scope', async () => {
-    const otherStudent = await prisma.user.create({
-      data: { id: 'student-other-course', displayName: 'Other Student', globalRole: 'student' },
+  it('rejects cursor ids outside the teacher review queue scope', async () => {
+    await prisma.user.create({
+      data: { id: 'foreign-student', displayName: 'Foreign Student', globalRole: 'student' },
     });
-    const otherCourse = await prisma.course.create({
-      data: { id: 'COURSE_OTHER', title: 'Other Course' },
-    });
-    await prisma.membership.create({
-      data: { userId: otherStudent.id, courseId: otherCourse.id, roleInCourse: 'student' },
+    await prisma.course.create({
+      data: { id: 'COURSE_FOREIGN', title: 'Foreign Course' },
     });
     await prisma.practiceEntry.create({
       data: {
-        id: 'foreign-course-cursor',
-        courseId: otherCourse.id,
-        studentId: otherStudent.id,
-        practiceDate: new Date('2025-06-01T10:00:00.000Z'),
-        goalText: 'Foreign course entry',
+        id: 'foreign-review-cursor',
+        courseId: 'COURSE_FOREIGN',
+        studentId: 'foreign-student',
+        practiceDate: new Date('2025-06-30T10:00:00.000Z'),
+        createdAt: new Date('2025-06-30T10:00:00.000Z'),
+        goalText: 'Foreign review cursor',
         tags: [],
         status: 'submitted',
       },
@@ -229,7 +227,7 @@ describe('GET /courses/:courseId/review-queue pagination', () => {
 
     const token = await login('teacher');
     const res = await request(app.server)
-      .get('/courses/COURSE_TEST/review-queue?cursor=foreign-course-cursor')
+      .get('/courses/COURSE_TEST/review-queue?cursor=foreign-review-cursor')
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(400);

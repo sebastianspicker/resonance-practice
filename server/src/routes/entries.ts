@@ -1,14 +1,16 @@
 import type { S3Client } from '@aws-sdk/client-s3';
-import type { PrismaClient } from '@prisma/client';
+import type { PracticeEntry, PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { limits } from '../config.js';
 import { ErrorCodes } from '../errorCodes.js';
 import { ApiError, withPrismaErrors } from '../errors.js';
 import { cascadeDeleteEntry, cleanupS3Objects } from '../services/entryCascade.js';
 import {
+  requireBoolean,
   requireClientId,
   requireCourseRole,
   requireEntryAccess,
+  requireEnum,
   requireField,
   requireNumber,
   requireString,
@@ -16,6 +18,248 @@ import {
   requireStudentOwner,
   requireValidDate,
 } from '../validation.js';
+
+const CAPTURE_PROFILES = [
+  'room_overview',
+  'teacher_learner',
+  'instrument_closeup',
+  'ensemble_group',
+  'group_work',
+] as const;
+
+const CAPTURE_MARKER_KINDS = [
+  'phase_setup',
+  'phase_modeling',
+  'phase_guided_practice',
+  'phase_student_work',
+  'phase_feedback',
+  'phase_reflection',
+  'moment_question',
+  'moment_musical_model',
+  'moment_student_response',
+  'moment_transition',
+  'privacy_note',
+] as const;
+
+const RESTRICTED_ENTRY_PATCH_FIELDS = [
+  'goalText',
+  'practiceDate',
+  'tags',
+  'durationSeconds',
+  'notes',
+  'kind',
+  'consentConfirmed',
+  'consentScope',
+  'captureProfile',
+];
+
+type EntryKind = 'practice' | 'teaching_lesson';
+type ConsentScope = 'private_course_review';
+type CaptureProfile = (typeof CAPTURE_PROFILES)[number];
+
+type EntryMetadata = {
+  kind: EntryKind;
+  consentConfirmedAt: Date | null;
+  consentScope: ConsentScope | null;
+  captureProfile: CaptureProfile | null;
+};
+
+type EntryPatchBase = Pick<
+  PracticeEntry,
+  'kind' | 'consentConfirmedAt' | 'consentScope' | 'captureProfile'
+>;
+
+function normalizeTags(rawTags: unknown) {
+  const tags = requireStringArray(rawTags, 'tags', { max: limits.maxTags });
+  const normalized: string[] = [];
+  for (let index = 0; index < limits.maxTags; index += 1) {
+    if (index >= tags.length) break;
+    normalized.push(
+      requireString(tags[index], 'tags[]', { minLength: 1, max: limits.maxTagLength })
+    );
+  }
+  return normalized;
+}
+
+function optionalDurationSeconds(body: Record<string, unknown>) {
+  if (body.durationSeconds === undefined) {
+    return null;
+  }
+  return requireNumber(body.durationSeconds, 'durationSeconds', {
+    integer: true,
+    min: 0,
+    max: limits.maxDurationSeconds,
+  });
+}
+
+function nullablePatchDurationSeconds(value: unknown) {
+  if (value === null) {
+    return null;
+  }
+  return requireNumber(value, 'durationSeconds', {
+    integer: true,
+    min: 0,
+    max: limits.maxDurationSeconds,
+  });
+}
+
+function validateEntryMetadata(metadata: EntryMetadata) {
+  if (
+    metadata.kind === 'practice' &&
+    (metadata.consentConfirmedAt !== null || metadata.consentScope !== null)
+  ) {
+    throw new ApiError(
+      400,
+      ErrorCodes.VALIDATION_ERROR,
+      'Consent metadata is only valid for teaching lesson entries'
+    );
+  }
+  if (metadata.consentConfirmedAt === null && metadata.consentScope !== null) {
+    throw new ApiError(
+      400,
+      ErrorCodes.VALIDATION_ERROR,
+      'consentScope is only valid when consentConfirmed is true'
+    );
+  }
+  if (metadata.consentConfirmedAt !== null && metadata.consentScope === null) {
+    throw new ApiError(
+      400,
+      ErrorCodes.VALIDATION_ERROR,
+      'consentScope is required when consentConfirmed is true'
+    );
+  }
+  if (metadata.kind === 'practice' && metadata.captureProfile !== null) {
+    throw new ApiError(
+      400,
+      ErrorCodes.VALIDATION_ERROR,
+      'captureProfile is only valid for teaching lesson entries'
+    );
+  }
+}
+
+function parseEntryCreateBody(body: Record<string, unknown>) {
+  const consentConfirmed =
+    body.consentConfirmed === undefined
+      ? false
+      : requireBoolean(body.consentConfirmed, 'consentConfirmed');
+  const metadata = {
+    kind:
+      body.kind === undefined
+        ? 'practice'
+        : requireEnum(body.kind, 'kind', ['practice', 'teaching_lesson'] as const),
+    consentConfirmedAt: consentConfirmed ? new Date() : null,
+    consentScope:
+      body.consentScope === undefined || body.consentScope === null
+        ? null
+        : requireEnum(body.consentScope, 'consentScope', ['private_course_review'] as const),
+    captureProfile:
+      body.captureProfile === undefined || body.captureProfile === null
+        ? null
+        : requireEnum(body.captureProfile, 'captureProfile', CAPTURE_PROFILES),
+  };
+  validateEntryMetadata(metadata);
+  return {
+    id: requireClientId(requireField(body.id, 'id'), 'id'),
+    ...metadata,
+    practiceDate: requireValidDate(body.practiceDate, 'practiceDate'),
+    goalText: requireString(requireField(body.goalText, 'goalText'), 'goalText', {
+      minLength: 1,
+    }),
+    durationSeconds: optionalDurationSeconds(body),
+    tags: body.tags === undefined ? [] : normalizeTags(body.tags),
+    notes:
+      body.notes === undefined || body.notes === null ? null : requireString(body.notes, 'notes'),
+  };
+}
+
+function hasRestrictedEntryPatchField(body: Record<string, unknown>) {
+  return RESTRICTED_ENTRY_PATCH_FIELDS.some((field) => field in body);
+}
+
+function applyBasicEntryPatchFields(
+  body: Record<string, unknown>,
+  updateData: Record<string, unknown>
+) {
+  if ('goalText' in body) {
+    updateData.goalText = requireString(body.goalText, 'goalText', { minLength: 1 });
+  }
+  if ('practiceDate' in body) {
+    updateData.practiceDate = requireValidDate(body.practiceDate, 'practiceDate');
+  }
+  if ('durationSeconds' in body) {
+    updateData.durationSeconds = nullablePatchDurationSeconds(body.durationSeconds);
+  }
+  if ('tags' in body) {
+    updateData.tags = normalizeTags(body.tags);
+  }
+  if ('notes' in body) {
+    updateData.notes = body.notes === null ? null : requireString(body.notes, 'notes');
+  }
+}
+
+function parseConsentScope(value: unknown) {
+  return value === null
+    ? null
+    : requireEnum(value, 'consentScope', ['private_course_review'] as const);
+}
+
+function parseCaptureProfile(value: unknown) {
+  return value === null ? null : requireEnum(value, 'captureProfile', CAPTURE_PROFILES);
+}
+
+function resolvePatchMetadata(body: Record<string, unknown>, entry: EntryPatchBase) {
+  const metadata = {
+    kind:
+      'kind' in body
+        ? requireEnum(body.kind, 'kind', ['practice', 'teaching_lesson'] as const)
+        : entry.kind,
+    consentConfirmedAt: entry.consentConfirmedAt,
+    consentScope:
+      'consentScope' in body ? parseConsentScope(body.consentScope) : entry.consentScope,
+    captureProfile:
+      'captureProfile' in body ? parseCaptureProfile(body.captureProfile) : entry.captureProfile,
+  };
+
+  if ('consentConfirmed' in body) {
+    const consentConfirmed = requireBoolean(body.consentConfirmed, 'consentConfirmed');
+    metadata.consentConfirmedAt = consentConfirmed ? new Date() : null;
+    if (!consentConfirmed) {
+      metadata.consentScope = null;
+    }
+  }
+
+  validateEntryMetadata(metadata);
+  return metadata;
+}
+
+function applyEntryMetadataPatch(
+  body: Record<string, unknown>,
+  metadata: EntryMetadata,
+  updateData: Record<string, unknown>
+) {
+  if ('kind' in body) {
+    updateData.kind = metadata.kind;
+  }
+  if (
+    'consentScope' in body ||
+    ('consentConfirmed' in body && metadata.consentConfirmedAt === null)
+  ) {
+    updateData.consentScope = metadata.consentScope;
+  }
+  if ('consentConfirmed' in body) {
+    updateData.consentConfirmedAt = metadata.consentConfirmedAt;
+  }
+  if ('captureProfile' in body) {
+    updateData.captureProfile = metadata.captureProfile;
+  }
+}
+
+function parseEntryPatchBody(body: Record<string, unknown>, entry: EntryPatchBase) {
+  const updateData: Record<string, unknown> = {};
+  applyBasicEntryPatchFields(body, updateData);
+  applyEntryMetadataPatch(body, resolvePatchMetadata(body, entry), updateData);
+  return updateData;
+}
 
 export function registerEntryRoutes(
   app: FastifyInstance,
@@ -31,41 +275,24 @@ export function registerEntryRoutes(
       throw new ApiError(403, ErrorCodes.STUDENT_ONLY, 'Only students can create entries');
     }
     const body = request.body as Record<string, unknown>;
-    const entryId = requireClientId(requireField(body?.id, 'id'), 'id');
-    const practiceDate = requireValidDate(body?.practiceDate, 'practiceDate');
-    const goalText = requireString(requireField(body?.goalText, 'goalText'), 'goalText', {
-      minLength: 1,
-    });
-    const tags =
-      body?.tags === undefined
-        ? []
-        : requireStringArray(body.tags, 'tags', { max: limits.maxTags });
-    for (const tag of tags) {
-      requireString(tag, 'tags[]', { max: limits.maxTagLength });
-    }
-    const durationSeconds =
-      body?.durationSeconds === undefined
-        ? null
-        : requireNumber(body?.durationSeconds, 'durationSeconds', {
-            integer: true,
-            min: 0,
-            max: limits.maxDurationSeconds,
-          });
-    const notes =
-      body?.notes === undefined || body?.notes === null ? null : requireString(body.notes, 'notes');
+    const entryData = parseEntryCreateBody(body);
     const created = await withPrismaErrors(
       () =>
         prisma.practiceEntry.create({
           data: {
-            id: entryId,
+            id: entryData.id,
             courseId,
             studentId: user.id,
-            practiceDate,
-            goalText,
-            durationSeconds,
-            tags,
-            notes,
+            kind: entryData.kind,
+            practiceDate: entryData.practiceDate,
+            goalText: entryData.goalText,
+            durationSeconds: entryData.durationSeconds,
+            tags: entryData.tags,
+            notes: entryData.notes,
             status: 'draft',
+            consentConfirmedAt: entryData.consentConfirmedAt,
+            consentScope: entryData.consentScope,
+            captureProfile: entryData.captureProfile,
           },
         }),
       { conflictMessage: 'An entry with this ID already exists' }
@@ -81,7 +308,11 @@ export function registerEntryRoutes(
       where: { entryId: entry.id },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
-    return { ...entry, artifacts };
+    const captureMarkers = await prisma.captureMarker.findMany({
+      where: { entryId: entry.id },
+      orderBy: [{ timeSeconds: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+    });
+    return { ...entry, artifacts, captureMarkers };
   });
 
   app.patch('/entries/:entryId', { preHandler: requireAuth }, async (request) => {
@@ -92,57 +323,11 @@ export function registerEntryRoutes(
 
     const body = request.body as Record<string, unknown>;
 
-    // Check submitted-entry lock using "field present in body" instead of truthiness
-    // This prevents bypassing the lock with falsy values like "" or 0
-    if (entry.status !== 'draft') {
-      const hasRestrictedField =
-        'goalText' in body ||
-        'practiceDate' in body ||
-        'tags' in body ||
-        'durationSeconds' in body ||
-        'notes' in body;
-      if (hasRestrictedField) {
-        throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Only draft entries can be edited');
-      }
+    if (entry.status !== 'draft' && hasRestrictedEntryPatchField(body)) {
+      throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Only draft entries can be edited');
     }
 
-    // Build update data with proper null handling
-    const updateData: Record<string, unknown> = {};
-
-    if ('goalText' in body) {
-      updateData.goalText = requireString(body.goalText, 'goalText', { minLength: 1 });
-    }
-
-    if ('practiceDate' in body) {
-      updateData.practiceDate = requireValidDate(body.practiceDate, 'practiceDate');
-    }
-
-    if ('durationSeconds' in body) {
-      // Allow explicit null to clear the field
-      if (body.durationSeconds === null) {
-        updateData.durationSeconds = null;
-      } else {
-        updateData.durationSeconds = requireNumber(body.durationSeconds, 'durationSeconds', {
-          integer: true,
-          min: 0,
-          max: limits.maxDurationSeconds,
-        });
-      }
-    }
-
-    if ('tags' in body) {
-      const tags = requireStringArray(body.tags, 'tags', { max: limits.maxTags });
-      for (const tag of tags) {
-        requireString(tag, 'tags[]', { max: limits.maxTagLength });
-      }
-      updateData.tags = tags;
-    }
-
-    if ('notes' in body) {
-      // Allow explicit null to clear the field
-      updateData.notes = body.notes === null ? null : requireString(body.notes, 'notes');
-    }
-
+    const updateData = parseEntryPatchBody(body, entry);
     const updated = await withPrismaErrors(
       () =>
         prisma.practiceEntry.update({
@@ -155,6 +340,145 @@ export function registerEntryRoutes(
       }
     );
     return updated;
+  });
+
+  app.put('/entries/:entryId/capture-markers', { preHandler: requireAuth }, async (request) => {
+    const user = request.user!;
+    const entryId = (request.params as { entryId: string }).entryId;
+    const entry = await requireEntryAccess(prisma, user, entryId);
+    await requireStudentOwner(prisma, user.id, entry, 'sync capture markers', entry.roleInCourse);
+
+    if (entry.kind !== 'teaching_lesson') {
+      throw new ApiError(
+        400,
+        ErrorCodes.VALIDATION_ERROR,
+        'Capture markers are only valid for teaching lesson entries'
+      );
+    }
+    if (entry.status === 'reviewed') {
+      throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Reviewed entries cannot be edited');
+    }
+
+    const body = request.body as Record<string, unknown>;
+    const rawMarkers = requireField(body?.markers, 'markers');
+    if (!Array.isArray(rawMarkers)) {
+      throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid array: markers');
+    }
+    if (rawMarkers.length > limits.maxMarkers) {
+      throw new ApiError(
+        400,
+        ErrorCodes.VALIDATION_ERROR,
+        `Array too large: markers (max ${limits.maxMarkers})`
+      );
+    }
+
+    const markers = rawMarkers.map((raw, index) => {
+      if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `Invalid object: markers[${index}]`);
+      }
+      const marker = raw as Record<string, unknown>;
+      return {
+        id: requireClientId(
+          requireField(marker.id, `markers[${index}].id`),
+          `markers[${index}].id`
+        ),
+        artifactId: requireClientId(
+          requireField(marker.artifactId, `markers[${index}].artifactId`),
+          `markers[${index}].artifactId`
+        ),
+        timeSeconds: requireNumber(
+          requireField(marker.timeSeconds, `markers[${index}].timeSeconds`),
+          `markers[${index}].timeSeconds`,
+          { integer: true, min: 0, max: limits.maxDurationSeconds }
+        ),
+        kind: requireEnum(
+          requireField(marker.kind, `markers[${index}].kind`),
+          `markers[${index}].kind`,
+          CAPTURE_MARKER_KINDS
+        ),
+        note:
+          marker.note === undefined || marker.note === null
+            ? null
+            : requireString(marker.note, `markers[${index}].note`, {
+                max: limits.maxMarkerTextLength,
+              }),
+      };
+    });
+
+    const markerIds = markers.map((marker) => marker.id);
+    if (new Set(markerIds).size !== markerIds.length) {
+      throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Duplicate capture marker IDs');
+    }
+
+    const artifactIds = Array.from(new Set(markers.map((marker) => marker.artifactId)));
+    const artifacts =
+      artifactIds.length === 0
+        ? []
+        : await prisma.artifact.findMany({
+            where: { id: { in: artifactIds }, entryId: entry.id },
+            select: { id: true, type: true },
+          });
+    const videoArtifactIds = new Set(
+      artifacts.filter((artifact) => artifact.type === 'video').map((artifact) => artifact.id)
+    );
+    if (artifactIds.some((artifactId) => !videoArtifactIds.has(artifactId))) {
+      throw new ApiError(
+        404,
+        ErrorCodes.ARTIFACT_NOT_FOUND,
+        'Capture marker artifact not found for this entry'
+      );
+    }
+
+    const existingMarkers =
+      markerIds.length === 0
+        ? []
+        : await prisma.captureMarker.findMany({
+            where: { id: { in: markerIds } },
+            select: { id: true, entryId: true, studentId: true },
+          });
+    if (
+      existingMarkers.some((marker) => marker.entryId !== entry.id || marker.studentId !== user.id)
+    ) {
+      throw new ApiError(
+        409,
+        ErrorCodes.ID_CONFLICT,
+        'A capture marker with this ID belongs to another entry'
+      );
+    }
+
+    return prisma.$transaction(async (tx) => {
+      for (const marker of markers) {
+        await tx.captureMarker.upsert({
+          where: { id: marker.id },
+          create: {
+            id: marker.id,
+            entryId: entry.id,
+            artifactId: marker.artifactId,
+            studentId: user.id,
+            timeSeconds: marker.timeSeconds,
+            kind: marker.kind,
+            note: marker.note,
+          },
+          update: {
+            artifactId: marker.artifactId,
+            timeSeconds: marker.timeSeconds,
+            kind: marker.kind,
+            note: marker.note,
+          },
+        });
+      }
+      await tx.captureMarker.deleteMany({
+        where: {
+          entryId: entry.id,
+          studentId: user.id,
+          ...(markerIds.length > 0 ? { id: { notIn: markerIds } } : {}),
+        },
+      });
+      return tx.captureMarker.findMany({
+        where: { entryId: entry.id },
+        orderBy: [{ timeSeconds: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      });
+    });
   });
 
   app.delete('/entries/:entryId', { preHandler: requireAuth }, async (request, reply) => {
@@ -177,12 +501,32 @@ export function registerEntryRoutes(
     if (entry.status !== 'draft') {
       throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Only draft entries can be submitted');
     }
+    if (
+      entry.kind === 'teaching_lesson' &&
+      (entry.consentConfirmedAt === null || entry.consentScope === null)
+    ) {
+      throw new ApiError(
+        409,
+        ErrorCodes.CONSENT_REQUIRED,
+        'Teaching lesson entries require confirmed consent before submission'
+      );
+    }
     const artifacts = await prisma.artifact.findMany({ where: { entryId } });
     if (artifacts.length === 0 || artifacts.some((a) => a.uploadState !== 'uploaded')) {
       throw new ApiError(
         409,
         ErrorCodes.ARTIFACTS_NOT_UPLOADED,
         'Upload artifacts before submitting'
+      );
+    }
+    if (
+      entry.kind === 'teaching_lesson' &&
+      !artifacts.some((artifact) => artifact.type === 'video')
+    ) {
+      throw new ApiError(
+        409,
+        ErrorCodes.ARTIFACTS_NOT_UPLOADED,
+        'Teaching lesson entries require an uploaded video artifact'
       );
     }
     const updated = await withPrismaErrors(

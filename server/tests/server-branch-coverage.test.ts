@@ -81,14 +81,19 @@ describe('server & artifact branch coverage', () => {
     it('returns 413 for body too large (FST_ERR_CTP_BODY_TOO_LARGE)', async () => {
       const token = await login('student');
       const largeBody = JSON.stringify({ payload: 'x'.repeat(1_100_000) });
-      const res = await request(app.server)
-        .post('/courses/COURSE_TEST/entries')
-        .set('Authorization', `Bearer ${token}`)
-        .set('Content-Type', 'application/json')
-        .send(largeBody);
-      expect(res.status).toBe(413);
-      expect(res.body.error.code).toBe('VALIDATION_ERROR');
-      expect(res.body.error.message).toBe('Request body is too large');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/courses/COURSE_TEST/entries',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        payload: largeBody,
+      });
+      const body = res.json();
+      expect(res.statusCode).toBe(413);
+      expect(body.error.code).toBe('VALIDATION_ERROR');
+      expect(body.error.message).toBe('Request body is too large');
     });
 
     it('returns 401 MISSING_AUTH for unauthenticated protected routes', async () => {

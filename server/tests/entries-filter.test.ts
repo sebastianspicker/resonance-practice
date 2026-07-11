@@ -77,4 +77,42 @@ describe('GET /courses/:courseId/entries status filter', () => {
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
     expect(res.body.error.message).toContain('cursor');
   });
+
+  it('rejects cursor ids outside the visible student entry scope', async () => {
+    await prisma.user.upsert({
+      where: { id: 'cursor-foreign-student' },
+      update: {},
+      create: {
+        id: 'cursor-foreign-student',
+        displayName: 'Foreign Student',
+        globalRole: 'student',
+      },
+    });
+    await prisma.course.upsert({
+      where: { id: 'COURSE_CURSOR_FOREIGN' },
+      update: {},
+      create: { id: 'COURSE_CURSOR_FOREIGN', title: 'Foreign Cursor Course' },
+    });
+    await prisma.practiceEntry.upsert({
+      where: { id: 'foreign-cursor-entry' },
+      update: {},
+      create: {
+        id: 'foreign-cursor-entry',
+        courseId: 'COURSE_CURSOR_FOREIGN',
+        studentId: 'cursor-foreign-student',
+        practiceDate: new Date('2025-01-01T10:00:00.000Z'),
+        goalText: 'Foreign cursor',
+        tags: [],
+        status: 'submitted',
+      },
+    });
+
+    const res = await request(app.server)
+      .get('/courses/COURSE_101/entries?cursor=foreign-cursor-entry')
+      .set('Authorization', `Bearer ${accessToken}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.message).toContain('cursor');
+  });
 });

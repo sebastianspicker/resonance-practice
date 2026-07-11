@@ -8,18 +8,23 @@ enum CalendarError: LocalizedError, Equatable {
     case invalidURL
     case invalidResponse(Int)
     case invalidCalendarData
+    case calendarDataTooLarge
 
     var errorDescription: String? {
         switch self {
         case .invalidURL: return "Invalid calendar URL scheme"
         case .invalidResponse(let statusCode): return "Calendar server returned HTTP \(statusCode)"
         case .invalidCalendarData: return "Calendar feed could not be parsed"
+        case .calendarDataTooLarge: return "Calendar feed is too large"
         }
     }
 }
 
 @MainActor
 final class CalendarService: ObservableObject {
+    private static let maxCalendarBytes = 1_048_576
+    private static let maxCalendarEvents = 1_000
+    private static let maxCalendarLineLength = 10_000
     private let session: URLSession
 
     init(session: URLSession = .shared) {
@@ -39,10 +44,16 @@ final class CalendarService: ObservableObject {
         guard (200..<300).contains(httpResponse.statusCode) else {
             throw CalendarError.invalidResponse(httpResponse.statusCode)
         }
+        guard data.count <= Self.maxCalendarBytes else {
+            throw CalendarError.calendarDataTooLarge
+        }
 
         guard let raw = String(data: data, encoding: .utf8) else {
             logger.warning("Calendar data from \(url.absoluteString) could not be decoded as UTF-8")
             throw CalendarError.invalidCalendarData
+        }
+        guard Self.isWithinCalendarBounds(raw) else {
+            throw CalendarError.calendarDataTooLarge
         }
 
         guard raw.contains("BEGIN:VCALENDAR"), raw.contains("END:VCALENDAR") else {
@@ -64,6 +75,22 @@ final class CalendarService: ObservableObject {
         existing.forEach { modelContext.delete($0) }
         records.forEach { modelContext.insert($0) }
         try modelContext.save()
+    }
+
+    private static func isWithinCalendarBounds(_ raw: String) -> Bool {
+        var eventCount = 0
+        for line in raw.split(whereSeparator: \.isNewline) {
+            if line.count > maxCalendarLineLength {
+                return false
+            }
+            if line == "BEGIN:VEVENT" {
+                eventCount += 1
+                if eventCount > maxCalendarEvents {
+                    return false
+                }
+            }
+        }
+        return true
     }
 
     private static func isAllowedCalendarURL(_ url: URL) -> Bool {

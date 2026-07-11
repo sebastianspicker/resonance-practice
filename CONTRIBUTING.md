@@ -5,15 +5,10 @@ Thanks for contributing to Resonance.
 ## Getting Started
 
 - Follow the setup in `README.md` and `docs/RUNBOOK.md`.
-- Run the fast loop before opening a PR:
+- Run the local CI loop before opening a PR:
 
 ```bash
-./scripts/secret-scan.sh
-cd server
-npm run lint
-npm run format
-npm run build
-npm test
+./scripts/ci-local.sh --with-docker
 ```
 
 ## Pull Requests
@@ -24,7 +19,7 @@ npm test
 
 ## Coding Standards
 
-- TypeScript: run `npm run lint` and `npm run format` in `server/`.
+- TypeScript: run `npm run lint` and `npm run format:check` in `server/`.
 - Swift: use Xcode defaults (avoid mass reformatting).
 
 ## Security

@@ -23,6 +23,37 @@ enum EntryStatus {
   reviewed
 }
 
+enum EntryKind {
+  practice
+  teaching_lesson
+}
+
+enum ConsentScope {
+  private_course_review
+}
+
+enum CaptureProfile {
+  room_overview
+  teacher_learner
+  instrument_closeup
+  ensemble_group
+  group_work
+}
+
+enum CaptureMarkerKind {
+  phase_setup
+  phase_modeling
+  phase_guided_practice
+  phase_student_work
+  phase_feedback
+  phase_reflection
+  moment_question
+  moment_musical_model
+  moment_student_response
+  moment_transition
+  privacy_note
+}
+
 enum ArtifactType {
   audio
   video
@@ -71,6 +102,7 @@ model User {
   memberships Membership[]
   entries     PracticeEntry[] @relation("StudentEntries")
   feedback    Feedback[]
+  captureMarkers CaptureMarker[]
   refreshTokens RefreshToken[]
 }
 
@@ -98,12 +130,16 @@ model PracticeEntry {
   courseId        String
   studentId       String
   createdAt       DateTime    @default(now())
+  kind            EntryKind   @default(practice)
   practiceDate    DateTime
   goalText        String
   durationSeconds Int?
   tags            String[]
   notes           String?
   status          EntryStatus @default(draft)
+  consentConfirmedAt DateTime?
+  consentScope    ConsentScope?
+  captureProfile  CaptureProfile?
   updatedAt       DateTime    @updatedAt
   deletedAt       DateTime?
 
@@ -111,6 +147,7 @@ model PracticeEntry {
   student User   @relation("StudentEntries", fields: [studentId], references: [id], onDelete: Cascade)
   artifacts Artifact[]
   feedback  Feedback[]
+  captureMarkers CaptureMarker[]
 
   @@index([courseId])
   @@index([studentId])
@@ -129,8 +166,28 @@ model Artifact {
   remoteUrl       String?
 
   entry PracticeEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  captureMarkers CaptureMarker[]
 
   @@index([entryId])
+}
+
+model CaptureMarker {
+  id          String            @id
+  entryId     String
+  artifactId  String
+  studentId   String
+  timeSeconds Int
+  kind        CaptureMarkerKind
+  note        String?
+  createdAt   DateTime          @default(now())
+
+  entry    PracticeEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  artifact Artifact      @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  student  User          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([entryId])
+  @@index([artifactId])
+  @@index([studentId])
 }
 
 model Feedback {

@@ -81,13 +81,12 @@ struct SyncQueueView: View {
     private func friendlyTaskType(_ type: String) -> String {
         switch type {
         case "createEntry": return "Create Entry"
-        case "createArtifact": return "Create Recording"
-        case "uploadArtifact": return "Upload Recording"
-        case "confirmArtifact": return "Confirm Upload"
         case "submitEntry": return "Submit Entry"
         case "deleteEntry": return "Delete Entry"
         case "postFeedback": return "Send Feedback"
         case "syncArtifact": return "Sync Recording"
+        case "syncCaptureProfile": return "Sync Camera Profile"
+        case "syncCaptureMarkers": return "Sync Lesson Markers"
         default: return type
         }
     }
@@ -102,83 +101,74 @@ struct SyncQueueView: View {
     }
 
     private func friendlyError(_ raw: String) -> String {
-        // Try to parse structured JSON error response: { "error": { "code": "...", "message": "..." } }
-        if let data = raw.data(using: .utf8),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let errorObj = json["error"] as? [String: Any],
-           let code = errorObj["code"] as? String {
-            return friendlyMessageForCode(code)
-        }
+        SyncErrorMessageMapper.message(for: raw)
+    }
+}
 
-        // Fallback: string-based matching for non-JSON errors (e.g. network/system errors)
+enum SyncErrorMessageMapper {
+    private static let messagesByCode: [String: String] = [
+        "MISSING_AUTH": "Session expired. Sign out and sign in again.",
+        "INVALID_TOKEN": "Session expired. Sign out and sign in again.",
+        "INVALID_REFRESH": "Session expired. Sign out and sign in again.",
+        "REFRESH_REVOKED": "Session expired. Sign out and sign in again.",
+        "REFRESH_MISMATCH": "Session expired. Sign out and sign in again.",
+        "REFRESH_ALREADY_USED": "Session expired. Sign out and sign in again.",
+        "INVALID_CODE": "Login code is invalid or expired. Try signing in again.",
+        "USER_NOT_FOUND": "Account not found. Contact your administrator.",
+        "DEV_AUTH_LOCAL_ONLY": "Dev login is only available locally.",
+        "AUTH_NOT_CONFIGURED": "Authentication is not configured on the server.",
+        "INVALID_ROLE": "Your account role does not permit this action.",
+        "STUDENT_ONLY": "This action is only available for students.",
+        "TEACHER_ONLY": "This action requires teacher access.",
+        "TEACHER_REQUIRED": "This action requires teacher access.",
+        "ENTRY_ACCESS_DENIED": "You don't have access to this resource.",
+        "COURSE_ACCESS_DENIED": "You don't have access to this resource.",
+        "NOT_FOUND": "The requested item was not found on the server.",
+        "ENTRY_NOT_FOUND": "The requested item was not found on the server.",
+        "ARTIFACT_NOT_FOUND": "The requested item was not found on the server.",
+        "COURSE_NOT_FOUND": "The requested item was not found on the server.",
+        "ENTRY_DELETED": "This entry has been deleted.",
+        "ENTRY_LOCKED": "This entry is locked and cannot be modified.",
+        "ENTRY_NOT_SUBMITTED": "This entry has not been submitted yet.",
+        "ARTIFACTS_NOT_UPLOADED": "Audio files have not finished uploading.",
+        "UPLOAD_INVALID": "Upload failed. Try re-recording the audio.",
+        "MISSING_STORAGE_KEY": "Upload failed. Try re-recording the audio.",
+        "INVALID_TARGET": "Invalid target for this operation.",
+        "VALIDATION_ERROR": "Server rejected this data. Check the entry fields.",
+        "ID_CONFLICT": "This item already exists on the server.",
+        "INTERNAL_ERROR": "Server error. Try again later.",
+        "RATE_LIMITED": "Too many requests. Please wait a moment."
+    ]
+
+    static func message(for raw: String) -> String {
+        if let code = serverErrorCode(in: raw) {
+            return message(forCode: code)
+        }
+        return fallbackMessage(for: raw)
+    }
+
+    private static func serverErrorCode(in raw: String) -> String? {
+        guard let data = raw.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let error = json["error"] as? [String: Any] else {
+            return nil
+        }
+        return error["code"] as? String
+    }
+
+    private static func fallbackMessage(for raw: String) -> String {
         let lowered = raw.lowercased()
-        if lowered.contains("urlerror") || lowered.contains("network") || lowered.contains("timed out") || lowered.contains("not connected") {
+        if ["urlerror", "network", "timed out", "not connected"].contains(where: lowered.contains) {
             return "Network connection failed. Check your internet."
         }
-        if lowered.contains("localfilenotfound") || lowered.contains("no such file") {
+        if ["localfilenotfound", "no such file"].contains(where: lowered.contains) {
             return "Recording file was lost. Re-record the audio."
         }
         return raw
     }
 
     /// Maps server error codes (from errorCodes.ts) to user-friendly messages.
-    private func friendlyMessageForCode(_ code: String) -> String {
-        switch code {
-        // Auth
-        case "MISSING_AUTH", "INVALID_TOKEN", "INVALID_REFRESH",
-             "REFRESH_REVOKED", "REFRESH_MISMATCH", "REFRESH_ALREADY_USED":
-            return "Session expired. Sign out and sign in again."
-        case "INVALID_CODE":
-            return "Login code is invalid or expired. Try signing in again."
-        case "USER_NOT_FOUND":
-            return "Account not found. Contact your administrator."
-        case "DEV_AUTH_LOCAL_ONLY":
-            return "Dev login is only available locally."
-        case "AUTH_NOT_CONFIGURED":
-            return "Authentication is not configured on the server."
-        case "INVALID_ROLE":
-            return "Your account role does not permit this action."
-
-        // Authorization
-        case "STUDENT_ONLY":
-            return "This action is only available for students."
-        case "TEACHER_ONLY", "TEACHER_REQUIRED":
-            return "This action requires teacher access."
-        case "ENTRY_ACCESS_DENIED", "COURSE_ACCESS_DENIED":
-            return "You don't have access to this resource."
-
-        // Resources
-        case "NOT_FOUND", "ENTRY_NOT_FOUND", "ARTIFACT_NOT_FOUND", "COURSE_NOT_FOUND":
-            return "The requested item was not found on the server."
-        case "ENTRY_DELETED":
-            return "This entry has been deleted."
-
-        // State
-        case "ENTRY_LOCKED":
-            return "This entry is locked and cannot be modified."
-        case "ENTRY_NOT_SUBMITTED":
-            return "This entry has not been submitted yet."
-        case "ARTIFACTS_NOT_UPLOADED":
-            return "Audio files have not finished uploading."
-        case "UPLOAD_INVALID", "MISSING_STORAGE_KEY":
-            return "Upload failed. Try re-recording the audio."
-        case "INVALID_TARGET":
-            return "Invalid target for this operation."
-
-        // Validation
-        case "VALIDATION_ERROR":
-            return "Server rejected this data. Check the entry fields."
-        case "ID_CONFLICT":
-            return "This item already exists on the server."
-
-        // Generic
-        case "INTERNAL_ERROR":
-            return "Server error. Try again later."
-        case "RATE_LIMITED":
-            return "Too many requests. Please wait a moment."
-
-        default:
-            return "Error: \(code)"
-        }
+    private static func message(forCode code: String) -> String {
+        messagesByCode[code] ?? "Error: \(code)"
     }
 }

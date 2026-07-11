@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+key_block_begin='-----BEGIN'
 patterns=(
-  '-----BEGIN (RSA|EC|DSA|OPENSSH) PRIVATE KEY-----'
-  '-----BEGIN PRIVATE KEY-----'
-  '-----BEGIN PGP PRIVATE KEY BLOCK-----'
+  "${key_block_begin} (RSA|EC|DSA|OPENSSH) PRIVATE KEY-----"
+  "${key_block_begin} PRIVATE KEY-----"
+  "${key_block_begin} PGP PRIVATE KEY BLOCK-----"
   'AKIA[0-9A-Z]{16}'
   'ASIA[0-9A-Z]{16}'
   'ghp_[0-9A-Za-z]{36}'

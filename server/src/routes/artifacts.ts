@@ -67,16 +67,13 @@ export function registerArtifactRoutes(
       throw new ApiError(410, ErrorCodes.ENTRY_DELETED, 'Entry has been deleted');
     }
     await requireStudentOwner(prisma, user.id, artifact.entry, 'presign artifacts');
-    if (artifact.uploadState === 'uploaded' || artifact.uploadState === 'uploading') {
-      throw new ApiError(
-        409,
-        ErrorCodes.UPLOAD_INVALID,
-        `Artifact is already ${artifact.uploadState}`
-      );
+    if (artifact.uploadState === 'uploaded') {
+      throw new ApiError(409, ErrorCodes.UPLOAD_INVALID, 'Artifact is already uploaded');
     }
-    // Generate new storage key if not already set (avoid overwriting existing)
+    // Preserve an existing key across retries so a second presign attempt does
+    // not strand the first uploaded object under a different storage path.
     const storageKey = artifact.storageKey ?? `artifacts/${artifact.entryId}/${artifact.id}`;
-    const contentType = artifact.type === 'audio' ? 'audio/m4a' : 'video/mp4';
+    const contentType = artifact.type === 'video' ? 'video/mp4' : 'audio/m4a';
     const command = new PutObjectCommand({
       Bucket: config.s3.bucket,
       Key: storageKey,
@@ -85,7 +82,8 @@ export function registerArtifactRoutes(
     const uploadUrl = await getSignedUrl(s3, command, {
       expiresIn: config.s3.presignTtlSeconds,
     });
-    // uploadState is guaranteed to not be 'uploaded' here (409 guard above)
+    // Move the DB state before returning the presigned URL: a later confirm can
+    // reject artifacts that were never issued an upload slot.
     await withPrismaErrors(
       () =>
         prisma.artifact.update({

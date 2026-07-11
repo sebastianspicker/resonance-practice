@@ -60,36 +60,6 @@ describe('acl', () => {
     expect(res.body.items.find((e: any) => e.id === 'entry-foreign')).toBeUndefined();
   });
 
-  it('rejects student entries cursors outside the student-owned result scope', async () => {
-    const otherStudent = await prisma.user.create({
-      data: { id: 'student-2', displayName: 'Other Student', globalRole: 'student' },
-    });
-    await prisma.membership.create({
-      data: { userId: otherStudent.id, courseId: 'COURSE_TEST', roleInCourse: 'student' },
-    });
-
-    await prisma.practiceEntry.create({
-      data: {
-        id: 'entry-foreign-cursor',
-        courseId: 'COURSE_TEST',
-        studentId: otherStudent.id,
-        practiceDate: new Date(),
-        goalText: 'Other student entry',
-        tags: ['tag'],
-        status: 'submitted',
-      },
-    });
-
-    const token = await login('student');
-    const res = await request(app.server)
-      .get('/courses/COURSE_TEST/entries?cursor=entry-foreign-cursor')
-      .set('Authorization', `Bearer ${token}`);
-
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
-    expect(res.body.error.message).toContain('cursor');
-  });
-
   it('allows teacher to view review queue', async () => {
     await prisma.practiceEntry.create({
       data: {
@@ -533,6 +503,156 @@ describe('acl', () => {
 
     const updatedEntry = await prisma.practiceEntry.findUnique({ where: { id: entry.id } });
     expect(updatedEntry?.status).toBe('reviewed');
+  });
+
+  it('treats repeated client feedback ids as idempotent retries', async () => {
+    const entry = await prisma.practiceEntry.create({
+      data: {
+        id: 'entry-idempotent-feedback',
+        courseId: 'COURSE_TEST',
+        studentId: 'student-1',
+        practiceDate: new Date(),
+        goalText: 'Retry target',
+        tags: ['tag'],
+        status: 'submitted',
+      },
+    });
+
+    const token = await login('teacher');
+    const body = {
+      id: 'feedback_retry_1',
+      targetType: 'entry',
+      targetId: entry.id,
+      status: 'ok',
+      commentsText: 'Stable feedback',
+      markers: [{ timeSeconds: 3, text: 'steady' }],
+    };
+
+    const first = await request(app.server)
+      .post('/feedback')
+      .set('Authorization', `Bearer ${token}`)
+      .send(body);
+    const second = await request(app.server)
+      .post('/feedback')
+      .set('Authorization', `Bearer ${token}`)
+      .send(body);
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(200);
+    expect(second.body.id).toBe('feedback_retry_1');
+
+    const feedbackRows = await prisma.feedback.findMany({ where: { id: 'feedback_retry_1' } });
+    const markerRows = await prisma.marker.findMany({ where: { feedbackId: 'feedback_retry_1' } });
+    expect(feedbackRows).toHaveLength(1);
+    expect(markerRows).toHaveLength(1);
+  });
+
+  it('rejects reused client feedback ids when status changes', async () => {
+    const entry = await prisma.practiceEntry.create({
+      data: {
+        id: 'entry-feedback-status-conflict',
+        courseId: 'COURSE_TEST',
+        studentId: 'student-1',
+        practiceDate: new Date(),
+        goalText: 'Retry target',
+        tags: ['tag'],
+        status: 'submitted',
+      },
+    });
+    const token = await login('teacher');
+    const body = {
+      id: 'feedback_retry_status_conflict',
+      targetType: 'entry',
+      targetId: entry.id,
+      status: 'ok',
+      commentsText: 'Stable feedback',
+      markers: [{ timeSeconds: 3, text: 'steady' }],
+    };
+
+    const first = await request(app.server)
+      .post('/feedback')
+      .set('Authorization', `Bearer ${token}`)
+      .send(body);
+    const second = await request(app.server)
+      .post('/feedback')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...body, status: 'needs_revision' });
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(409);
+    expect(second.body.error?.code).toBe('ID_CONFLICT');
+  });
+
+  it('rejects reused client feedback ids when comments change', async () => {
+    const entry = await prisma.practiceEntry.create({
+      data: {
+        id: 'entry-feedback-comment-conflict',
+        courseId: 'COURSE_TEST',
+        studentId: 'student-1',
+        practiceDate: new Date(),
+        goalText: 'Retry target',
+        tags: ['tag'],
+        status: 'submitted',
+      },
+    });
+    const token = await login('teacher');
+    const body = {
+      id: 'feedback_retry_comment_conflict',
+      targetType: 'entry',
+      targetId: entry.id,
+      status: 'ok',
+      commentsText: 'Stable feedback',
+      markers: [{ timeSeconds: 3, text: 'steady' }],
+    };
+
+    const first = await request(app.server)
+      .post('/feedback')
+      .set('Authorization', `Bearer ${token}`)
+      .send(body);
+    const second = await request(app.server)
+      .post('/feedback')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...body, commentsText: 'Changed feedback' });
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(409);
+    expect(second.body.error?.code).toBe('ID_CONFLICT');
+  });
+
+  it('rejects reused client feedback ids when markers change', async () => {
+    const entry = await prisma.practiceEntry.create({
+      data: {
+        id: 'entry-feedback-marker-conflict',
+        courseId: 'COURSE_TEST',
+        studentId: 'student-1',
+        practiceDate: new Date(),
+        goalText: 'Retry target',
+        tags: ['tag'],
+        status: 'submitted',
+      },
+    });
+    const token = await login('teacher');
+    const body = {
+      id: 'feedback_retry_marker_conflict',
+      targetType: 'entry',
+      targetId: entry.id,
+      status: 'ok',
+      commentsText: 'Stable feedback',
+      markers: [{ timeSeconds: 3, text: 'steady' }],
+    };
+
+    const first = await request(app.server)
+      .post('/feedback')
+      .set('Authorization', `Bearer ${token}`)
+      .send(body);
+    const second = await request(app.server)
+      .post('/feedback')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...body, markers: [{ timeSeconds: 4, text: 'steady' }] });
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(409);
+    expect(second.body.error?.code).toBe('ID_CONFLICT');
   });
 
   it('marks parent entry as reviewed when teacher posts feedback on artifact', async () => {

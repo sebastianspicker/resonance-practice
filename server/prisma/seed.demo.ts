@@ -1,13 +1,10 @@
 import { PrismaClient } from '@prisma/client';
+import type { DemoFixture } from './demoFixture.js';
 import { loadDemoFixture, resetDemoData } from './demoFixture.js';
 
 const prisma = new PrismaClient();
 
-async function main() {
-  const fixture = await loadDemoFixture();
-
-  await resetDemoData(prisma);
-
+async function seedUsers(fixture: DemoFixture) {
   for (const user of fixture.users) {
     await prisma.user.upsert({
       where: { id: user.id },
@@ -22,7 +19,9 @@ async function main() {
       },
     });
   }
+}
 
+async function seedCourses(fixture: DemoFixture) {
   for (const course of fixture.courses) {
     await prisma.course.upsert({
       where: { id: course.id },
@@ -35,7 +34,9 @@ async function main() {
       },
     });
   }
+}
 
+async function seedMemberships(fixture: DemoFixture) {
   for (const membership of fixture.memberships) {
     await prisma.membership.upsert({
       where: {
@@ -54,80 +55,86 @@ async function main() {
       },
     });
   }
+}
 
+function entryWriteData(entry: DemoFixture['entries'][number]) {
+  return {
+    courseId: entry.courseId,
+    studentId: entry.studentId,
+    kind: entry.kind ?? 'practice',
+    practiceDate: new Date(entry.practiceDate),
+    goalText: entry.goalText,
+    durationSeconds: entry.durationSeconds,
+    tags: entry.tags,
+    notes: entry.notes,
+    status: entry.status,
+    consentConfirmedAt: entry.consentConfirmedAt ? new Date(entry.consentConfirmedAt) : null,
+    consentScope: entry.consentScope ?? null,
+    deletedAt: null,
+  };
+}
+
+async function seedEntries(fixture: DemoFixture) {
   for (const entry of fixture.entries) {
+    const writeData = entryWriteData(entry);
     await prisma.practiceEntry.upsert({
       where: { id: entry.id },
-      update: {
-        courseId: entry.courseId,
-        studentId: entry.studentId,
-        practiceDate: new Date(entry.practiceDate),
-        goalText: entry.goalText,
-        durationSeconds: entry.durationSeconds,
-        tags: entry.tags,
-        notes: entry.notes,
-        status: entry.status,
-        deletedAt: null,
-      },
+      update: writeData,
       create: {
         id: entry.id,
-        courseId: entry.courseId,
-        studentId: entry.studentId,
         createdAt: new Date(entry.createdAt),
-        practiceDate: new Date(entry.practiceDate),
-        goalText: entry.goalText,
-        durationSeconds: entry.durationSeconds,
-        tags: entry.tags,
-        notes: entry.notes,
-        status: entry.status,
-        deletedAt: null,
+        ...writeData,
       },
     });
   }
+}
 
+function artifactWriteData(artifact: DemoFixture['artifacts'][number]) {
+  return {
+    entryId: artifact.entryId,
+    type: artifact.type,
+    durationSeconds: artifact.durationSeconds,
+    uploadState: artifact.uploadState,
+    storageKey: artifact.storageKey,
+    remoteUrl: artifact.remoteUrl,
+  };
+}
+
+async function seedArtifacts(fixture: DemoFixture) {
   for (const artifact of fixture.artifacts) {
+    const writeData = artifactWriteData(artifact);
     await prisma.artifact.upsert({
       where: { id: artifact.id },
-      update: {
-        entryId: artifact.entryId,
-        type: artifact.type,
-        durationSeconds: artifact.durationSeconds,
-        uploadState: artifact.uploadState,
-        storageKey: artifact.storageKey,
-        remoteUrl: artifact.remoteUrl,
-      },
+      update: writeData,
       create: {
         id: artifact.id,
-        entryId: artifact.entryId,
-        type: artifact.type,
-        durationSeconds: artifact.durationSeconds,
         createdAt: new Date(artifact.createdAt),
-        uploadState: artifact.uploadState,
-        storageKey: artifact.storageKey,
-        remoteUrl: artifact.remoteUrl,
+        ...writeData,
       },
     });
   }
+}
 
+function feedbackWriteData(item: DemoFixture['feedback'][number]) {
+  return {
+    targetType: item.targetType,
+    targetId: item.targetId,
+    teacherId: item.teacherId,
+    status: item.status,
+    commentsText: item.commentsText,
+    createdAt: new Date(item.createdAt),
+  };
+}
+
+async function seedFeedback(fixture: DemoFixture) {
   for (const item of fixture.feedback) {
+    const writeData = feedbackWriteData(item);
     await prisma.feedback.upsert({
       where: { id: item.id },
-      update: {
-        targetType: item.targetType,
-        targetId: item.targetId,
-        teacherId: item.teacherId,
-        status: item.status,
-        commentsText: item.commentsText,
-        createdAt: new Date(item.createdAt),
-      },
+      update: writeData,
       create: {
         id: item.id,
-        targetType: item.targetType,
-        targetId: item.targetId,
-        teacherId: item.teacherId,
-        createdAt: new Date(item.createdAt),
-        status: item.status,
-        commentsText: item.commentsText,
+        ...writeData,
       },
     });
 
@@ -144,8 +151,10 @@ async function main() {
       });
     }
   }
+}
 
-  const summary = {
+function demoSummary(fixture: DemoFixture) {
+  return {
     universityName: fixture.meta.universityName,
     users: fixture.users.length,
     courses: fixture.courses.length,
@@ -154,8 +163,20 @@ async function main() {
     artifacts: fixture.artifacts.length,
     feedback: fixture.feedback.length,
   };
+}
 
-  console.log('Seeded demo fixture successfully:', summary);
+async function main() {
+  const fixture = await loadDemoFixture();
+
+  await resetDemoData(prisma);
+  await seedUsers(fixture);
+  await seedCourses(fixture);
+  await seedMemberships(fixture);
+  await seedEntries(fixture);
+  await seedArtifacts(fixture);
+  await seedFeedback(fixture);
+
+  console.log('Seeded demo fixture successfully:', demoSummary(fixture));
 }
 
 main()

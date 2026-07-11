@@ -95,6 +95,36 @@ describe('input validation', () => {
       expect(res.body.error?.code).toBe('VALIDATION_ERROR');
     });
 
+    it('rejects whitespace-only tags', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .post('/courses/COURSE_TEST/entries')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'entry-blank-tag',
+          practiceDate: new Date().toISOString(),
+          goalText: 'Test',
+          tags: ['   '],
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('stores trimmed tag values', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .post('/courses/COURSE_TEST/entries')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'entry-trimmed-tag',
+          practiceDate: new Date().toISOString(),
+          goalText: 'Test',
+          tags: ['  tone  '],
+        });
+      expect(res.status).toBe(201);
+      expect(res.body.tags).toEqual(['tone']);
+    });
+
     it('accepts tag at max length (100)', async () => {
       const token = await login('student');
       const res = await request(app.server)
@@ -107,6 +137,77 @@ describe('input validation', () => {
           tags: ['a'.repeat(100)],
         });
       expect(res.status).toBe(201);
+    });
+
+    it('accepts teaching lesson entries with consent metadata', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .post('/courses/COURSE_TEST/entries')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'entry-teaching-lesson',
+          kind: 'teaching_lesson',
+          practiceDate: new Date().toISOString(),
+          goalText: 'Film rhythm teaching segment',
+          tags: ['lehramt', 'rhythmus'],
+          consentConfirmed: true,
+          consentScope: 'private_course_review',
+          captureProfile: 'teacher_learner',
+        });
+      expect(res.status).toBe(201);
+      expect(res.body.kind).toBe('teaching_lesson');
+      expect(res.body.consentScope).toBe('private_course_review');
+      expect(res.body.captureProfile).toBe('teacher_learner');
+      expect(typeof res.body.consentConfirmedAt).toBe('string');
+    });
+
+    it('rejects captureProfile on practice entries', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .post('/courses/COURSE_TEST/entries')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'entry-practice-with-camera-profile',
+          practiceDate: new Date().toISOString(),
+          goalText: 'Normal practice',
+          tags: [],
+          captureProfile: 'room_overview',
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects invalid entry kinds', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .post('/courses/COURSE_TEST/entries')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'entry-invalid-kind',
+          kind: 'lesson',
+          practiceDate: new Date().toISOString(),
+          goalText: 'Invalid kind',
+          tags: [],
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects consent scope without confirmed teaching consent', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .post('/courses/COURSE_TEST/entries')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'entry-scope-without-consent',
+          kind: 'teaching_lesson',
+          practiceDate: new Date().toISOString(),
+          goalText: 'Film ensemble instruction',
+          tags: [],
+          consentScope: 'private_course_review',
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
     });
 
     it('rejects negative durationSeconds', async () => {
@@ -225,6 +326,26 @@ describe('input validation', () => {
       expect(res.status).toBe(400);
     });
 
+    it('rejects whitespace-only tags in PATCH', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .patch(`/entries/${entryId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ tags: ['\t  '] });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('stores trimmed tag values in PATCH', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .patch(`/entries/${entryId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ tags: ['  rhythm  '] });
+      expect(res.status).toBe(200);
+      expect(res.body.tags).toEqual(['rhythm']);
+    });
+
     it('rejects too many tags in PATCH', async () => {
       const token = await login('student');
       const tags = Array.from({ length: 31 }, (_, i) => `tag-${i}`);
@@ -257,6 +378,48 @@ describe('input validation', () => {
         .patch(`/entries/${entryId}`)
         .set('Authorization', `Bearer ${token}`)
         .send({ durationSeconds: 12.5 });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects clearing consent scope while teaching consent remains confirmed', async () => {
+      await prisma.practiceEntry.update({
+        where: { id: entryId },
+        data: {
+          kind: 'teaching_lesson',
+          consentConfirmedAt: new Date(),
+          consentScope: 'private_course_review',
+        },
+      });
+      const token = await login('student');
+      const res = await request(app.server)
+        .patch(`/entries/${entryId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ consentScope: null });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('accepts captureProfile updates for draft teaching lesson entries', async () => {
+      await prisma.practiceEntry.update({
+        where: { id: entryId },
+        data: { kind: 'teaching_lesson' },
+      });
+      const token = await login('student');
+      const res = await request(app.server)
+        .patch(`/entries/${entryId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ captureProfile: 'room_overview' });
+      expect(res.status).toBe(200);
+      expect(res.body.captureProfile).toBe('room_overview');
+    });
+
+    it('rejects captureProfile updates on practice entries', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .patch(`/entries/${entryId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ captureProfile: 'room_overview' });
       expect(res.status).toBe(400);
       expect(res.body.error?.code).toBe('VALIDATION_ERROR');
     });
@@ -300,6 +463,16 @@ describe('input validation', () => {
         .send({ id: 'artifact-dur-ok', type: 'audio', durationSeconds: 28800 });
       expect(res.status).toBe(201);
       expect(res.body.durationSeconds).toBe(28800);
+    });
+
+    it('accepts video artifact writes', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .post(`/entries/${entryId}/artifacts`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ id: 'artifact-video-accepted', type: 'video', durationSeconds: 60 });
+      expect(res.status).toBe(201);
+      expect(res.body.type).toBe('video');
     });
 
     it('rejects negative durationSeconds', async () => {
@@ -371,6 +544,38 @@ describe('input validation', () => {
           markers: [],
         });
       expect(res.status).toBe(201);
+    });
+
+    it('rejects whitespace-only commentsText', async () => {
+      const token = await login('teacher');
+      const res = await request(app.server)
+        .post('/feedback')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          targetType: 'entry',
+          targetId: entryId,
+          status: 'ok',
+          commentsText: '   \n\t',
+          markers: [],
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('stores trimmed commentsText', async () => {
+      const token = await login('teacher');
+      const res = await request(app.server)
+        .post('/feedback')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          targetType: 'entry',
+          targetId: entryId,
+          status: 'ok',
+          commentsText: '  Focus the attack.  ',
+          markers: [],
+        });
+      expect(res.status).toBe(201);
+      expect(res.body.commentsText).toBe('Focus the attack.');
     });
 
     it('rejects marker with timeSeconds exceeding upper bound', async () => {

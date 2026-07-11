@@ -41,10 +41,8 @@ enum ICalParser {
                     let key = params.first ?? parts[0]
                     current[key] = parts[1]
                     // Extract TZID parameter if present (e.g. DTSTART;TZID=America/New_York)
-                    for param in params.dropFirst() {
-                        if param.hasPrefix("TZID=") {
-                            current[key + "_TZID"] = String(param.dropFirst(5))
-                        }
+                    for param in params.dropFirst() where param.hasPrefix("TZID=") {
+                        current[key + "_TZID"] = String(param.dropFirst(5))
                     }
                 }
             }

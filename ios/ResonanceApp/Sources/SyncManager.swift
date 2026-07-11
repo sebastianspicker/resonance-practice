@@ -12,13 +12,12 @@ enum SyncStatus: String {
 
 enum SyncTaskType: String {
     case createEntry
-    case createArtifact
-    case uploadArtifact
-    case confirmArtifact
     case submitEntry
     case deleteEntry
     case postFeedback
     case syncArtifact
+    case syncCaptureProfile
+    case syncCaptureMarkers
 }
 
 /// Errors that can occur during sync operations
@@ -28,6 +27,7 @@ enum SyncError: LocalizedError {
     case localFileNotFound(String)
     case invalidPresignUrl(String)
     case localFeedbackNotFound(String)
+    case localCaptureMarkersNotFound(String)
 
     var errorDescription: String? {
         switch self {
@@ -36,6 +36,7 @@ enum SyncError: LocalizedError {
         case .localFileNotFound(let message): return message
         case .invalidPresignUrl(let message): return message
         case .localFeedbackNotFound(let message): return message
+        case .localCaptureMarkersNotFound(let message): return message
         }
     }
 }
@@ -148,15 +149,21 @@ final class SyncManager: ObservableObject {
 
         await authManager.refreshIfNeeded()
         guard authManager.session?.accessToken != nil else { return }
-        let now = Date()
-        let items: [SyncQueueItem]
+        guard let items = fetchReadyItems() else { return }
+        await process(items: items)
+        finishQueuePass(items)
+    }
+
+    private func fetchReadyItems() -> [SyncQueueItem]? {
         do {
-            items = try store.fetchReady(now: now)
+            return try store.fetchReady(now: Date())
         } catch {
             Self.logger.error("Failed to fetch pending sync items: \(error.localizedDescription)")
-            return
+            return nil
         }
+    }
 
+    private func process(items: [SyncQueueItem]) async {
         for item in items {
             do {
                 // Refresh the access token before each item so that a token
@@ -190,6 +197,9 @@ final class SyncManager: ObservableObject {
                 }
             }
         }
+    }
+
+    private func finishQueuePass(_ items: [SyncQueueItem]) {
         if !items.isEmpty {
             lastSyncedAt = Date()
         }

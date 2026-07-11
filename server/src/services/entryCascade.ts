@@ -12,9 +12,9 @@ import { ApiError, isPrismaError } from '../errors.js';
 export async function cascadeDeleteEntry(prisma: PrismaClient, entryId: string): Promise<string[]> {
   try {
     const storageKeys = await prisma.$transaction(async (tx) => {
-      // Artifact enumeration is now inside the transaction to prevent race
-      // conditions where artifacts could be added between the prefetch and
-      // the cascade deletes (fixes bug #20).
+      // Keep artifact enumeration inside the same transaction as the cascade.
+      // Otherwise an artifact created between prefetch and delete could keep
+      // feedback rows or storage keys alive after the entry is marked deleted.
       const artifacts = await tx.artifact.findMany({
         where: { entryId },
         select: { id: true, storageKey: true },

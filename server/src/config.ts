@@ -10,6 +10,39 @@ function requireEnv(name: string): string {
   return value;
 }
 
+type OidcEnv = {
+  discoveryUrl: string | undefined;
+  clientId: string | undefined;
+  clientSecret: string | undefined;
+  redirectUri: string | undefined;
+};
+
+function readOidcEnv(): OidcEnv {
+  return {
+    discoveryUrl: process.env.OIDC_DISCOVERY_URL,
+    clientId: process.env.OIDC_CLIENT_ID,
+    clientSecret: process.env.OIDC_CLIENT_SECRET,
+    redirectUri: process.env.OIDC_REDIRECT_URI,
+  };
+}
+
+function hasCompleteOidcEnv(env: OidcEnv): env is {
+  discoveryUrl: string;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+} {
+  return Boolean(env.discoveryUrl && env.clientId && env.clientSecret && env.redirectUri);
+}
+
+function requireProdOidcEnv(env: OidcEnv) {
+  if (!hasCompleteOidcEnv(env)) {
+    throw new Error(
+      'AUTH_MODE=prod requires OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, and OIDC_REDIRECT_URI to be set.'
+    );
+  }
+}
+
 /**
  * Validates that a dev login callback URL uses an allowed scheme.
  * Only `resonance://` (app custom scheme) and `http://localhost` are permitted.
@@ -69,7 +102,6 @@ export const config = {
   devLoginCallbackUrl: validateDevCallbackUrl(
     process.env.DEV_LOGIN_CALLBACK_URL ?? 'resonance://auth-callback'
   ),
-  appBaseUrl: process.env.APP_BASE_URL ?? 'http://localhost:4000',
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET ?? requireEnv('JWT_SECRET') + '-refresh',
 };
 
@@ -102,28 +134,21 @@ if (config.authMode === 'prod' && config.corsOrigins.length === 0) {
 }
 
 export const oidcConfig = (() => {
-  const discoveryUrl = process.env.OIDC_DISCOVERY_URL;
-  const clientId = process.env.OIDC_CLIENT_ID;
-  const clientSecret = process.env.OIDC_CLIENT_SECRET;
-  const redirectUri = process.env.OIDC_REDIRECT_URI;
+  const oidcEnv = readOidcEnv();
 
   if (config.authMode === 'prod') {
-    if (!discoveryUrl || !clientId || !clientSecret || !redirectUri) {
-      throw new Error(
-        'AUTH_MODE=prod requires OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, and OIDC_REDIRECT_URI to be set.'
-      );
-    }
+    requireProdOidcEnv(oidcEnv);
   }
 
-  if (!discoveryUrl || !clientId || !clientSecret || !redirectUri) {
+  if (!hasCompleteOidcEnv(oidcEnv)) {
     return null;
   }
 
   return {
-    discoveryUrl,
-    clientId,
-    clientSecret,
-    redirectUri,
+    discoveryUrl: oidcEnv.discoveryUrl,
+    clientId: oidcEnv.clientId,
+    clientSecret: oidcEnv.clientSecret,
+    redirectUri: oidcEnv.redirectUri,
     /** OIDC claim name used to determine the user's role. Default: "role". */
     roleClaim: process.env.OIDC_ROLE_CLAIM ?? 'role',
     /** Claim value that maps to the teacher role. Default: "teacher". */

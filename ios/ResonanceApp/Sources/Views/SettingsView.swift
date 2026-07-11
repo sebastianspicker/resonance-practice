@@ -28,7 +28,7 @@ struct SettingsView: View {
 
 #if DEBUG
                 Section("Debug") {
-                    Text("Dev auth URL: \(AppConfig.devLoginURL.absoluteString)")
+                    Text("Auth URL: \(AppConfig.authLoginURL.absoluteString)")
                         .font(.caption)
                         .textSelection(.enabled)
 

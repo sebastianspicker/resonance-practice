@@ -16,33 +16,52 @@ final class DemoDataManager {
 
         let usersById = Dictionary(uniqueKeysWithValues: fixture.users.map { ($0.id, $0) })
 
-        for course in fixture.courses {
-            let local = LocalCourse(id: course.id, title: course.title, roleInCourse: roleInCourse)
-            modelContext.insert(local)
+        loadCourses(fixture.courses, roleInCourse: roleInCourse)
+        let entriesById = loadEntries(fixture.entries)
+        let artifactToEntry = loadArtifacts(fixture.artifacts, entriesById: entriesById)
+        loadFeedback(fixture.feedback, usersById: usersById, entriesById: entriesById, artifactToEntry: artifactToEntry)
+        try loadQueue(fixture.syncQueue)
+        try modelContext.save()
+    }
+
+    private func loadCourses(_ courses: [DemoCourse], roleInCourse: String) {
+        for course in courses {
+            modelContext.insert(LocalCourse(id: course.id, title: course.title, roleInCourse: roleInCourse))
         }
+    }
 
+    private func loadEntries(_ entries: [DemoEntry]) -> [String: LocalPracticeEntry] {
         var entriesById: [String: LocalPracticeEntry] = [:]
-
-        for entry in fixture.entries {
+        for entry in entries {
             let localEntry = LocalPracticeEntry(
                 id: entry.id,
                 courseId: entry.courseId,
                 studentId: entry.studentId,
-                practiceDate: entry.practiceDate,
-                goalText: entry.goalText,
-                durationSeconds: entry.durationSeconds,
-                tags: entry.tags,
-                notes: entry.notes,
-                status: EntryStatus(rawValue: entry.status) ?? .draft
+                details: PracticeEntryDetails(
+                    practiceDate: entry.practiceDate,
+                    goalText: entry.goalText,
+                    durationSeconds: entry.durationSeconds,
+                    tags: entry.tags,
+                    notes: entry.notes
+                ),
+                status: EntryStatus(rawValue: entry.status) ?? .draft,
+                captureContext: CaptureContext(
+                    kind: EntryKind(rawValue: entry.kind ?? EntryKind.practice.rawValue) ?? .practice,
+                    consentConfirmedAt: entry.consentConfirmedAt,
+                    consentScope: entry.consentScope.flatMap(ConsentScope.init(rawValue:)),
+                    captureProfile: entry.captureProfile.flatMap(CaptureProfile.init(rawValue:))
+                )
             )
             localEntry.updatedAt = entry.createdAt
             modelContext.insert(localEntry)
             entriesById[entry.id] = localEntry
         }
+        return entriesById
+    }
 
+    private func loadArtifacts(_ artifacts: [DemoArtifact], entriesById: [String: LocalPracticeEntry]) -> [String: String] {
         var artifactToEntry: [String: String] = [:]
-
-        for artifact in fixture.artifacts {
+        for artifact in artifacts {
             guard let localEntry = entriesById[artifact.entryId] else { continue }
             let localArtifact = LocalArtifact(
                 id: artifact.id,
@@ -60,8 +79,11 @@ final class DemoDataManager {
             modelContext.insert(localArtifact)
             artifactToEntry[artifact.id] = artifact.entryId
         }
+        return artifactToEntry
+    }
 
-        for feedback in fixture.feedback {
+    private func loadFeedback(_ feedbackItems: [DemoFeedback], usersById: [String: DemoUser], entriesById: [String: LocalPracticeEntry], artifactToEntry: [String: String]) {
+        for feedback in feedbackItems {
             let teacherName = usersById[feedback.teacherId]?.displayName ?? "Mock Teacher"
             let localFeedback = LocalFeedback(
                 id: feedback.id,
@@ -89,22 +111,20 @@ final class DemoDataManager {
 
             modelContext.insert(localFeedback)
         }
+    }
 
-        if let queue = fixture.syncQueue {
-            for item in queue {
-                let payloadData = try JSONSerialization.data(withJSONObject: item.payload)
-                guard let payloadJSON = String(data: payloadData, encoding: .utf8) else { continue }
-                let queueItem = SyncQueueItem(id: item.id, type: item.type, payloadJSON: payloadJSON)
-                queueItem.status = item.status
-                queueItem.retryCount = item.retryCount
-                queueItem.lastError = item.lastError
-                queueItem.createdAt = item.createdAt
-                queueItem.nextAttemptAt = item.nextAttemptAt
-                modelContext.insert(queueItem)
-            }
+    private func loadQueue(_ queue: [DemoQueueItem]?) throws {
+        for item in queue ?? [] {
+            let payloadData = try JSONSerialization.data(withJSONObject: item.payload)
+            guard let payloadJSON = String(data: payloadData, encoding: .utf8) else { continue }
+            let queueItem = SyncQueueItem(id: item.id, type: item.type, payloadJSON: payloadJSON)
+            queueItem.status = item.status
+            queueItem.retryCount = item.retryCount
+            queueItem.lastError = item.lastError
+            queueItem.createdAt = item.createdAt
+            queueItem.nextAttemptAt = item.nextAttemptAt
+            modelContext.insert(queueItem)
         }
-
-        try modelContext.save()
     }
 
     func clearMockUniversityData() throws {
@@ -122,6 +142,9 @@ final class DemoDataManager {
 
         let markers = try modelContext.fetch(FetchDescriptor<LocalMarker>())
         markers.filter { $0.id.hasPrefix(demoPrefix) }.forEach(modelContext.delete)
+
+        let captureMarkers = try modelContext.fetch(FetchDescriptor<LocalCaptureMarker>())
+        captureMarkers.filter { $0.id.hasPrefix(demoPrefix) }.forEach(modelContext.delete)
 
         let queueItems = try modelContext.fetch(FetchDescriptor<SyncQueueItem>())
         queueItems.filter { $0.id.hasPrefix(demoPrefix) }.forEach(modelContext.delete)
@@ -204,6 +227,10 @@ private struct DemoEntry: Decodable {
     let tags: [String]
     let notes: String?
     let status: String
+    let kind: String?
+    let consentConfirmedAt: Date?
+    let consentScope: String?
+    let captureProfile: String?
 }
 
 private struct DemoArtifact: Decodable {

@@ -1,8 +1,6 @@
 import SwiftUI
 import SwiftData
 
-// TODO: Localization — All user-facing strings in this view (and child views) should be
-// wrapped with LocalizedStringKey / NSLocalizedString for i18n support.
 struct ContentView: View {
     let modelContext: ModelContext
     @EnvironmentObject var appState: AppState

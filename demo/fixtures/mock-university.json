@@ -162,7 +162,7 @@
   "syncQueue": [
     {
       "id": "demo_queue_failed_upload_1",
-      "type": "uploadArtifact",
+      "type": "syncArtifact",
       "status": "failed",
       "retryCount": 2,
       "lastError": "Upload request timed out",

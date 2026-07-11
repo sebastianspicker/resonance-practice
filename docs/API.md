@@ -21,6 +21,7 @@ In addition to the error codes listed below, the API uses:
 ## Auth
 
 ### POST /auth/session
+
 Exchange authorization code for tokens.
 
 Rate limit: 10 requests per minute.
@@ -29,6 +30,7 @@ Request:
 ```json
 { "code": "string", "redirectUri": "string" }
 ```
+
 - `code` (required) — authorization code, max 2048 characters.
 - `redirectUri` (optional) — validated in production mode against the registered OIDC callback URI (`OIDC_REDIRECT_URI`) or the app custom scheme (`resonance://auth-callback`). Ignored in dev mode.
 
@@ -42,6 +44,7 @@ Response:
 ```
 
 ### POST /auth/refresh
+
 Rotate refresh token. Works in both dev and production modes.
 
 Rate limit: 10 requests per minute.
@@ -57,6 +60,7 @@ Response:
 ```
 
 ### GET /auth/me
+
 Return the authenticated user's profile.
 
 Authorization: requires valid access token.
@@ -67,6 +71,7 @@ Response:
 ```
 
 ### POST /auth/logout
+
 Revoke all refresh tokens for the authenticated user.
 
 Authorization: requires valid access token.
@@ -76,7 +81,17 @@ Response:
 { "success": true }
 ```
 
+### GET /auth/login
+
+App-facing login entrypoint.
+
+- In `AUTH_MODE=dev`, redirects to `/dev/login` and keeps the localhost-only dev auth guard.
+- In `AUTH_MODE=prod`, redirects to `/auth/oidc/login`.
+
+Response: `302 Redirect`.
+
 ### GET /auth/oidc/login _(production only)_
+
 Initiates the OIDC authorization flow. Redirects the client to the configured university IdP.
 
 Only available when `OIDC_DISCOVERY_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_REDIRECT_URI` are set. Returns `501 AUTH_NOT_CONFIGURED` otherwise.
@@ -84,6 +99,7 @@ Only available when `OIDC_DISCOVERY_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`
 Response: `302 Redirect` → university IdP authorization URL.
 
 ### GET /auth/oidc/callback _(production only)_
+
 OIDC callback endpoint. Exchanges the authorization code for an ID token, upserts the user, issues an internal single-use auth code, and redirects to the iOS app custom URL scheme.
 
 Response: `302 Redirect` → `resonance://auth-callback?code=<internal-code>`
@@ -93,7 +109,8 @@ The internal code must be exchanged via `POST /auth/session` within 5 minutes.
 See [docs/SSO_BRIDGE.md](./SSO_BRIDGE.md) for the full deployment guide.
 
 ### Production Auth Flow
-1. iOS opens `/auth/oidc/login` via `ASWebAuthenticationSession`.
+
+1. iOS opens `/auth/login` via `ASWebAuthenticationSession`.
 2. Server redirects to university IdP.
 3. User authenticates; IdP redirects to `/auth/oidc/callback`.
 4. Server validates, upserts user, issues internal code, redirects to `resonance://auth-callback?code=...`.
@@ -105,23 +122,28 @@ See [docs/SSO_BRIDGE.md](./SSO_BRIDGE.md) for the full deployment guide.
 All `/dev/*` routes are localhost-only. Non-loopback requests receive a `403` with error code `DEV_AUTH_LOCAL_ONLY`.
 
 #### GET /dev/login
+
 HTML login page (ASWebAuthenticationSession) that presents persona selection links and redirects to `resonance://auth-callback`.
 
 #### GET /dev/authorize
+
 Authorize as a dev persona and redirect with an authorization code.
 
 Query parameters:
+
 - `role` (required) — `student` or `teacher`.
 
 Redirects to `resonance://auth-callback?code=...`.
 
 #### POST /dev/issue
+
 Issue a dev authorization code programmatically (useful for tests/scripts).
 
 Request:
 ```json
 { "role": "student|teacher", "userId": "string (optional)" }
 ```
+
 - `role` (optional, default `"student"`) — create/upsert a persona with this role.
 - `userId` (optional) — issue a code for an existing user by ID. If provided, `role` is ignored.
 
@@ -133,6 +155,7 @@ Response:
 ## Courses
 
 ### GET /courses
+
 Returns courses for the current user.
 
 Response (array):
@@ -143,14 +166,17 @@ Response (array):
 ```
 
 ### GET /courses/:courseId
+
 Returns course details.
 
 ## Practice Entries
 
 ### GET /courses/:courseId/entries
+
 Returns entries visible to the user, including nested `artifacts`.
 
 Optional query parameters:
+
 - `status` — filter by entry status: `draft`, `submitted`, or `reviewed`. Invalid values return `400 VALIDATION_ERROR`.
   - **Students:** without a filter, all of the student's entries are returned. With a filter, only entries matching that status are returned.
   - **Teachers:** without a filter, only `submitted` entries are returned. With a filter, entries matching that status are returned.
@@ -168,21 +194,25 @@ Response shape:
 Sort order: `practiceDate DESC`, `createdAt DESC`, `id DESC`.
 
 ### GET /entries/:entryId
-Fetch a single entry by ID, including nested `artifacts`.
+
+Fetch a single entry by ID, including nested `artifacts` and `captureMarkers`.
 
 Authorization:
+
 - Students can only fetch their own entries.
 - Teachers can fetch any entry in a course they belong to.
 
 Returns `404 ENTRY_NOT_FOUND` if the entry does not exist, `403 ENTRY_ACCESS_DENIED` if the user is not allowed to see it, and `410 ENTRY_DELETED` if the entry has been soft-deleted.
 
 ### POST /courses/:courseId/entries
+
 Create an entry. Only students can create entries.
 
 Request:
 ```json
 {
   "id": "client-generated-id",
+  "kind": "practice",
   "practiceDate": "2025-03-15",
   "goalText": "Work on arpeggios",
   "durationSeconds": 1800,
@@ -190,56 +220,86 @@ Request:
   "notes": "Optional free-text notes"
 }
 ```
+
+Teaching-lesson entry:
+```json
+{
+  "id": "client-generated-id",
+  "kind": "teaching_lesson",
+  "practiceDate": "2025-03-15T10:00:00Z",
+  "goalText": "Reflect on rhythm-teaching sequence",
+  "tags": ["lehramt", "rhythmus"],
+  "notes": "Focus on modelling, transitions, and participation.",
+  "consentConfirmed": true,
+  "consentScope": "private_course_review",
+  "captureProfile": "teacher_learner"
+}
+```
+
 - `id` (required) — client-generated ID, 1-128 alphanumeric/hyphen/underscore characters. Conflicts return `409 ID_CONFLICT`.
+- `kind` (optional, default `"practice"`) — `"practice"` or `"teaching_lesson"`.
 - `practiceDate` (required) — ISO 8601 date (`YYYY-MM-DD`) or datetime with timezone (`YYYY-MM-DDTHH:mm:ssZ`).
 - `goalText` (required) — string, max 10000 characters.
 - `durationSeconds` (optional) — number, 0-28800 (8 hours).
-- `tags` (optional, default `[]`) — string array, max 30 tags, each max 100 characters.
+- `tags` (optional, default `[]`) — string array, max 30 tags, each trimmed tag must be non-empty and max 100 characters.
 - `notes` (optional) — string or null.
+- `consentConfirmed` (optional) — boolean. Only valid for `teaching_lesson`.
+- `consentScope` (optional) — currently `"private_course_review"`. Required when `consentConfirmed` is `true`.
+- `captureProfile` (optional) — only valid for `teaching_lesson`. One of `room_overview`, `teacher_learner`, `instrument_closeup`, `ensemble_group`, `group_work`.
 
 New entries are created with status `draft`.
 
 ### PATCH /entries/:entryId
+
 Update entry fields. Only the owning student can edit.
 
-Updatable fields: `goalText`, `practiceDate`, `durationSeconds`, `tags`, `notes`. Only fields present in the request body are updated. Send `null` for `durationSeconds` or `notes` to clear those fields.
+Updatable fields: `goalText`, `practiceDate`, `durationSeconds`, `tags`, `notes`, `kind`, `consentConfirmed`, `consentScope`, `captureProfile`. Only fields present in the request body are updated. Send `null` for `durationSeconds`, `notes`, `consentScope`, or `captureProfile` to clear those fields.
 
 Restriction: if the entry status is not `draft`, updating any of these fields returns `409 ENTRY_LOCKED`.
 
 ### DELETE /entries/:entryId
+
 Hard-delete entry and associated artifacts/feedback. Storage objects are deleted from S3. Only the owning student can delete.
 
 Response: `204 No Content` (empty body).
 
 ### POST /entries/:entryId/submit
+
 Submit an entry for review. Only the owning student can submit.
 
 Preconditions:
+
 - Entry status must be `draft` (otherwise `409 ENTRY_LOCKED`).
+- Teaching-lesson entries must have `consentConfirmedAt` and `consentScope` (otherwise `409 CONSENT_REQUIRED`).
 - Entry must have at least one artifact, and all artifacts must be in `uploaded` state (otherwise `409 ARTIFACTS_NOT_UPLOADED`).
+- Teaching-lesson entries must include at least one uploaded `video` artifact; audio-only evidence is rejected with `409 ARTIFACTS_NOT_UPLOADED`.
 
 Entry lifecycle:
+
 - `draft` -> `submitted` -> `reviewed`
 - Editing and submitting are restricted to `draft` entries only.
 
 ## Artifacts
 
 ### POST /entries/:entryId/artifacts
+
 Create an artifact record. Only the owning student can add artifacts, and only to `draft` entries.
 
 Request:
 ```json
 {
   "id": "client-generated-id",
-  "type": "audio|video",
+  "type": "audio",
   "durationSeconds": 120
 }
 ```
+
 - `id` (required) — client-generated ID, 1-128 alphanumeric/hyphen/underscore characters. Conflicts return `409 ID_CONFLICT`.
 - `type` (required) — `"audio"` or `"video"`.
 - `durationSeconds` (required) — number, 0-28800 (8 hours).
 
 ### POST /artifacts/:artifactId/presign
+
 Request a pre-signed upload URL.
 
 Authorization: only the owning student of the artifact's entry can call this endpoint.
@@ -250,31 +310,82 @@ Response includes required request headers for upload:
   "uploadUrl": "...",
   "storageKey": "...",
   "expiresInSeconds": 900,
-  "requiredHeaders": { "Content-Type": "audio/m4a|video/mp4" }
+  "requiredHeaders": { "Content-Type": "audio/m4a" }
 }
 ```
 
-Content-Type is determined by artifact type: `audio/m4a` for audio, `video/mp4` for video.
+Content-Type is `audio/m4a` for audio artifacts and `video/mp4` for video artifacts.
+
+Errors:
+
+- `409 UPLOAD_INVALID` — artifact is already uploaded.
 
 ### POST /artifacts/:artifactId/confirm
+
 Confirm upload (server performs HEAD to verify the object exists and is non-empty).
 
 Authorization: only the owning student of the artifact's entry can call this endpoint.
 
 Errors:
+
 - `400 MISSING_STORAGE_KEY` — presign was not called first.
 - `409 UPLOAD_INVALID` — object not found in storage or is empty.
+
+### PUT /entries/:entryId/capture-markers
+
+Idempotently replace the manual lesson-contour marker set for a teaching-lesson video. Only the owning student can write markers. Draft and submitted teaching-lesson entries accept marker sync; reviewed entries return `409 ENTRY_LOCKED`.
+
+Request:
+```json
+{
+  "markers": [
+    {
+      "id": "client-generated-id",
+      "artifactId": "video-artifact-id",
+      "timeSeconds": 42,
+      "kind": "moment_student_response",
+      "note": "Student echoes the rhythm."
+    }
+  ]
+}
+```
+
+- `id` (required) — client-generated marker ID, 1-128 alphanumeric/hyphen/underscore characters.
+- `artifactId` (required) — video artifact ID belonging to the same entry. Audio artifacts and artifacts from other entries return `404 ARTIFACT_NOT_FOUND`.
+- `timeSeconds` (required) — integer, 0-28800.
+- `kind` (required) — one of `phase_setup`, `phase_modeling`, `phase_guided_practice`, `phase_student_work`, `phase_feedback`, `phase_reflection`, `moment_question`, `moment_musical_model`, `moment_student_response`, `moment_transition`, `privacy_note`.
+- `note` (optional) — free text, max 1000 characters.
+
+Markers omitted from the `markers` array are deleted for that entry. Send an empty array to clear all lesson-contour markers.
+
+Response:
+```json
+[
+  {
+    "id": "client-generated-id",
+    "entryId": "entry-id",
+    "artifactId": "video-artifact-id",
+    "studentId": "student-id",
+    "timeSeconds": 42,
+    "kind": "moment_student_response",
+    "note": "Student echoes the rhythm.",
+    "createdAt": "2026-04-29T12:00:00.000Z"
+  }
+]
+```
 
 ## Feedback
 
 ### GET /courses/:courseId/review-queue
+
 Teacher-only list of submitted entries with cursor-based pagination.
 
 **BREAKING CHANGE (v0.2):** Response shape changed from a bare array `[...]` to `{ items: [...], nextCursor: string | null }`.
 
 Optional query parameters:
+
 - `limit` — number of items per page (default 20, max 100). Values below 1 return `400 VALIDATION_ERROR`.
-- `cursor` — entry ID from a previous `nextCursor` value. The server returns items ordered *after* this entry. Invalid cursor IDs return `400 VALIDATION_ERROR`.
+- `cursor` — entry ID from a previous `nextCursor` value. The server returns items ordered _after_ this entry. Invalid cursor IDs return `400 VALIDATION_ERROR`.
 
 Response:
 ```json
@@ -285,12 +396,17 @@ Response:
       "courseId": "...",
       "studentId": "...",
       "studentName": "...",
+      "kind": "practice",
       "practiceDate": "...",
       "goalText": "...",
       "notes": "...",
       "tags": ["..."],
       "durationSeconds": 1800,
       "status": "submitted",
+      "consentConfirmedAt": null,
+      "consentScope": null,
+      "captureProfile": null,
+      "captureMarkerCount": 0,
       "artifacts": [...]
     }
   ],
@@ -299,18 +415,26 @@ Response:
 ```
 
 Ordering:
+
 - Deterministic order by `practiceDate desc`, `createdAt desc`, `id desc`.
 
 Pagination:
+
 - Cursor-based using entry ID. To fetch the next page, pass the `nextCursor` value from the previous response as the `cursor` query parameter.
 - When `nextCursor` is `null`, there are no more results.
 
 ### POST /feedback
+
 Create feedback on an entry or artifact. Only course teachers can leave feedback.
+
+When `id` is supplied, retries are idempotent only if the existing feedback has
+the same teacher, target, status, comments, and marker set. Reusing an `id` with
+different content returns `409 ID_CONFLICT`.
 
 Request:
 ```json
 {
+  "id": "optional-client-generated-id",
   "targetType": "entry|artifact",
   "targetId": "...",
   "status": "ok|needs_revision|next_goal",
@@ -320,22 +444,27 @@ Request:
   ]
 }
 ```
+
+- `id` (optional) — client-generated ID, 1-128 alphanumeric/hyphen/underscore characters.
 - `targetType` (required) — `"entry"` or `"artifact"`.
 - `targetId` (required) — ID of the entry or artifact.
 - `status` (required) — `"ok"`, `"needs_revision"`, or `"next_goal"`.
-- `commentsText` (required) — string, max 10000 characters.
+- `commentsText` (required) — trimmed non-empty string, max 10000 characters.
 - `markers` (optional, default `[]`) — array of time-stamped annotations, max 50 markers.
   - `timeSeconds` (required) — number, 0-28800.
   - `text` (required) — string, max 1000 characters.
 
 Preconditions:
+
 - The target entry (or the artifact's parent entry) must be in `submitted` or `reviewed` status (not `draft`; otherwise `409 ENTRY_NOT_SUBMITTED`).
 - Deleted entries return `410 ENTRY_DELETED`.
 
 Side effect:
+
 - When feedback is created, the parent entry status is set to `reviewed`.
 
 ### GET /entries/:entryId/feedback
+
 Fetch feedback for an entry.
 
 Response (array):
@@ -377,7 +506,7 @@ All errors use:
 | `INVALID_CODE` | Authorization code is invalid or expired |
 | `USER_NOT_FOUND` | User does not exist |
 | `DEV_AUTH_LOCAL_ONLY` | Dev auth routes only available from localhost |
-| `AUTH_NOT_CONFIGURED` | Production auth is not yet implemented |
+| `AUTH_NOT_CONFIGURED` | OIDC is not configured for production auth |
 | `INVALID_ROLE` | Invalid role parameter |
 | `STUDENT_ONLY` | Action restricted to the student owner |
 | `TEACHER_ONLY` | Action restricted to course teachers |
@@ -392,6 +521,7 @@ All errors use:
 | `ENTRY_LOCKED` | Entry is not in draft status |
 | `ENTRY_NOT_SUBMITTED` | Entry must be submitted before this action |
 | `ARTIFACTS_NOT_UPLOADED` | All artifacts must be uploaded before submitting |
+| `CONSENT_REQUIRED` | Teaching lesson entry requires confirmed consent before submitting |
 | `UPLOAD_INVALID` | Upload not found or empty in storage |
 | `MISSING_STORAGE_KEY` | Presign not called before confirm |
 | `INVALID_TARGET` | Invalid feedback target type |
@@ -407,8 +537,8 @@ All errors use:
 | Max duration (entry/artifact) | 28800 seconds (8 hours) |
 | Max tags per entry | 30 |
 | Max tag length | 100 characters |
-| Max markers per feedback | 50 |
-| Max marker text length | 1000 characters |
+| Max feedback/capture markers per request | 50 |
+| Max marker text/note length | 1000 characters |
 | Max marker timeSeconds | 28800 seconds (8 hours) |
 | Max commentsText length | 10000 characters |
 | Max auth code length | 2048 characters |

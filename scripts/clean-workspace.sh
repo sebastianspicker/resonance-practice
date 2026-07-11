@@ -18,6 +18,16 @@ TARGETS=(
   "ios/ResonanceApp/.build"
   "test-results"
   "reports"
+  ".codacy/generated"
+  ".codacy/logs"
+  ".codacy/tmp"
+  ".codacy/cache"
+  ".codacy/tools-configs"
+  ".codacy/cli-config.yaml"
+  ".codacy/codacy.yaml"
+  ".codegraph"
+  ".serena"
+  ".DS_Store"
 )
 
 remove_path() {

@@ -14,6 +14,9 @@ struct NewEntryView: View {
     @State private var durationSeconds = ""
     @State private var tags = ""
     @State private var notes = ""
+    @State private var entryKind: EntryKind = .practice
+    @State private var consentConfirmed = false
+    @State private var captureProfile: CaptureProfile = .teacherLearner
     @State private var selectedTemplateId: String = EntryTemplate.defaults.first?.id ?? ""
     @State private var showValidationAlert = false
     @State private var validationMessage = ""
@@ -31,6 +34,38 @@ struct NewEntryView: View {
                 
                 ScrollView {
                     VStack(spacing: 24) {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Entry Type")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .textCase(.uppercase)
+
+                            Picker("Entry type", selection: $entryKind) {
+                                Text("Practice").tag(EntryKind.practice)
+                                Text("Teaching Lesson").tag(EntryKind.teachingLesson)
+                            }
+                            .pickerStyle(.segmented)
+                            .accessibilityLabel("Entry type")
+
+                            if entryKind == .teachingLesson {
+                                Toggle("Consent confirmed for course review", isOn: $consentConfirmed)
+                                    .toggleStyle(.switch)
+                                    .tint(AppTheme.accentVibrant)
+                                    .foregroundStyle(.white)
+                                    .accessibilityLabel("Consent confirmed for course review")
+
+                                Picker("Capture profile", selection: $captureProfile) {
+                                    ForEach(CaptureProfile.allCases) { profile in
+                                        Text(profile.label).tag(profile)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .tint(.white)
+                                .accessibilityLabel("Teaching lesson capture profile")
+                            }
+                        }
+                        .glassCard()
+
                         // Template Section
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Template")
@@ -169,6 +204,10 @@ struct NewEntryView: View {
             return "Goal text is required."
         }
 
+        if entryKind == .teachingLesson && !consentConfirmed {
+            return "Teaching lesson entries require confirmed consent for course review."
+        }
+
         // Duration: must be 0..28800
         if !durationSeconds.isEmpty {
             guard let dur = Int(durationSeconds) else {
@@ -208,12 +247,20 @@ struct NewEntryView: View {
             id: UUID().uuidString,
             courseId: courseId,
             studentId: session.userId,
-            practiceDate: practiceDate,
-            goalText: goalText,
-            durationSeconds: Int(durationSeconds),
-            tags: tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) },
-            notes: notes.isEmpty ? nil : notes,
-            status: .draft
+            details: PracticeEntryDetails(
+                practiceDate: practiceDate,
+                goalText: goalText,
+                durationSeconds: Int(durationSeconds),
+                tags: tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) },
+                notes: notes.isEmpty ? nil : notes
+            ),
+            status: .draft,
+            captureContext: CaptureContext(
+                kind: entryKind,
+                consentConfirmedAt: entryKind == .teachingLesson && consentConfirmed ? Date() : nil,
+                consentScope: entryKind == .teachingLesson && consentConfirmed ? .privateCourseReview : nil,
+                captureProfile: entryKind == .teachingLesson ? captureProfile : nil
+            )
         )
         modelContext.insert(entry)
         do {

@@ -8,7 +8,7 @@ Usage: ./scripts/ci-local.sh [--with-docker]
 Runs the same repo checks as GitHub CI that are available locally.
 
 Options:
-  --with-docker   Start/stop Postgres via docker compose for this run.
+  --with-docker   Start/stop Postgres and MinIO via docker compose for this run.
 USAGE
 }
 
@@ -38,8 +38,8 @@ if [[ "$WITH_DOCKER" -eq 1 ]]; then
 		echo "docker is required for --with-docker." >&2
 		exit 1
 	fi
-	echo "Starting Postgres via docker compose..."
-	docker compose -f infra/docker-compose.yml up -d postgres
+	echo "Starting Postgres and MinIO via docker compose..."
+	docker compose -f infra/docker-compose.yml up -d postgres minio
 
 	cleanup() {
 		echo "Stopping Postgres via docker compose..."
@@ -54,6 +54,13 @@ if [[ "$WITH_DOCKER" -eq 1 ]]; then
 		fi
 		sleep 1
 	done
+	echo "Waiting for MinIO to be ready..."
+	for _ in {1..30}; do
+		if curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+			break
+		fi
+		sleep 1
+	done
 fi
 
 export DATABASE_URL="${DATABASE_URL:-postgresql://resonance:resonance@localhost:5432/resonance_test}"
@@ -62,7 +69,6 @@ export AUTH_MODE="${AUTH_MODE:-dev}"
 export JWT_SECRET="${JWT_SECRET:-CHANGE-ME-generate-a-real-secret-at-least-32-chars}"
 export DEV_UNIVERSITY_NAME="${DEV_UNIVERSITY_NAME:-Mock University Conservatory}"
 export DEV_LOGIN_CALLBACK_URL="${DEV_LOGIN_CALLBACK_URL:-resonance://auth-callback}"
-export APP_BASE_URL="${APP_BASE_URL:-http://localhost:4000}"
 export S3_ENDPOINT="${S3_ENDPOINT:-http://localhost:9000}"
 export S3_REGION="${S3_REGION:-us-east-1}"
 export S3_BUCKET="${S3_BUCKET:-resonance-dev}"
@@ -134,11 +140,8 @@ cleanup_server
 echo "Running tests with coverage..."
 (cd server && npx vitest run --coverage)
 
-if ! command -v xcodebuild >/dev/null; then
-	echo "Skipping iOS build: xcodebuild not available on this machine."
-elif find ios/ResonanceApp -maxdepth 2 \( -name '*.xcodeproj' -o -name '*.xcworkspace' \) | grep -q .; then
-	echo "Building iOS app for simulator..."
-	(cd ios/ResonanceApp && xcodebuild -scheme ResonanceApp -destination 'generic/platform=iOS Simulator' build-for-testing)
-else
-	echo "Skipping iOS build: open ios/ResonanceApp/Package.swift in Xcode; no CLI project/workspace is tracked."
-fi
+echo "Running process-level E2E tests..."
+(cd server && npm run test:e2e)
+
+echo "Running iOS simulator verification..."
+./scripts/verify-ios.sh

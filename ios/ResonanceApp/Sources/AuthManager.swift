@@ -16,8 +16,8 @@ final class AuthManager: NSObject, ObservableObject {
 
     @Published var session: AuthSession?
     /// User-visible error message from the most recent sign-in attempt.
-    /// Set on callback failure so the UI can display feedback instead of
-    /// silently doing nothing (bug #39).
+    /// Callback failures are surfaced here because ASWebAuthenticationSession
+    /// can fail before the app receives a usable callback URL.
     @Published var authError: String?
     private var authSession: ASWebAuthenticationSession?
     private let apiClient: APIClient
@@ -43,7 +43,7 @@ final class AuthManager: NSObject, ObservableObject {
 
     func signIn() {
         let callbackScheme = AppConfig.authCallbackScheme
-        let authURL = AppConfig.devLoginURL
+        let authURL = AppConfig.authLoginURL
 
         authError = nil
         authSession = ASWebAuthenticationSession(url: authURL, callbackURLScheme: callbackScheme) { [weak self] callbackURL, error in
@@ -100,11 +100,9 @@ final class AuthManager: NSObject, ObservableObject {
     }
 
     func signOut() {
-        // Capture the current session before clearing, then attempt server-side
-        // logout inside the background Task. Credentials are cleared after the
-        // API call completes (or fails) to avoid revoking tokens the server
-        // never sees.
         let currentSession = session
+        clearLocalSession()
+
         Task { @MainActor [weak self] in
             guard let self else { return }
             if let currentSession {
@@ -120,14 +118,6 @@ final class AuthManager: NSObject, ObservableObject {
                     }
                 }
             }
-
-            // Clear local credentials after the server call
-            KeychainStore.remove("accessToken")
-            KeychainStore.remove("refreshToken")
-            KeychainStore.remove("userId")
-            KeychainStore.remove("displayName")
-            KeychainStore.remove("globalRole")
-            self.session = nil
         }
     }
 
@@ -197,6 +187,15 @@ final class AuthManager: NSObject, ObservableObject {
         KeychainStore.set(session.globalRole, for: "globalRole")
         self.session = session
         self.authError = nil
+    }
+
+    private func clearLocalSession() {
+        KeychainStore.remove("accessToken")
+        KeychainStore.remove("refreshToken")
+        KeychainStore.remove("userId")
+        KeychainStore.remove("displayName")
+        KeychainStore.remove("globalRole")
+        session = nil
     }
 }
 

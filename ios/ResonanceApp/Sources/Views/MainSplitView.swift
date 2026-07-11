@@ -1,8 +1,6 @@
 import SwiftUI
 import SwiftData
 
-// TODO: Localization — All user-facing strings in this view should be wrapped with
-// LocalizedStringKey / NSLocalizedString for i18n support.
 struct MainSplitView: View {
     let modelContext: ModelContext
     @EnvironmentObject var appState: AppState
@@ -351,9 +349,14 @@ struct MainSplitView: View {
             courseId: entry.courseId,
             studentId: entry.studentId,
             studentName: displayName(for: entry.studentId),
+            kind: entry.kind.rawValue,
             practiceDate: entry.practiceDate,
             goalText: entry.goalText,
             notes: entry.notes,
+            consentConfirmedAt: entry.consentConfirmedAt,
+            consentScope: entry.consentScope?.rawValue,
+            captureProfile: entry.captureProfile?.rawValue,
+            captureMarkerCount: entry.captureMarkers.count,
             artifacts: entry.artifacts.map {
                 ArtifactResponse(
                     id: $0.id,

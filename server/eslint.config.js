@@ -28,6 +28,17 @@ export default [
     }
   },
   {
+    files: ['../scripts/**/*.js', '../scripts/**/*.mjs', 'scripts/**/*.js', 'scripts/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+        ...globals.es2021
+      }
+    }
+  },
+  {
     ignores: ['dist/**', 'node_modules/**', 'prisma/**/*.js']
   }
 ];
