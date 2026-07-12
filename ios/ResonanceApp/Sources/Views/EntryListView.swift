@@ -1,90 +1,70 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct EntryListView: View {
     let courseId: String
-    @EnvironmentObject var authManager: AuthManager
-    @EnvironmentObject var syncManager: SyncManager
-    @Environment(\.modelContext) private var modelContext
     @Query private var entries: [LocalPracticeEntry]
     @State private var showNewEntry = false
 
     init(courseId: String) {
         self.courseId = courseId
-        _entries = Query(filter: #Predicate { $0.courseId == courseId && $0.deletedAt == nil }, sort: \LocalPracticeEntry.practiceDate, order: .reverse)
+        _entries = Query(
+            filter: #Predicate { $0.courseId == courseId && $0.deletedAt == nil },
+            sort: \LocalPracticeEntry.practiceDate,
+            order: .reverse
+        )
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 16) {
-                ForEach(entries) { entry in
-                    NavigationLink(destination: EntryDetailView(entry: entry)) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(alignment: .top) {
-                                Text(entry.goalText)
-                                    .font(.headline.weight(.semibold))
-                                    .foregroundStyle(.white)
-                                    .multilineTextAlignment(.leading)
-                                    .lineLimit(3)
-                                    .minimumScaleFactor(0.85)
-                                Spacer(minLength: 16)
-                                StatusBadge(status: entry.status)
-                            }
-                            HStack {
-                                Text(entry.practiceDate, style: .date)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.white.opacity(0.7))
-                                if let duration = entry.durationSeconds, duration > 0 {
-                                    Text("\u{2022} \(formatDuration(duration))")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.white.opacity(0.7))
-                                }
-                            }
-                        }
-                        .glassCard()
+        List(entries) { entry in
+            NavigationLink(value: entry.id) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(entry.goalText).font(.headline).lineLimit(3)
+                        Spacer()
+                        StatusBadge(status: entry.status)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(entry.goalText), \(entry.status.rawValue)")
+                    HStack {
+                        Text(entry.practiceDate, style: .date)
+                        if let duration = entry.durationSeconds, duration > 0 {
+                            Text("· \(formatDuration(duration))")
+                        }
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 }
+                .padding(.vertical, 4)
             }
-            .padding(.vertical, 16)
-            .padding(.horizontal, 20)
+            .accessibilityLabel("\(entry.goalText), \(entry.status.displayLabel)")
         }
-        .scrollContentBackground(.hidden)
-        .safeAreaPadding(.horizontal, 8)
+        .navigationDestination(for: String.self) { entryId in
+            if let entry = entries.first(where: { $0.id == entryId }) {
+                EntryDetailView(entry: entry)
+            }
+        }
         .overlay {
             if entries.isEmpty {
-                EmptyStateView(
-                    icon: "music.note.list",
-                    title: "No entries yet",
-                    description: "Create your first practice entry for this course.",
-                    actionLabel: "New Entry"
-                ) {
-                    showNewEntry = true
+                ContentUnavailableView {
+                    Label("No entries yet", systemImage: "music.note.list")
+                } description: {
+                    Text("Create a draft to start recording practice evidence.")
+                } actions: {
+                    Button("Create entry") { showNewEntry = true }
+                        .buttonStyle(.borderedProminent)
                 }
             }
         }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("New Entry") { showNewEntry = true }
-            }
+            Button("Create entry", systemImage: "plus") { showNewEntry = true }
         }
-        .sheet(isPresented: $showNewEntry) {
-            NewEntryView(courseId: courseId)
-        }
+        .sheet(isPresented: $showNewEntry) { NewEntryView(courseId: courseId) }
     }
 
     private func formatDuration(_ totalSeconds: Int) -> String {
-        if totalSeconds < 60 {
-            return "\(totalSeconds)s"
-        }
         let hours = totalSeconds / 3600
         let minutes = (totalSeconds % 3600) / 60
-        if hours > 0 {
-            return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
-        }
-        return "\(minutes) min"
+        if hours > 0 { return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h" }
+        return totalSeconds < 60 ? "\(totalSeconds)s" : "\(minutes) min"
     }
 }
 
@@ -92,32 +72,21 @@ private struct StatusBadge: View {
     let status: EntryStatus
 
     var body: some View {
-        Text(label)
-            .font(.caption.weight(.bold))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(color.opacity(0.2))
-            .foregroundStyle(color)
-            .clipShape(Capsule())
-            .overlay(
-                Capsule().stroke(color.opacity(0.5), lineWidth: 1)
-            )
-            .accessibilityLabel("Status: \(label)")
+        Text(status.displayLabel)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.secondary.opacity(0.12), in: Capsule())
+            .accessibilityLabel("Status: \(status.displayLabel)")
     }
+}
 
-    private var label: String {
-        switch status {
-        case .draft: return "DRAFT"
-        case .submitted: return "SUBMITTED"
-        case .reviewed: return "REVIEWED"
-        }
-    }
-
-    private var color: Color {
-        switch status {
-        case .draft: return .white.opacity(0.6)
-        case .submitted: return .orange
-        case .reviewed: return .green
+private extension EntryStatus {
+    var displayLabel: String {
+        switch self {
+        case .draft: return "Draft"
+        case .submitted: return "Submitted"
+        case .reviewed: return "Reviewed"
         }
     }
 }

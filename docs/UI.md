@@ -1,39 +1,63 @@
-# UI (iPad)
+# Native UI Implementation Guide
 
-## Sitemap
+Resonance is a calm, offline-first workflow application. [PRODUCT.md](../PRODUCT.md) defines
+the product register and [DESIGN.md](../DESIGN.md) defines the semantic visual system.
 
-- Login
-- Courses (list)
-- Course Detail
-  - Entries list
-  - New Entry
-  - Entry Detail
-  - Submit
-- Teacher Review Queue
-- Feedback Editor
-- Calendar (ASIMUT)
-- Export
-- Settings
+## Routes
 
-## Key Screens
+```text
+University sign-in
+└── Courses
+    ├── Student course: Entries → Draft/capture → Entry detail/feedback
+    └── Teacher course: To review / Reviewed → Submission detail → Feedback
 
-- Login: ASWebAuthenticationSession; display current environment.
-- Courses: split view with course list and detail.
-- New Entry: entry type selector for practice or teaching lesson; teaching lessons require private course-review consent and capture-profile selection.
-- Entry Detail: audio player, teaching-lesson filming/import, notes, tags, upload state + sync phase, lesson-contour markers, feedback.
-- Entry List: status badges for `draft`, `submitted`, `reviewed`.
-- Recording: minimal audio controls, elapsed timer, save/cancel.
-- Teaching Lesson Camera: capture-profile picker, consent/placement check, preview-only overlays for level/safe frame, teacher movement corridor, learner/instrument/group zones, no-consent zone, static contour guides, quick lesson-contour marker buttons, elapsed timer, and audio level meter. Filmed and imported lesson videos keep their capture-profile metadata.
-- Teacher Queue: list of submitted entries with student, date, artifact count, and lesson marker count.
-- Feedback: status picker + text + optional markers + quick snippets.
-- Calendar: day/week list with cached events.
-- Export: date range picker, “Generate PDF”, and local practice stats summary.
-- Settings: active API host plus debug auth endpoint in dev builds.
+Sidebar tools: Calendar, Export (student course only), Sync status, Settings
+```
 
-## Edge Cases
+Course membership role is the authority for visible actions. Teachers are not
+offered entry creation or export. Students do not receive teacher-review tools.
 
-- Offline: show sync queue and “Last synced” indicator.
-- Partial upload: allow retry and keep local file.
-- Deleted entries: hide from lists after sync.
-- Token expiration: re-auth using refresh token.
-- Entry deletion requires explicit confirmation.
+## Shared Interaction Patterns
+
+- Use native `NavigationSplitView`, `List`, `Form`, `Section`, toolbars, sheets,
+  and `ContentUnavailableView`.
+- Keep existing content visible during refresh. Put recoverable errors beside
+  the affected content with a specific retry action.
+- Describe local, queued, uploading, submitted, reviewed, stale, and failed
+  states in text. Color is supplementary.
+- A submission tap queues its upload and metadata dependencies plus submission.
+  Repeated taps coalesce by task and entity.
+- Manual sign-out discloses pending and failed work and deletes local profile
+  data only after a destructive confirmation.
+- Teacher playback uses an authorized short-lived URL. It is never cached as a
+  teacher media file; expired and offline states remain retryable.
+
+## Forms and Capture
+
+Forms use persistent labels, inline validation, first-error focus, explicit
+save/cancel, and unsaved-change confirmation. Duration is entered in localized
+minutes. Teaching-lesson drafts can be saved without consent, but recording,
+import, and submission require explicit private-course-review consent.
+
+Audio and video capture must provide preview, accept, and retake paths. Camera
+guidance is only a composition aid; it does not analyze people or teaching.
+
+## Pilot Accessibility and Adaptation Requirements
+
+- Deployment floor: iOS/iPadOS 17.
+- Validate all Dynamic Type sizes through AX5 without shrinking text.
+- Validate core student course, draft, capture, sync, and feedback flows on iPhone.
+- Validate iPad portrait, landscape, split view, and resizable windows.
+- Frequent targets are at least 44 by 44 points.
+- Respect Bold Text, Increase Contrast, Reduce Motion, and Reduce Transparency.
+- Provide useful VoiceOver labels, values, focus order, and keyboard traversal.
+- German-primary and complete-English localization remains open; the current source contains English literals and no String Catalog.
+
+## Validation
+
+Every primary screen is exercised in loading, empty, offline, permission-denied,
+recoverable-error, and terminal-error states. Release validation covers light
+and dark appearance, German and English, iPhone and iPad, Large/AX1/AX3/AX5
+text, keyboard, VoiceOver, Voice Control, and Switch Control.
+
+These are acceptance requirements. They have not all been exercised in the current local checkout; see the release checklist for the open matrix.

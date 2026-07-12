@@ -1,116 +1,194 @@
+import AVKit
 import SwiftUI
 
 extension ReviewQueueEntry: Identifiable {}
-
+extension ArtifactResponse: Identifiable {}
 
 struct TeacherQueueView: View {
     let courseId: String
-    @EnvironmentObject var appState: AppState
-    @EnvironmentObject var authManager: AuthManager
+    @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var authManager: AuthManager
     @State private var queue: [ReviewQueueEntry] = []
     @State private var selected: ReviewQueueEntry?
     @State private var isLoading = false
+    @State private var errorMessage: String?
+    @State private var queuedFeedback = Set<String>()
 
     var body: some View {
         Group {
             if isLoading && queue.isEmpty {
-                ProgressView("Loading queue…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ProgressView("Loading submissions…")
             } else if queue.isEmpty {
                 ContentUnavailableView(
-                    "No submissions",
+                    "Nothing to review",
                     systemImage: "checkmark.circle",
-                    description: Text("All submitted entries have been reviewed.")
+                    description: Text("New submissions will appear here.")
                 )
             } else {
                 List(queue) { entry in
-                    Button {
-                        selected = entry
-                    } label: {
+                    Button { selected = entry } label: {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(entry.studentName)
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.85)
-                            Text(entry.goalText)
-                                .foregroundStyle(.white.opacity(0.9))
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.85)
                             HStack {
-                                Text(entry.practiceDate, style: .date)
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.65))
-                                Text("• \(entry.artifacts.count) artifacts")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.65))
-                                if let captureMarkerCount = entry.captureMarkerCount, captureMarkerCount > 0 {
-                                    Text("• \(captureMarkerCount) lesson markers")
+                                Text(entry.studentName).font(.headline)
+                                Spacer()
+                                if queuedFeedback.contains(entry.id) {
+                                    Label("Feedback queued", systemImage: "clock")
                                         .font(.caption)
-                                        .foregroundStyle(AppTheme.accentVibrant.opacity(0.85))
+                                        .foregroundStyle(.secondary)
                                 }
                             }
+                            Text(entry.goalText).foregroundStyle(.primary).lineLimit(2)
+                            Text("\(entry.artifacts.count) evidence items · \(entry.practiceDate.formatted(date: .abbreviated, time: .omitted))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                        .padding(.leading, 20)
-                        .padding(.vertical, 8)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(entry.studentName), \(entry.goalText), \(entry.artifacts.count) artifacts, \(entry.captureMarkerCount ?? 0) lesson markers")
-                    .accessibilityHint("Double-tap to review this submission")
-                    .listRowInsets(EdgeInsets(top: 6, leading: 14, bottom: 6, trailing: 14))
-                    .listRowBackground(Color.white.opacity(0.08).cornerRadius(12).padding(.vertical, 4))
+                    .accessibilityHint("Opens the submission and media player")
                 }
-                .scrollContentBackground(.hidden)
-                .safeAreaPadding(.horizontal, 8)
-                .listStyle(.plain)
+                .refreshable { await refreshQueue() }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let errorMessage {
+                HStack {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle")
+                    Spacer()
+                    Button("Retry") { Task { await refreshQueue() } }
+                }
+                .padding()
+                .background(.bar)
             }
         }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Refresh") { Task { await refreshQueue() } }
-                    .disabled(isLoading)
-                    .accessibilityLabel("Refresh review queue")
-                    .accessibilityHint("Double-tap to reload submissions awaiting review")
-            }
+            Button("Refresh", systemImage: "arrow.clockwise") { Task { await refreshQueue() } }
+                .disabled(isLoading)
         }
         .task { await refreshQueue() }
         .sheet(item: $selected) { entry in
-            FeedbackEditorView(entry: entry)
+            SubmissionDetailView(entry: entry) {
+                queuedFeedback.insert(entry.id)
+            }
         }
     }
 
     private func refreshQueue() async {
         guard let session = authManager.session else { return }
         isLoading = true
+        errorMessage = nil
         defer { isLoading = false }
         do {
-            var loadedQueue: [ReviewQueueEntry] = []
-            var cursor: String?
-            var seenCursors = Set<String>()
-
-            while true {
-                let response = try await appState.apiClient.fetchReviewQueue(
+            let firstPage = try await appState.apiClient.fetchReviewQueue(
+                accessToken: session.accessToken,
+                courseId: courseId,
+                limit: 50
+            )
+            queue = firstPage.items
+            var cursor = firstPage.nextCursor
+            var seen = Set<String>()
+            while let next = cursor, seen.insert(next).inserted {
+                let page = try await appState.apiClient.fetchReviewQueue(
                     accessToken: session.accessToken,
                     courseId: courseId,
                     limit: 50,
-                    cursor: cursor
+                    cursor: next
                 )
-                loadedQueue.append(contentsOf: response.items)
-
-                guard let nextCursor = response.nextCursor, nextCursor.isEmpty == false else {
-                    break
-                }
-                guard seenCursors.insert(nextCursor).inserted else {
-                    break
-                }
-                cursor = nextCursor
+                queue.append(contentsOf: page.items)
+                cursor = page.nextCursor
             }
-
-            queue = loadedQueue
         } catch {
-            appState.reportError(error)
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct SubmissionDetailView: View {
+    let entry: ReviewQueueEntry
+    let onFeedbackQueued: () -> Void
+    @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var authManager: AuthManager
+    @State private var selectedArtifactId: String?
+    @State private var player = AVPlayer()
+    @State private var playbackError: String?
+    @State private var isLoadingMedia = false
+
+    var body: some View {
+        NavigationStack {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 0) {
+                    evidencePane.frame(minWidth: 360)
+                    Divider()
+                    feedbackPane.frame(minWidth: 360)
+                }
+                ScrollView { VStack(spacing: 16) { evidencePane; feedbackPane } }
+            }
+            .navigationTitle(entry.studentName)
+            .navigationBarTitleDisplayMode(.inline)
+            .task {
+                selectedArtifactId = entry.artifacts.first?.id
+                await loadSelectedArtifact()
+            }
+            .onChange(of: selectedArtifactId) { _, _ in
+                Task { await loadSelectedArtifact() }
+            }
+        }
+    }
+
+    private var evidencePane: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(entry.goalText).font(.title3.weight(.semibold))
+            if let notes = entry.notes, !notes.isEmpty { Text(notes).foregroundStyle(.secondary) }
+            if entry.artifacts.isEmpty {
+                ContentUnavailableView("No playable evidence", systemImage: "waveform.slash")
+            } else {
+                Picker("Evidence", selection: $selectedArtifactId) {
+                    ForEach(entry.artifacts) { artifact in
+                        Text(artifact.type == "video" ? "Video" : "Audio").tag(Optional(artifact.id))
+                    }
+                }
+                VideoPlayer(player: player)
+                    .frame(minHeight: 240)
+                    .accessibilityLabel("Submitted evidence player")
+                if isLoadingMedia { ProgressView("Preparing secure playback…") }
+                if let playbackError {
+                    ContentUnavailableView {
+                        Label("Playback unavailable", systemImage: "exclamationmark.triangle")
+                    } description: { Text(playbackError) } actions: {
+                        Button("Try again") { Task { await loadSelectedArtifact() } }
+                    }
+                }
+            }
+        }
+        .padding()
+    }
+
+    private var feedbackPane: some View {
+        FeedbackEditorView(
+            entry: entry,
+            playbackTime: { player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0 },
+            onQueued: onFeedbackQueued
+        )
+    }
+
+    private func loadSelectedArtifact() async {
+        guard let selectedArtifactId,
+              let artifact = entry.artifacts.first(where: { $0.id == selectedArtifactId }),
+              let token = authManager.session?.accessToken else { return }
+        isLoadingMedia = true
+        playbackError = nil
+        player.pause()
+        defer { isLoadingMedia = false }
+        do {
+            let response = try await appState.apiClient.fetchArtifactDownloadURL(
+                accessToken: token,
+                artifactId: artifact.id
+            )
+            player.replaceCurrentItem(with: AVPlayerItem(url: response.downloadUrl))
+        } catch {
+            player.replaceCurrentItem(with: nil)
+            playbackError = error.localizedDescription
         }
     }
 }

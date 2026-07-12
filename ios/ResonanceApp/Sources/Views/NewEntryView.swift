@@ -1,257 +1,167 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct NewEntryView: View {
     let courseId: String
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject var appState: AppState
-    @EnvironmentObject var authManager: AuthManager
-    @EnvironmentObject var syncManager: SyncManager
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var authManager: AuthManager
+    @EnvironmentObject private var syncManager: SyncManager
 
     @State private var goalText = ""
     @State private var practiceDate = Date()
-    @State private var durationSeconds = ""
+    @State private var durationMinutes = ""
     @State private var tags = ""
     @State private var notes = ""
     @State private var entryKind: EntryKind = .practice
     @State private var consentConfirmed = false
     @State private var captureProfile: CaptureProfile = .teacherLearner
-    @State private var selectedTemplateId: String = EntryTemplate.defaults.first?.id ?? ""
-    @State private var showValidationAlert = false
-    @State private var validationMessage = ""
+    @State private var validationMessage: String?
+    @State private var confirmDiscard = false
+    @FocusState private var focusedField: Field?
 
-    // Limits matching server config.ts
-    private static let maxDurationSeconds = 28_800  // 8 hours
-    private static let maxTags = 30
-    private static let maxTagLength = 100
-    private static let maxNotesLength = 10_000
+    private enum Field { case goal, duration, tags, notes }
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                AppTheme.PremiumBackground()
-                
-                ScrollView {
-                    VStack(spacing: 24) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Entry Type")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.6))
-                                .textCase(.uppercase)
-
-                            Picker("Entry type", selection: $entryKind) {
-                                Text("Practice").tag(EntryKind.practice)
-                                Text("Teaching Lesson").tag(EntryKind.teachingLesson)
-                            }
-                            .pickerStyle(.segmented)
-                            .accessibilityLabel("Entry type")
-
-                            if entryKind == .teachingLesson {
-                                Toggle("Consent confirmed for course review", isOn: $consentConfirmed)
-                                    .toggleStyle(.switch)
-                                    .tint(AppTheme.accentVibrant)
-                                    .foregroundStyle(.white)
-                                    .accessibilityLabel("Consent confirmed for course review")
-
-                                Picker("Capture profile", selection: $captureProfile) {
-                                    ForEach(CaptureProfile.allCases) { profile in
-                                        Text(profile.label).tag(profile)
-                                    }
-                                }
-                                .pickerStyle(.menu)
-                                .tint(.white)
-                                .accessibilityLabel("Teaching lesson capture profile")
-                            }
-                        }
-                        .glassCard()
-
-                        // Template Section
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Template")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.6))
-                                .textCase(.uppercase)
-                            
-                            Picker("Preset", selection: $selectedTemplateId) {
-                                ForEach(EntryTemplate.defaults) { template in
-                                    Text(template.name).tag(template.id)
-                                }
-                            }
-                            .tint(.white)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .accessibilityLabel("Practice template")
-                            .accessibilityHint("Select a template to pre-fill the entry form")
-
-                            Button("Apply Template") {
-                                applySelectedTemplate()
-                            }
-                            .buttonStyle(SubtleGlassButtonStyle())
-                            .frame(maxWidth: .infinity)
-                            .accessibilityLabel("Apply template")
-                            .accessibilityHint("Double-tap to fill in goal, tags, and notes from the selected template")
-                        }
-                        .glassCard()
-                        
-                        // Goal Section
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Goal")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.6))
-                                .textCase(.uppercase)
-                            
-                            GlassTextField(placeholder: "Goal text", text: $goalText)
-                                .accessibilityLabel("Goal text")
-                                .accessibilityHint("Enter your practice goal")
-                        }
-                        .glassCard()
-
-                        // Practice Section
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Practice")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.6))
-                                .textCase(.uppercase)
-                            
-                            DatePicker("Date", selection: $practiceDate, displayedComponents: [.date, .hourAndMinute])
-                                .colorScheme(.dark)
-                            
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text("Duration")
-                                        .foregroundStyle(.white)
-                                    Spacer()
-                                    GlassTextField(placeholder: "0", text: $durationSeconds, keyboardType: .numberPad, cornerRadius: 8, width: 100)
-                                        .multilineTextAlignment(.trailing)
-                                        .accessibilityLabel("Duration in seconds")
-                                        .accessibilityHint("Enter practice duration in seconds")
-                                    Text("sec")
-                                        .font(.caption)
-                                        .foregroundStyle(.white.opacity(0.5))
-                                }
-                                if let dur = Int(durationSeconds), dur > 0 {
-                                    Text(durationHint(dur))
-                                        .font(.caption)
-                                        .foregroundStyle(.white.opacity(0.5))
-                                        .transition(.opacity)
-                                }
-                            }
-                        }
-                        .glassCard()
-
-                        // Tags Section
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Tags")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.6))
-                                .textCase(.uppercase)
-                            
-                            GlassTextField(placeholder: "Comma-separated tags", text: $tags)
-                                .accessibilityLabel("Tags")
-                                .accessibilityHint("Enter comma-separated tags for this entry")
-                        }
-                        .glassCard()
-
-                        // Notes Section
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Notes")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.6))
-                                .textCase(.uppercase)
-                            
-                            GlassTextField(placeholder: "Notes", text: $notes, axis: .vertical, lineLimit: 4...8)
-                                .accessibilityLabel("Notes")
-                                .accessibilityHint("Enter additional notes about your practice session")
-                        }
-                        .glassCard()
+            Form {
+                Section("Entry") {
+                    Picker("Type", selection: $entryKind) {
+                        Text("Practice").tag(EntryKind.practice)
+                        Text("Teaching lesson").tag(EntryKind.teachingLesson)
                     }
-                    .padding()
+                    DatePicker("Date", selection: $practiceDate, displayedComponents: [.date, .hourAndMinute])
+                }
+
+                Section("Goal") {
+                    TextField("What do you want to work on?", text: $goalText, axis: .vertical)
+                        .focused($focusedField, equals: .goal)
+                    if let validationMessage {
+                        Label(validationMessage, systemImage: "exclamationmark.circle")
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                            .accessibilityLabel("Validation error: \(validationMessage)")
+                    }
+                }
+
+                Section("Practice details") {
+                    LabeledContent("Duration") {
+                        TextField("Minutes", text: $durationMinutes)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .focused($focusedField, equals: .duration)
+                    }
+                    TextField("Tags, separated by commas", text: $tags)
+                        .focused($focusedField, equals: .tags)
+                    Text("Example: intonation, phrasing")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    TextField("Reflection or notes", text: $notes, axis: .vertical)
+                        .lineLimit(3...8)
+                        .focused($focusedField, equals: .notes)
+                }
+
+                if entryKind == .teachingLesson {
+                    Section("Private course review") {
+                        Toggle("Consent is confirmed", isOn: $consentConfirmed)
+                        Text("You can save a draft without consent. Recording, importing, and submitting video remain unavailable until consent for private course review is confirmed.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Picker("Capture profile", selection: $captureProfile) {
+                            ForEach(CaptureProfile.allCases) { profile in
+                                Text(profile.label).tag(profile)
+                            }
+                        }
+                    }
                 }
             }
-            .navigationTitle("New Entry")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .navigationTitle("New entry")
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save Draft") { saveEntry() }
-                        .disabled(goalText.isEmpty)
-                        .foregroundStyle(goalText.isEmpty ? .white.opacity(0.5) : .white)
-                        .accessibilityLabel("Save entry as draft")
-                        .accessibilityHint(goalText.isEmpty ? "Enter a goal first" : "Double-tap to save this practice entry as a draft. You can record audio and submit later.")
-                }
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundStyle(.white)
-                        .accessibilityLabel("Cancel")
-                        .accessibilityHint("Double-tap to discard this entry and go back")
+                    Button("Cancel") {
+                        if hasUnsavedChanges { confirmDiscard = true } else { dismiss() }
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save draft") { saveEntry() }
                 }
             }
-            .alert("Validation Error", isPresented: $showValidationAlert) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text(validationMessage)
+            .confirmationDialog("Discard this draft?", isPresented: $confirmDiscard) {
+                Button("Discard draft", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
             }
         }
     }
 
-    /// Validates all form fields against server limits.
-    /// Returns an error message if validation fails, nil if valid.
-    private func validateForm() -> String? {
-        // Goal text: must be non-empty
-        let trimmedGoal = goalText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedGoal.isEmpty {
-            return "Goal text is required."
-        }
-
-        if entryKind == .teachingLesson && !consentConfirmed {
-            return "Teaching lesson entries require confirmed consent for course review."
-        }
-
-        // Duration: must be 0..28800
-        if !durationSeconds.isEmpty {
-            guard let dur = Int(durationSeconds) else {
-                return "Duration must be a whole number of seconds."
-            }
-            if dur < 0 || dur > Self.maxDurationSeconds {
-                return "Duration must be between 0 and \(Self.maxDurationSeconds) seconds (8 hours)."
-            }
-        }
-
-        // Tags: max 30, each max 100 characters
-        let parsedTags = tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        if parsedTags.count > Self.maxTags {
-            return "Too many tags (\(parsedTags.count)). Maximum is \(Self.maxTags)."
-        }
-        if let longTag = parsedTags.first(where: { $0.count > Self.maxTagLength }) {
-            return "Tag \"\(String(longTag.prefix(20)))...\" exceeds \(Self.maxTagLength) characters."
-        }
-
-        // Notes: max 10000 characters
-        if notes.count > Self.maxNotesLength {
-            return "Notes exceed \(Self.maxNotesLength) characters (\(notes.count) entered)."
-        }
-
-        return nil
+    private var hasUnsavedChanges: Bool {
+        !goalText.isEmpty || !durationMinutes.isEmpty || !tags.isEmpty || !notes.isEmpty
     }
 
     private func saveEntry() {
-        if let error = validateForm() {
-            validationMessage = error
-            showValidationAlert = true
-            return
-        }
+        validationMessage = nil
+        guard let goal = validatedGoal(),
+              validateDuration(),
+              validateTags(),
+              validateNotes(),
+              let session = authManager.session
+        else { return }
 
-        guard let session = authManager.session else { return }
-        let entry = LocalPracticeEntry(
+        persist(makeEntry(goal: goal, studentId: session.userId))
+    }
+
+    private func validatedGoal() -> String? {
+        let goal = goalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !goal.isEmpty else {
+            _ = failValidation("Add a practice goal before saving.", field: .goal)
+            return nil
+        }
+        return goal
+    }
+
+    private func validateDuration() -> Bool {
+        guard durationMinutes.isEmpty ||
+            (Int(durationMinutes).map { (0...480).contains($0) } ?? false)
+        else { return failValidation("Duration must be between 0 and 480 minutes.", field: .duration) }
+        return true
+    }
+
+    private var parsedTags: [String] {
+        tags.split(separator: ",").map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty }
+    }
+
+    private func validateTags() -> Bool {
+        guard parsedTags.count <= 30, parsedTags.allSatisfy({ $0.count <= 100 }) else {
+            return failValidation("Use no more than 30 tags, with 100 characters per tag.", field: .tags)
+        }
+        return true
+    }
+
+    private func validateNotes() -> Bool {
+        guard notes.count <= 10_000 else {
+            return failValidation("Notes must contain no more than 10,000 characters.", field: .notes)
+        }
+        return true
+    }
+
+    private func failValidation(_ message: String, field: Field) -> Bool {
+        validationMessage = message
+        focusedField = field
+        return false
+    }
+
+    private func makeEntry(goal: String, studentId: String) -> LocalPracticeEntry {
+        LocalPracticeEntry(
             id: UUID().uuidString,
             courseId: courseId,
-            studentId: session.userId,
+            studentId: studentId,
             details: PracticeEntryDetails(
                 practiceDate: practiceDate,
-                goalText: goalText,
-                durationSeconds: Int(durationSeconds),
-                tags: tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) },
+                goalText: goal,
+                durationSeconds: Int(durationMinutes).map { $0 * 60 },
+                tags: parsedTags,
                 notes: notes.isEmpty ? nil : notes
             ),
             status: .draft,
@@ -262,68 +172,16 @@ struct NewEntryView: View {
                 captureProfile: entryKind == .teachingLesson ? captureProfile : nil
             )
         )
+    }
+
+    private func persist(_ entry: LocalPracticeEntry) {
         modelContext.insert(entry)
         do {
             try modelContext.save()
+            syncManager.enqueue(type: .createEntry, payload: ["entryId": entry.id])
+            dismiss()
         } catch {
             appState.reportError(error)
-            return
         }
-        syncManager.enqueue(type: .createEntry, payload: ["entryId": entry.id])
-        dismiss()
     }
-
-    private func durationHint(_ totalSeconds: Int) -> String {
-        if totalSeconds < 60 {
-            return "\(totalSeconds) seconds"
-        }
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        let secs = totalSeconds % 60
-        if hours > 0 {
-            return minutes > 0 ? "= \(hours)h \(minutes)m" : "= \(hours)h"
-        }
-        return secs > 0 ? "= \(minutes)m \(secs)s" : "= \(minutes) min"
-    }
-
-    private func applySelectedTemplate() {
-        guard let template = EntryTemplate.defaults.first(where: { $0.id == selectedTemplateId }) else {
-            return
-        }
-        goalText = template.goalText
-        tags = template.tags.joined(separator: ", ")
-        notes = template.notes
-    }
-}
-
-private struct EntryTemplate: Identifiable {
-    let id: String
-    let name: String
-    let goalText: String
-    let tags: [String]
-    let notes: String
-
-    static let defaults: [EntryTemplate] = [
-        EntryTemplate(
-            id: "warmup-technique",
-            name: "Warmup + Technik",
-            goalText: "Intonation and clean articulation in warmup patterns",
-            tags: ["warmup", "technique"],
-            notes: "Focus on relaxed breathing and even tone."
-        ),
-        EntryTemplate(
-            id: "repertoire-polish",
-            name: "Repertoire Polish",
-            goalText: "Polish difficult measures in current repertoire",
-            tags: ["repertoire", "precision"],
-            notes: "Slow tempo first, then raise BPM gradually."
-        ),
-        EntryTemplate(
-            id: "performance-run",
-            name: "Performance Run",
-            goalText: "Full run-through with stage-ready dynamics",
-            tags: ["performance", "expression"],
-            notes: "Record one uninterrupted take."
-        )
-    ]
 }

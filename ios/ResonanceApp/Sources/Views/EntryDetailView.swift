@@ -20,7 +20,7 @@ struct EntryDetailView: View {
 
     var body: some View {
         ZStack {
-            AppTheme.PremiumBackground()
+            AppTheme.Background()
 
             ScrollView {
                 VStack(spacing: 24) {
@@ -28,7 +28,7 @@ struct EntryDetailView: View {
                     HStack {
                         Text("Entry status")
                             .font(.headline)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.primary)
                         Spacer()
                         Text(statusLabel(entry.status))
                             .font(.caption.weight(.bold))
@@ -40,33 +40,31 @@ struct EntryDetailView: View {
                             .overlay(Capsule().stroke(statusColor(entry.status).opacity(0.5), lineWidth: 1))
                             .accessibilityLabel("Status: \(statusLabel(entry.status))")
                     }
-                    .glassCard()
+                    .groupedSection()
 
                     // Goal
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Goal")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.6))
-                            .textCase(.uppercase)
+                            .foregroundStyle(.secondary)
                         Text(entry.goalText)
                             .font(.title3.weight(.medium))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.primary)
                         if let notes = entry.notes {
                             Text(notes)
                                 .font(.body)
-                                .foregroundStyle(.white.opacity(0.7))
+                                .foregroundStyle(.secondary)
                                 .padding(.top, 4)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .glassCard()
+                    .groupedSection()
 
                     // Recording
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Recording")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.6))
-                            .textCase(.uppercase)
+                            .foregroundStyle(.secondary)
 
                         if recorder.isRecording {
                             HStack {
@@ -77,7 +75,7 @@ struct EntryDetailView: View {
                                     .animation(.easeInOut(duration: 0.8).repeatForever(), value: recorder.isRecording)
                                 Text("Recording… \(recorder.duration, specifier: "%.1f")s")
                                     .font(.headline)
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(.primary)
                             }
                             .accessibilityElement(children: .combine)
                             .accessibilityLabel("Recording in progress, \(Int(recorder.duration)) seconds")
@@ -92,7 +90,7 @@ struct EntryDetailView: View {
                                 }
                                 .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(SubtleGlassButtonStyle())
+                            .buttonStyle(.bordered)
                             .accessibilityLabel("Stop recording")
                             .accessibilityHint("Double-tap to stop the current audio recording")
                         } else {
@@ -103,7 +101,7 @@ struct EntryDetailView: View {
                                 }
                                 .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(VibrantGlassButtonStyle())
+                            .buttonStyle(.borderedProminent)
                             .accessibilityLabel("Start audio recording")
                             .accessibilityHint("Double-tap to begin recording audio")
                         }
@@ -126,7 +124,7 @@ struct EntryDetailView: View {
                                     }
                                     .frame(maxWidth: .infinity)
                                 }
-                                .buttonStyle(VibrantGlassButtonStyle())
+                                .buttonStyle(.borderedProminent)
                                 .accessibilityLabel("Film lesson")
 
                                 Button(action: { showVideoImporter = true }) {
@@ -136,21 +134,20 @@ struct EntryDetailView: View {
                                     }
                                     .frame(maxWidth: .infinity)
                                 }
-                                .buttonStyle(SubtleGlassButtonStyle())
+                                .buttonStyle(.bordered)
                                 .accessibilityLabel("Import lesson video")
                             }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .glassCard()
+                    .groupedSection()
 
                     // Artifacts
                     if !entry.artifacts.isEmpty {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Artifacts")
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.6))
-                                .textCase(.uppercase)
+                                .foregroundStyle(.secondary)
 
                             ForEach(entry.artifacts) { artifact in
                                 VStack(spacing: 8) {
@@ -158,10 +155,10 @@ struct EntryDetailView: View {
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(artifact.type.rawValue.uppercased())
                                                 .font(.headline)
-                                                .foregroundStyle(.white)
+                                                .foregroundStyle(.primary)
                                             Text(artifact.syncPhase.rawValue.capitalized)
                                                 .font(.caption)
-                                                .foregroundStyle(.white.opacity(0.5))
+                                                .foregroundStyle(.secondary)
                                         }
                                         Spacer()
                                         if artifact.type == .audio {
@@ -172,14 +169,14 @@ struct EntryDetailView: View {
                                                     player.play(url: URL(fileURLWithPath: artifact.localPath))
                                                 }
                                             }
-                                            .buttonStyle(SubtleGlassButtonStyle())
+                                            .buttonStyle(.bordered)
                                             .accessibilityLabel(isPlaying(artifact) ? "Stop playback" : "Play \(artifact.type.rawValue) recording")
                                             .accessibilityHint(isPlaying(artifact) ? "Double-tap to stop playback" : "Double-tap to play this recording")
                                         } else {
                                             VStack(alignment: .trailing, spacing: 4) {
                                                 Text("Attached")
                                                     .font(.caption.weight(.semibold))
-                                                    .foregroundStyle(.white.opacity(0.7))
+                                                    .foregroundStyle(.secondary)
                                                 if !captureMarkers(for: artifact).isEmpty {
                                                     Text("\(captureMarkers(for: artifact).count) lesson markers")
                                                         .font(.caption2)
@@ -206,11 +203,11 @@ struct EntryDetailView: View {
                                             HStack {
                                                 Text(formatTime(player.currentTime))
                                                     .font(.caption.monospacedDigit())
-                                                    .foregroundStyle(.white.opacity(0.6))
+                                                    .foregroundStyle(.secondary)
                                                 Spacer()
                                                 Text(formatTime(player.duration))
                                                     .font(.caption.monospacedDigit())
-                                                    .foregroundStyle(.white.opacity(0.6))
+                                                    .foregroundStyle(.secondary)
                                             }
                                         }
                                     }
@@ -227,7 +224,7 @@ struct EntryDetailView: View {
                                                             .frame(width: 44, alignment: .trailing)
                                                         Text(marker.kind.label)
                                                             .font(.caption)
-                                                            .foregroundStyle(.white.opacity(0.8))
+                                                            .foregroundStyle(.secondary)
                                                     }
                                                     .accessibilityElement(children: .combine)
                                                     .accessibilityLabel("Lesson marker at \(marker.timeSeconds) seconds: \(marker.kind.label)")
@@ -244,15 +241,14 @@ struct EntryDetailView: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .glassCard()
+                        .groupedSection()
                     }
 
                     // Feedback
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Feedback")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.6))
-                            .textCase(.uppercase)
+                            .foregroundStyle(.secondary)
 
                         if isLoadingFeedback {
                             ProgressView()
@@ -261,15 +257,15 @@ struct EntryDetailView: View {
                         } else if entry.feedback.isEmpty {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("No feedback yet")
-                                    .foregroundStyle(.white.opacity(0.5))
+                                    .foregroundStyle(.secondary)
                                 if entry.status == .draft {
                                     Text("Submit your entry so your teacher can review it.")
                                         .font(.caption)
-                                        .foregroundStyle(.white.opacity(0.35))
+                                        .foregroundStyle(.tertiary)
                                 } else if entry.status == .submitted {
                                     Text("Your teacher will review this entry soon.")
                                         .font(.caption)
-                                        .foregroundStyle(.white.opacity(0.35))
+                                        .foregroundStyle(.tertiary)
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -279,7 +275,7 @@ struct EntryDetailView: View {
                                     HStack {
                                         Text(feedback.teacherName)
                                             .font(.headline)
-                                            .foregroundStyle(.white)
+                                            .foregroundStyle(.primary)
                                         Spacer()
                                         Text(feedbackStatusLabel(feedback.status))
                                             .font(.caption.weight(.bold))
@@ -292,13 +288,13 @@ struct EntryDetailView: View {
                                     }
                                     Text(feedback.commentsText)
                                         .font(.body)
-                                        .foregroundStyle(.white.opacity(0.9))
+                                        .foregroundStyle(.primary)
 
                                     if !feedback.markers.isEmpty {
                                         VStack(alignment: .leading, spacing: 6) {
                                             Text("Markers")
                                                 .font(.caption.weight(.semibold))
-                                                .foregroundStyle(.white.opacity(0.5))
+                                                .foregroundStyle(.secondary)
                                                 .padding(.top, 4)
                                             ForEach(feedback.markers) { marker in
                                                 HStack(alignment: .top, spacing: 8) {
@@ -308,7 +304,7 @@ struct EntryDetailView: View {
                                                         .frame(width: 44, alignment: .trailing)
                                                     Text(marker.text)
                                                         .font(.caption)
-                                                        .foregroundStyle(.white.opacity(0.8))
+                                                        .foregroundStyle(.secondary)
                                                 }
                                                 .accessibilityElement(children: .combine)
                                                 .accessibilityLabel("At \(marker.timeSeconds) seconds: \(marker.text)")
@@ -325,14 +321,14 @@ struct EntryDetailView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .glassCard()
+                    .groupedSection()
 
                     // Actions
                     VStack(spacing: 16) {
                         if entry.status == .draft {
                             Text(draftInstruction)
                                 .font(.caption)
-                                .foregroundStyle(.white.opacity(0.5))
+                                .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                                 .frame(maxWidth: .infinity)
                         }
@@ -340,7 +336,7 @@ struct EntryDetailView: View {
                         Button("Submit for Review") {
                             showSubmitConfirmation = true
                         }
-                        .buttonStyle(VibrantGlassButtonStyle())
+                        .buttonStyle(.borderedProminent)
                         .disabled(entry.status != .draft)
                         .opacity(entry.status != .draft ? 0.5 : 1.0)
                         .accessibilityLabel("Submit entry for review")
@@ -349,7 +345,7 @@ struct EntryDetailView: View {
                         if entry.status != .draft {
                             Text(entry.status == .submitted ? "Waiting for teacher feedback." : "Your teacher has reviewed this entry.")
                                 .font(.caption)
-                                .foregroundStyle(.white.opacity(0.5))
+                                .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                                 .frame(maxWidth: .infinity)
                         }
@@ -357,7 +353,7 @@ struct EntryDetailView: View {
                         Button("Delete Entry") {
                             showDeleteConfirmation = true
                         }
-                        .buttonStyle(SubtleGlassButtonStyle())
+                        .buttonStyle(.bordered)
                         .foregroundStyle(.red)
                         .accessibilityLabel("Delete entry")
                         .accessibilityHint("Double-tap to permanently delete this practice entry")
@@ -590,8 +586,7 @@ struct EntryDetailView: View {
             appState.reportError(error)
             return false
         }
-        reportSubmissionError("Lesson video upload queued. Submit again after sync finishes.")
-        return false
+        return true
     }
 
     private func enqueueTeachingLessonMetadata(didSetDefaultProfile: Bool) {
@@ -606,9 +601,6 @@ struct EntryDetailView: View {
     private func submissionArtifactError() -> String? {
         if entry.artifacts.contains(where: { $0.uploadState == .failed }) {
             return "Some recordings failed to sync. Retry them before submitting."
-        }
-        if entry.artifacts.contains(where: { $0.uploadState != .uploaded }) {
-            return "All artifacts must be uploaded before submitting."
         }
         return nil
     }

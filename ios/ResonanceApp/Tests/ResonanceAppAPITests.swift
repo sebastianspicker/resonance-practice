@@ -237,6 +237,19 @@ final class APIModelDecodeTests: XCTestCase {
         XCTAssertNil(result.requiredHeaders)
     }
 
+    func testArtifactDownloadResponseDecode() throws {
+        let json = """
+        {
+            "downloadUrl": "https://storage.example.com/private-evidence",
+            "expiresInSeconds": 900
+        }
+        """.data(using: .utf8)!
+
+        let result = try apiDecoder.decode(ArtifactDownloadResponse.self, from: json)
+        XCTAssertEqual(result.expiresInSeconds, 900)
+        XCTAssertEqual(result.downloadUrl.host, "storage.example.com")
+    }
+
     func testAPIErrorDecode() throws {
         let json = """
         {

@@ -17,8 +17,8 @@ struct CourseDetailView: View {
         VStack {
             if course.roleInCourse == "teacher" {
                 Picker("View", selection: $selectedTab) {
-                    Text("Entries").tag(0)
-                    Text("Review Queue").tag(1)
+                    Text("Reviewed").tag(0)
+                    Text("To review").tag(1)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
@@ -26,7 +26,7 @@ struct CourseDetailView: View {
                 .accessibilityHint("Switch between practice entries and the review queue")
 
                 if selectedTab == 0 {
-                    EntryListView(courseId: course.id)
+                    ContentUnavailableView("Reviewed submissions", systemImage: "checkmark.circle", description: Text("Reviewed history will appear here."))
                 } else {
                     TeacherQueueView(courseId: course.id)
                 }

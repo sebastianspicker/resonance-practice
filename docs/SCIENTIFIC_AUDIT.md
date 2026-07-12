@@ -9,7 +9,7 @@ This audit records the evidence basis for Resonance's teaching-lesson video work
 | Kramer, Spicker & Kaspar (2023), *Manual zur Erstellung von Unterrichtsvideographien*: define the purpose first, plan consent, room, camera focus, audio, and later use before recording. | Filming must start from a capture purpose, not from "record everything". Consent and intended use must be explicit before upload. | Teaching lessons require private course-review consent before submission. Capture profiles and manual markers encode the purpose/focus without automatic analysis. |
 | Classroom videography guidance: camera positions and pans/zooms should follow the lesson or research aim; for authentic whole-lesson representation, static setups are preferred. | Camera overlays should be composition aids only. They must not imply quality scoring or automated interpretation. | The camera view provides preview-only safe frame, horizon, movement corridor, zones, no-consent area, and static contour guides. Raw video plus manual metadata is stored. |
 | Professional-vision research, including Wyss, Baeuerlein & Mahler (2023): video perspective changes what observers notice; noticing and reasoning are distinct. | A single video should not claim to capture "the lesson" neutrally. The app should preserve capture-profile metadata so teachers can interpret what the perspective emphasizes. | `captureProfile` is stored on teaching lessons and exposed to the teacher review queue. |
-| Teacher-education video reviews, including Atal, Admiraal & Saab (2023): video supports observation and reflection when the activity is structured. 360 video can add realism but is not required for this MVP. | Do not add 360/VR as a default. Support a lightweight structured workflow first. | MVP remains standard iPad video with structured profiles and markers. 360/VR is out of scope. |
+| Teacher-education video reviews, including Atal, Admiraal & Saab (2023): video supports observation and reflection when the activity is structured. 360 video can add realism but is not required for this pilot. | Do not add 360/VR as a default. Support a lightweight structured workflow first. | The pilot remains standard iPad video with structured profiles and markers. 360/VR is out of scope. |
 | Music teacher education literature, including Bautista et al. (2019), Powell (2016), and Economidou Stavrou (2026): video reflection is valuable when framed as inquiry and can otherwise drift toward self-surveillance or surface self-critique. | Language and workflow should emphasize teacher-led inquiry, student participation, musical modelling, feedback, and lesson flow, not appraisal. | Marker kinds focus on phases and pedagogical moments. Docs now frame the feature as reflection-oriented course review. |
 
 ## Current Audit Findings
@@ -28,7 +28,7 @@ This audit records the evidence basis for Resonance's teaching-lesson video work
 - Overlays and contours are preview-only aids for camera placement and composition.
 - Lesson markers are student-authored metadata for reflection and course review.
 - Private course review is the only supported teaching-lesson consent scope.
-- Multi-camera, 360 video, VR viewing, research databases, and public video sharing are out of scope for the MVP.
+- Multi-camera, 360 video, VR viewing, research databases, and public video sharing are out of scope for the production pilot.
 
 ## Source Links
 

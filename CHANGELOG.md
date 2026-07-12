@@ -6,9 +6,10 @@ All notable public changes to this project are documented here.
 
 ### Security and Quality
 
-- npm audit clean: patched the current Fastify, AWS SDK S3, `@aws-sdk/xml-builder`, and `fast-xml-parser` production advisory chain.
 - Analyzer-only SQLFluff is pinned to 4.2.0, replacing the vulnerable 3.3.0 release.
-- Local full-tree static analysis currently completes with zero findings and zero analyzer errors.
+- Removed generated Codacy/Serena state, superseded planning packets, and obsolete UI captures from the public tree.
+- Added account-owner locking and explicit destructive local-profile replacement.
+- Added authorized short-lived artifact downloads for owners and same-course teachers.
 
 ### Repository and Verification
 
@@ -16,6 +17,9 @@ All notable public changes to this project are documented here.
 - Split the server edge-case suite into focused discovered test files while preserving coverage.
 - Removed generated tool state and superseded planning/remediation packets from the public repository boundary.
 - Expanded workspace cleanup and publication-boundary checks for local analyzer, editor, index, build, and report artifacts.
+- Replaced the retired glass interface foundation with semantic system-adaptive SwiftUI surfaces.
+- Added entry hydration/reconciliation, queue task deduplication, dependency-aware submission, and teacher media playback.
+- Current iOS XCTest result: 125 tests passed locally on 2026-07-11.
 
 ### Migration History
 

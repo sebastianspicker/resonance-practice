@@ -43,7 +43,7 @@ const buildDevLoginHtml = (universityName: string) => {
     '    <h1>',
     safeName,
     '</h1>',
-    '    <p>Resonance RC Demo Login</p>',
+    '    <p>Resonance Local Demo Login</p>',
     '    <p>Select a persona to continue.</p>',
     '    <ul>',
     '      <li><a href="/dev/authorize?role=student">Login as Student Persona</a></li>',

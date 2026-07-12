@@ -12,6 +12,7 @@ enum SyncStatus: String {
 
 enum SyncTaskType: String {
     case createEntry
+    case updateEntry
     case submitEntry
     case deleteEntry
     case postFeedback
@@ -28,6 +29,7 @@ enum SyncError: LocalizedError {
     case invalidPresignUrl(String)
     case localFeedbackNotFound(String)
     case localCaptureMarkersNotFound(String)
+    case dependenciesPending(String)
 
     var errorDescription: String? {
         switch self {
@@ -37,6 +39,7 @@ enum SyncError: LocalizedError {
         case .invalidPresignUrl(let message): return message
         case .localFeedbackNotFound(let message): return message
         case .localCaptureMarkersNotFound(let message): return message
+        case .dependenciesPending(let message): return message
         }
     }
 }
@@ -181,6 +184,12 @@ final class SyncManager: ObservableObject {
                 }
                 store.delete(item)
             } catch {
+                if case SyncError.dependenciesPending = error {
+                    item.status = SyncStatus.pending.rawValue
+                    item.lastError = nil
+                    item.nextAttemptAt = Date().addingTimeInterval(2)
+                    continue
+                }
                 item.retryCount += 1
                 item.lastError = String(describing: error)
 

@@ -19,35 +19,32 @@ struct MainSplitView: View {
 
     var body: some View {
         NavigationSplitView {
-            ZStack {
-                AppTheme.PremiumBackground()
-                
-                List(courses, selection: $selectionId) { course in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(course.title)
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.85)
-                        Text(course.roleInCourse.capitalized)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.white.opacity(0.7))
+            List(selection: $selectionId) {
+                Section("Courses") {
+                    ForEach(courses) { course in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(course.title).font(.headline).lineLimit(2)
+                            Text(course.roleInCourse == "teacher" ? "Teacher" : "Student")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                        .tag(course.id)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(course.title), role: \(course.roleInCourse)")
+                        .accessibilityHint("Opens the course")
                     }
-                    .padding(.leading, 8)
-                    .padding(.vertical, 8)
-                    .tag(course.id)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(course.title), role: \(course.roleInCourse)")
-                    .accessibilityHint("Double-tap to view course details")
-                    .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
-                    .listRowBackground(Color.white.opacity(0.1).cornerRadius(12).padding(.vertical, 4))
                 }
-                .scrollContentBackground(.hidden)
-                .safeAreaPadding(.horizontal, 12)
-                .overlay {
-                    if isRefreshing { ProgressView().scaleEffect(1.2).tint(.white) }
+                Section("Tools") {
+                    Button("Calendar", systemImage: "calendar") { showCalendar = true }
+                    if selectedCourse?.roleInCourse == "student" {
+                        Button("Export", systemImage: "square.and.arrow.up") { showExport = true }
+                    }
+                    Button("Sync status", systemImage: "arrow.triangle.2.circlepath") { showQueue = true }
+                    Button("Settings", systemImage: "gearshape") { showSettings = true }
                 }
             }
+            .overlay { if isRefreshing { ProgressView("Refreshing…") } }
             .navigationTitle("Courses")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -59,10 +56,9 @@ struct MainSplitView: View {
                                     .font(.caption.weight(.bold))
                                 Text("You are offline. Changes are saved locally and will sync when reconnected.")
                                     .font(.caption)
-                                    .lineLimit(2)
-                                    .minimumScaleFactor(0.8)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.primary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
@@ -103,7 +99,7 @@ struct MainSplitView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
-                        .background(.ultraThinMaterial)
+                        .background(.bar)
                     }
                 }
             }
@@ -122,45 +118,15 @@ struct MainSplitView: View {
                     .accessibilityHint("Double-tap to refresh courses and process the sync queue")
                 }
                 ToolbarItem(placement: .automatic) {
-                    Menu("Actions") {
-                        Button("Queue") {
-                            showQueue = true
-                        }
-                        .accessibilityLabel("View sync queue")
-                        .accessibilityHint("Double-tap to open the sync queue")
-                        Button("Retry Failed") {
-                            syncManager.retryFailedItems()
-                            Task { await syncManager.processQueue() }
-                        }
-                        .disabled(syncManager.failedQueueCount == 0)
-                        .accessibilityLabel("Retry failed sync items")
-                        .accessibilityHint("Double-tap to retry all failed queue items")
-                        Button("Calendar") {
-                            showCalendar = true
-                        }
-                        .accessibilityLabel("Open calendar")
-                        .accessibilityHint("Double-tap to view your calendar events")
-                        Button("Export") {
-                            showExport = true
-                        }
-                        .accessibilityLabel("Export data")
-                        .accessibilityHint("Double-tap to export your practice data")
-                        Button("Settings") {
-                            showSettings = true
-                        }
-                        .accessibilityLabel("Open settings")
-                        .accessibilityHint("Double-tap to open app settings")
+                    Button("Retry failed", systemImage: "arrow.clockwise") {
+                        syncManager.retryFailedItems()
+                        Task { await syncManager.processQueue() }
                     }
-                    .accessibilityLabel("Actions menu")
-                    .accessibilityHint("Double-tap to show available actions")
+                    .disabled(syncManager.failedQueueCount == 0)
                 }
             }
         } detail: {
-            ZStack {
-                AppTheme.PremiumBackground()
-                detailPane
-            }
-            .safeAreaPadding(.horizontal, 12)
+            detailPane
         }
         .sheet(isPresented: $showCalendar) {
             CalendarView()
@@ -223,6 +189,14 @@ struct MainSplitView: View {
 
             try modelContext.save()
 
+            let reconciler = EntryReconciliationService(
+                modelContext: modelContext,
+                apiClient: appState.apiClient
+            )
+            for course in remoteCourses where course.roleInCourse == "student" {
+                try await reconciler.refresh(courseId: course.id, accessToken: session.accessToken)
+            }
+
             if let selectionId, remoteCourseIds.contains(selectionId) == false {
                 self.selectionId = remoteCourses.first?.id
             }
@@ -269,10 +243,10 @@ struct MainSplitView: View {
         } else {
             ContentUnavailableView {
                 Label("Select a course", systemImage: "music.note.list")
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
             } description: {
                 Text("Choose a course to begin.")
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -318,6 +292,11 @@ struct MainSplitView: View {
         }
         let preferredRole = scenario.roleInCourse
         return courses.first(where: { $0.roleInCourse == preferredRole }) ?? courses.first
+    }
+
+    private var selectedCourse: LocalCourse? {
+        guard let selectionId else { return nil }
+        return courses.first { $0.id == selectionId }
     }
 
     private var screenshotPrimaryEntry: LocalPracticeEntry? {

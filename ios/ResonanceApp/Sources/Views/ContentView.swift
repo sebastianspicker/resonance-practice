@@ -8,19 +8,42 @@ struct ContentView: View {
     @EnvironmentObject var syncManager: SyncManager
     @Environment(\.scenePhase) private var scenePhase
     @State private var didPrepareScreenshotData = false
+    @State private var activeLocalProfileUserId: String?
+    @State private var conflictingProfileUserId: String?
 
     var body: some View {
         Group {
             if authManager.session == nil {
                 LoginView()
+            } else if let userId = conflictingProfileUserId {
+                LocalProfileConflictView(
+                    continueWithAccount: {
+                        appState.replaceLocalProfile(with: userId)
+                        conflictingProfileUserId = nil
+                        activeLocalProfileUserId = userId
+                    },
+                    signOut: { authManager.signOut() }
+                )
+            } else if activeLocalProfileUserId != authManager.session?.userId {
+                ProgressView("Preparing local profile…")
             } else {
                 MainSplitView(modelContext: modelContext)
             }
         }
-        .dynamicTypeSize(.xSmall ... .xxxLarge)
         .task {
             await prepareScreenshotModeIfNeeded()
+            if let userId = authManager.session?.userId {
+                prepareLocalProfile(userId: userId)
+            }
             await syncManager.processQueue()
+        }
+        .onChange(of: authManager.session?.userId) { _, userId in
+            if let userId {
+                prepareLocalProfile(userId: userId)
+            } else {
+                activeLocalProfileUserId = nil
+                conflictingProfileUserId = nil
+            }
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
@@ -33,6 +56,16 @@ struct ContentView: View {
             if let message = appState.lastErrorMessage {
                 Text(message)
             }
+        }
+    }
+
+    private func prepareLocalProfile(userId: String) {
+        if appState.activateLocalProfile(userId: userId) {
+            activeLocalProfileUserId = userId
+            conflictingProfileUserId = nil
+        } else {
+            activeLocalProfileUserId = nil
+            conflictingProfileUserId = userId
         }
     }
 
@@ -57,6 +90,22 @@ struct ContentView: View {
             try DemoDataManager(modelContext: modelContext).loadMockUniversityData(roleInCourse: scenario.roleInCourse)
         } catch {
             appState.reportError(error)
+        }
+    }
+}
+
+private struct LocalProfileConflictView: View {
+    let continueWithAccount: () -> Void
+    let signOut: () -> Void
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Local data belongs to another account", systemImage: "person.crop.circle.badge.exclamationmark")
+        } description: {
+            Text("To prevent accounts from sharing cached courses or media, delete the previous local profile before continuing.")
+        } actions: {
+            Button("Delete local data and continue", role: .destructive, action: continueWithAccount)
+            Button("Sign out", action: signOut)
         }
     }
 }

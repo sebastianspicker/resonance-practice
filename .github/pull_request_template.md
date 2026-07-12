@@ -21,6 +21,6 @@
 
 - [ ] No secrets/PII in logs or commits
 - [ ] Docs updated (README/RUNBOOK/SECURITY as needed)
-- [ ] Deprecated or superseded docs removed from the public tree or retained in issue/PR history
+- [ ] Superseded public docs are updated, removed, or intentionally retained with current context
 - [ ] Local-only status, ledger, and generated analysis files are not tracked
 - [ ] No generated, private, internal, editor, or analyzer-state files are included

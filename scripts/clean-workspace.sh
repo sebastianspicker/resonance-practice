@@ -25,8 +25,10 @@ TARGETS=(
   ".codacy/tools-configs"
   ".codacy/cli-config.yaml"
   ".codacy/codacy.yaml"
+  ".codacy/codacy.config.json"
   ".codegraph"
-  ".serena"
+  ".serena/cache"
+  ".serena/project.local.yml"
   ".DS_Store"
 )
 

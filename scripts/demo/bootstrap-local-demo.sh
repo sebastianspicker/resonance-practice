@@ -60,5 +60,5 @@ else
 fi
 
 echo ""
-echo "Local RC demo bootstrap complete."
+echo "Local pilot demo bootstrap complete."
 echo "Next: open the app in Xcode, sign in via dev login, then use Settings > Debug > Load Mock Demo Data."

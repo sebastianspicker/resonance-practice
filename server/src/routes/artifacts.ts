@@ -1,5 +1,10 @@
 import type { S3Client } from '@aws-sdk/client-s3';
-import { DeleteObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -11,8 +16,11 @@ import {
   requireEnum,
   requireField,
   requireNumber,
+  requireEntryAccess,
   requireStudentOwner,
 } from '../validation.js';
+
+const DOWNLOAD_URL_TTL_SECONDS = 900;
 
 export function registerArtifactRoutes(
   app: FastifyInstance,
@@ -20,6 +28,36 @@ export function registerArtifactRoutes(
   s3: S3Client,
   requireAuth: (request: FastifyRequest) => Promise<void>
 ) {
+  app.get(
+    '/artifacts/:artifactId/download',
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const user = request.user!;
+      const artifactId = (request.params as { artifactId: string }).artifactId;
+      const artifact = await prisma.artifact.findUnique({ where: { id: artifactId } });
+      if (!artifact) {
+        throw new ApiError(404, ErrorCodes.ARTIFACT_NOT_FOUND, 'Artifact not found');
+      }
+
+      await requireEntryAccess(prisma, user, artifact.entryId);
+      if (artifact.uploadState !== 'uploaded' || !artifact.storageKey) {
+        throw new ApiError(
+          409,
+          ErrorCodes.UPLOAD_INVALID,
+          'Artifact is not available for playback'
+        );
+      }
+
+      const downloadUrl = await getSignedUrl(
+        s3,
+        new GetObjectCommand({ Bucket: config.s3.bucket, Key: artifact.storageKey }),
+        { expiresIn: DOWNLOAD_URL_TTL_SECONDS }
+      );
+      reply.header('Cache-Control', 'no-store');
+      return { downloadUrl, expiresInSeconds: DOWNLOAD_URL_TTL_SECONDS };
+    }
+  );
+
   app.post('/entries/:entryId/artifacts', { preHandler: requireAuth }, async (request, reply) => {
     const user = request.user!;
     const entryId = (request.params as { entryId: string }).entryId;

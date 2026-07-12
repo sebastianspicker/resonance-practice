@@ -1,244 +1,169 @@
+import AVFoundation
 import SwiftUI
 
 struct MarkerDraft: Identifiable {
     let id = UUID()
-    var timeSeconds: String
+    var time: String
     var text: String
 }
 
 struct FeedbackEditorView: View {
     let entry: ReviewQueueEntry
-    @EnvironmentObject var appState: AppState
-    @EnvironmentObject var authManager: AuthManager
-    @EnvironmentObject var syncManager: SyncManager
+    var playbackTime: () -> TimeInterval = { 0 }
+    var onQueued: (() -> Void)?
+
+    @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var authManager: AuthManager
+    @EnvironmentObject private var syncManager: SyncManager
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
     @State private var status: FeedbackStatus = .ok
-    @State private var commentsText: String = ""
+    @State private var commentsText = ""
     @State private var markers: [MarkerDraft] = []
     @State private var isSending = false
-    @State private var markerValidationError: String?
+    @State private var validationMessage: String?
+    @State private var confirmDiscard = false
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                AppTheme.PremiumBackground()
-                
-                ScrollView {
-                    VStack(spacing: 24) {
-                        // Entry Section
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Entry")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.6))
-                                .textCase(.uppercase)
-                            
-                            Text(entry.studentName)
-                                .font(.title3.weight(.bold))
-                                .foregroundStyle(.white)
-                            Text(entry.goalText)
-                                .font(.body)
-                                .foregroundStyle(.white.opacity(0.8))
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .glassCard()
+        Form {
+            Section("Submission") {
+                LabeledContent("Student", value: entry.studentName)
+                Text(entry.goalText)
+                if let notes = entry.notes, !notes.isEmpty {
+                    LabeledContent("Reflection", value: notes)
+                }
+            }
 
-                        // Status Section
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Status")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.6))
-                                .textCase(.uppercase)
+            Section("Outcome") {
+                Picker("Outcome", selection: $status) {
+                    Text("Goal met").tag(FeedbackStatus.ok)
+                    Text("Revise").tag(FeedbackStatus.needsRevision)
+                    Text("Next goal").tag(FeedbackStatus.nextGoal)
+                }
+                .pickerStyle(.menu)
+                Text(statusHint)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
 
-                            Picker("Status", selection: $status) {
-                                Text("OK").tag(FeedbackStatus.ok)
-                                Text("Needs Revision").tag(FeedbackStatus.needsRevision)
-                                Text("Next Goal").tag(FeedbackStatus.nextGoal)
-                            }
-                            .pickerStyle(.segmented)
-                            .colorScheme(.dark)
-                            .accessibilityLabel("Feedback status")
-                            .accessibilityHint("Select OK, Needs Revision, or Next Goal")
+            Section("Feedback") {
+                TextField("Comments", text: $commentsText, axis: .vertical)
+                    .lineLimit(4...10)
+                if let validationMessage {
+                    Label(validationMessage, systemImage: "exclamationmark.circle")
+                        .foregroundStyle(.red)
+                        .accessibilityLabel("Validation error: \(validationMessage)")
+                }
+            }
 
-                            Text(statusHint(status))
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.5))
-                                .transition(.opacity)
-                                .animation(.easeInOut(duration: 0.2), value: status)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .glassCard()
-
-                        // Feedback Section
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Feedback")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.6))
-                                .textCase(.uppercase)
-                            
-                            GlassTextField(placeholder: "Comments", text: $commentsText, axis: .vertical, lineLimit: 4...8)
-                                .accessibilityLabel("Feedback comments")
-                                .accessibilityHint("Enter your feedback comments for the student")
-                        }
-                        .glassCard()
-
-                        // Snippets Section
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Snippets")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.6))
-                                .textCase(.uppercase)
-                            
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    ForEach(FeedbackSnippet.defaults, id: \.self) { snippet in
-                                        Button(snippet) {
-                                            if commentsText.isEmpty {
-                                                commentsText = snippet
-                                            } else {
-                                                commentsText += " " + snippet
-                                            }
-                                        }
-                                        .buttonStyle(SubtleGlassButtonStyle())
-                                        .accessibilityHint("Appends this text to comments")
-                                    }
-                                }
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .glassCard()
-
-                        // Markers Section
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Markers")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.6))
-                                .textCase(.uppercase)
-                            
-                            ForEach($markers) { $marker in
-                                HStack {
-                                    GlassTextField(placeholder: "Time (s)", text: $marker.timeSeconds, keyboardType: .numberPad, cornerRadius: 8, width: 80)
-                                        .accessibilityLabel("Marker time in seconds")
-
-                                    GlassTextField(placeholder: "Note", text: $marker.text, cornerRadius: 8)
-                                        .accessibilityLabel("Marker note")
-                                }
-                            }
-                            Button("Add Marker") {
-                                markers.append(MarkerDraft(timeSeconds: "", text: ""))
-                            }
-                            .buttonStyle(SubtleGlassButtonStyle())
-                            .accessibilityLabel("Add marker")
-                            .accessibilityHint("Double-tap to add a new time marker to this feedback")
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .glassCard()
+            Section("Timestamped markers") {
+                ForEach($markers) { $marker in
+                    VStack(alignment: .leading) {
+                        TextField("Time (mm:ss)", text: $marker.time)
+                            .textContentType(.none)
+                            .keyboardType(.numbersAndPunctuation)
+                        TextField("Marker note", text: $marker.text, axis: .vertical)
                     }
-                    .padding(.vertical, 16)
-                    .padding(.horizontal, 20)
                 }
-                .safeAreaPadding(.horizontal, 8)
-            }
-            .navigationTitle("Feedback")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Send") { Task { await sendFeedback() } }
-                        .disabled(commentsText.isEmpty || isSending)
-                        .foregroundStyle(commentsText.isEmpty || isSending ? .white.opacity(0.5) : .white)
-                        .accessibilityLabel("Send feedback")
-                        .accessibilityHint(commentsText.isEmpty ? "Enter comments first" : "Double-tap to submit this feedback to the student")
-                }
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundStyle(.white)
-                        .accessibilityLabel("Cancel")
-                        .accessibilityHint("Double-tap to discard feedback and go back")
+                Button("Add marker at current playback time", systemImage: "plus") {
+                    markers.append(
+                        MarkerDraft(time: Self.format(playbackTime()), text: "")
+                    )
                 }
             }
-            .alert("Invalid Markers", isPresented: .init(
-                get: { markerValidationError != nil },
-                set: { if !$0 { markerValidationError = nil } }
-            )) {
-                Button("OK") { markerValidationError = nil }
-            } message: {
-                Text(markerValidationError ?? "")
+        }
+        .navigationTitle("Feedback")
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    if hasDraft { confirmDiscard = true } else { dismiss() }
+                }
             }
+            ToolbarItem(placement: .confirmationAction) {
+                Button(isSending ? "Queueing…" : "Queue feedback") {
+                    queueFeedback()
+                }
+                .disabled(commentsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSending)
+            }
+        }
+        .confirmationDialog("Discard unsent feedback?", isPresented: $confirmDiscard) {
+            Button("Discard feedback", role: .destructive) { dismiss() }
+            Button("Keep editing", role: .cancel) {}
+        } message: {
+            Text("Your comments and markers have not been queued.")
         }
     }
 
-    private func statusHint(_ status: FeedbackStatus) -> String {
+    private var hasDraft: Bool { !commentsText.isEmpty || !markers.isEmpty }
+
+    private var statusHint: String {
         switch status {
-        case .ok:
-            return "The student met expectations for this entry."
-        case .needsRevision:
-            return "Ask the student to re-practice and resubmit."
-        case .nextGoal:
-            return "Good progress -- suggest the next practice goal."
+        case .ok: return "The submitted goal was met."
+        case .needsRevision: return "Ask the student to revise this work."
+        case .nextGoal: return "Set a concrete next practice goal."
         }
     }
 
-    private func sendFeedback() async {
-        guard !isSending, let session = authManager.session else { return }
-
-        // Validate markers: reject incomplete or invalid entries instead of
-        // silently dropping them, which could cause the teacher to lose work.
-        let nonEmptyMarkers = markers.filter { !$0.timeSeconds.isEmpty || !$0.text.isEmpty }
-        for marker in nonEmptyMarkers {
-            if marker.timeSeconds.isEmpty {
-                markerValidationError = "Each marker needs a time value."
+    private func queueFeedback() {
+        guard !isSending, authManager.session != nil else { return }
+        validationMessage = nil
+        let nonEmpty = markers.filter { !$0.time.isEmpty || !$0.text.isEmpty }
+        var parsed: [(Int, String)] = []
+        for marker in nonEmpty {
+            guard let seconds = Self.parse(marker.time) else {
+                validationMessage = "Enter marker times as minutes and seconds, for example 01:24."
                 return
             }
-            guard let seconds = Int(marker.timeSeconds), seconds >= 0 else {
-                markerValidationError = "Marker time must be a non-negative number."
+            guard !marker.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                validationMessage = "Add a note to every marker."
                 return
             }
-            if marker.text.isEmpty {
-                markerValidationError = "Each marker needs a note."
-                return
-            }
+            parsed.append((seconds, marker.text))
         }
 
         isSending = true
-        defer { isSending = false }
-
         let feedbackId = UUID().uuidString
-        let markerModels = nonEmptyMarkers.map { draft in
-            // Force-unwrap is safe: validation above guarantees Int conversion succeeds.
-            LocalMarker(id: UUID().uuidString, timeSeconds: Int(draft.timeSeconds)!, text: draft.text)
-        }
-
-        let localFeedback = LocalFeedback(id: feedbackId, targetType: "entry", targetId: entry.id, teacherName: "", status: status, commentsText: commentsText)
-        for marker in markerModels {
+        let feedback = LocalFeedback(
+            id: feedbackId,
+            targetType: "entry",
+            targetId: entry.id,
+            teacherName: authManager.session?.displayName ?? "",
+            status: status,
+            commentsText: commentsText.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        for item in parsed {
+            let marker = LocalMarker(id: UUID().uuidString, timeSeconds: item.0, text: item.1)
             modelContext.insert(marker)
-            localFeedback.markers.append(marker)
+            feedback.markers.append(marker)
         }
-        modelContext.insert(localFeedback)
+        modelContext.insert(feedback)
         do {
             try modelContext.save()
+            syncManager.enqueue(type: .postFeedback, payload: [
+                "targetType": "entry",
+                "targetId": entry.id,
+                "feedbackId": feedbackId,
+            ])
+            onQueued?()
+            dismiss()
         } catch {
+            isSending = false
             appState.reportError(error)
-            return
         }
-
-        syncManager.enqueue(type: .postFeedback, payload: [
-            "targetType": "entry",
-            "targetId": entry.id,
-            "feedbackId": feedbackId
-        ])
-        dismiss()
     }
-}
 
-private enum FeedbackSnippet {
-    static let defaults: [String] = [
-        "Strong musical phrasing.",
-        "Great rhythm stability.",
-        "Please slow down and clean articulation.",
-        "Watch intonation in longer notes.",
-        "Excellent progress since last submission."
-    ]
+    static func parse(_ value: String) -> Int? {
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+        if parts.count == 1 { return Int(parts[0]).flatMap { $0 >= 0 ? $0 : nil } }
+        guard parts.count == 2,
+              let minutes = Int(parts[0]), let seconds = Int(parts[1]),
+              minutes >= 0, (0..<60).contains(seconds) else { return nil }
+        return minutes * 60 + seconds
+    }
+
+    static func format(_ interval: TimeInterval) -> String {
+        let total = max(0, Int(interval.rounded(.down)))
+        return String(format: "%02d:%02d", total / 60, total % 60)
+    }
 }

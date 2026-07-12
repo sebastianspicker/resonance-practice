@@ -65,6 +65,19 @@ final class APIClient {
         return try await send(url: url, method: "GET", body: Optional<EmptyBody>.none, accessToken: accessToken)
     }
 
+    func fetchEntries(accessToken: String, courseId: String, limit: Int = 50, cursor: String? = nil) async throws -> PaginatedResponse<EntryResponse> {
+        var components = URLComponents(url: AppConfig.apiBaseURL.appendingPathComponent("courses/\(courseId)/entries"), resolvingAgainstBaseURL: false)!
+        var items = [URLQueryItem(name: "limit", value: String(limit))]
+        if let cursor { items.append(URLQueryItem(name: "cursor", value: cursor)) }
+        components.queryItems = items
+        return try await send(url: components.url!, method: "GET", body: Optional<EmptyBody>.none, accessToken: accessToken)
+    }
+
+    func fetchEntry(accessToken: String, entryId: String) async throws -> EntryResponse {
+        let url = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entryId)")
+        return try await send(url: url, method: "GET", body: Optional<EmptyBody>.none, accessToken: accessToken)
+    }
+
     func createEntry(accessToken: String, courseId: String, entry: LocalPracticeEntry) async throws -> EntryResponse {
         let url = AppConfig.apiBaseURL.appendingPathComponent("courses/\(courseId)/entries")
         struct Body: Encodable {
@@ -107,6 +120,33 @@ final class APIClient {
         )
     }
 
+    func updateEntry(accessToken: String, entry: LocalPracticeEntry) async throws -> EntryResponse {
+        let url = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entry.id)")
+        struct Body: Encodable {
+            let kind: String
+            let practiceDate: Date
+            let goalText: String
+            let durationSeconds: Int?
+            let tags: [String]
+            let notes: String?
+            let consentConfirmed: Bool
+            let consentScope: String?
+            let captureProfile: String?
+        }
+        let body = Body(
+            kind: entry.kind.rawValue,
+            practiceDate: entry.practiceDate,
+            goalText: entry.goalText,
+            durationSeconds: entry.durationSeconds,
+            tags: entry.tags,
+            notes: entry.notes,
+            consentConfirmed: entry.consentConfirmedAt != nil,
+            consentScope: entry.consentScope?.rawValue,
+            captureProfile: entry.captureProfile?.rawValue
+        )
+        return try await send(url: url, method: "PATCH", body: body, accessToken: accessToken)
+    }
+
     func createArtifact(accessToken: String, entryId: String, artifact: LocalArtifact) async throws -> ArtifactResponse {
         let url = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entryId)/artifacts")
         struct Body: Encodable {
@@ -130,6 +170,11 @@ final class APIClient {
     func confirmArtifact(accessToken: String, artifactId: String) async throws -> ArtifactResponse {
         let url = AppConfig.apiBaseURL.appendingPathComponent("artifacts/\(artifactId)/confirm")
         return try await send(url: url, method: "POST", body: Optional<EmptyBody>.none, accessToken: accessToken)
+    }
+
+    func fetchArtifactDownloadURL(accessToken: String, artifactId: String) async throws -> ArtifactDownloadResponse {
+        let url = AppConfig.apiBaseURL.appendingPathComponent("artifacts/\(artifactId)/download")
+        return try await send(url: url, method: "GET", body: Optional<EmptyBody>.none, accessToken: accessToken)
     }
 
     func submitEntry(accessToken: String, entryId: String) async throws -> EntryResponse {

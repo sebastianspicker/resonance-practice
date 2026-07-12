@@ -18,9 +18,8 @@ flowchart TB
         S3[(Object Storage\nMinIO / S3)]
     end
 
-    subgraph External["External Systems"]
-        ILIAS[ILIAS\ndeep link]
-        ASIMUT[ASIMUT\niCal feed]
+    subgraph External["Configured External Systems"]
+        ICAL[User-provided\niCal feed]
         SSO[University SSO\nShibboleth / OIDC]
     end
 
@@ -32,8 +31,7 @@ flowchart TB
     SVC --> DB
     SVC --> S3
     AM -.->|"login (prod)"| SSO
-    UI -.->|"deep link"| ILIAS
-    UI -.->|"iCal subscription"| ASIMUT
+    UI -.->|"iCal subscription"| ICAL
 ```
 
 ## Entry Lifecycle
@@ -55,8 +53,8 @@ stateDiagram-v2
 - API server (Fastify + Prisma): auth, course context, entries, feedback, media pre-signed URLs.
 - Postgres: metadata and access control.
 - Object storage (S3-compatible, MinIO in dev): media artifacts.
-- ILIAS: course context via deep link (MVP), optional LTI launch documented.
-- ASIMUT: iCal feed consumed directly by app.
+- External course/LTI integration is proposed but not implemented.
+- Calendar events are read from a user-provided iCal URL; automatic ASIMUT integration is not implemented.
 
 ## Client Structure
 
@@ -93,10 +91,9 @@ The sync subsystem is split into four focused components:
 - **`EntryDeletionCoordinator`** — coordinates offline-safe entry deletion: cancels in-flight queue items for the entry's artifacts, deletes local files, enqueues a remote delete only when the entry was already synced to the server.
 - **`CalendarSubscriptionStore`** — persists the iCal subscription URL in Keychain (migrates legacy UserDefaults value on first access).
 
-## Optional LTI (Minimal)
+## Proposed Course Integration
 
-- If ILIAS supports LTI launch, an LTI 1.3 launch can redirect to the same universal link with `courseId`.
-- The MVP does not implement a full LTI platform; it only documents the mapping and relies on deep links.
+ILIAS/LTI or another course-system deep link may be added later. No LTI launch, universal-link mapping, or automatic course import exists in the current source tree.
 
 ## Data Flow
 
@@ -112,8 +109,37 @@ The sync subsystem is split into four focused components:
 ## Offline Strategy
 
 - Local-first writes to SwiftData with a persistent sync queue.
-- Background sync using `URLSession` with `.default` configuration and exponential backoff. (URLSession background configuration is intentionally not used because it does not support the Swift concurrency `upload(for:from:)` API required for async artifact uploads.)
+- Background sync using `URLSession` with `.default` configuration and exponential backoff. Background configuration is intentionally not used because it does not support the Swift concurrency `upload(for:fromFile:)` path used for artifact uploads.
 - Last-write-wins for entry edits; feedback is append-only server-side.
+
+## Entry Hydration and Reconciliation
+
+After course refresh, the iOS client reads every student entry page and merges
+server metadata and artifacts into SwiftData. `remoteUpdatedAt` distinguishes a
+server-backed record from a local-only draft. Newer queued local edits retain
+their editable fields while server lifecycle and artifact state continue to
+advance. Remote-backed records are pruned only after pagination completes
+successfully; an offline launch continues to use the cache.
+
+Queue tasks have an entity identity. Re-enqueueing create/update/submit/delete,
+artifact, capture metadata, or feedback replaces the pending payload and resets
+its retry state. Submission stays pending while media dependencies are pending.
+
+## Session Data Lifecycle
+
+The Keychain stores the active local-data owner. A different authenticated user
+is blocked until the person explicitly deletes the previous local profile or signs out. Manual
+sign-out reports pending and failed work, offers sync, and requires confirmation
+before deleting courses, entries, media files, feedback, calendar data, exports,
+and queue state.
+
+## Teacher Media Playback
+
+Teachers request `GET /artifacts/:artifactId/download`. The server applies entry
+membership/ownership authorization and signs an S3 `GetObject` request for 15
+minutes. The iOS submission detail streams it through `AVPlayer` and does not
+persist a teacher copy. Expiry, offline access, and authorization failures are
+implemented as contextual retryable playback states. Device and poor-network behavior still requires pilot validation.
 
 ## Pagination
 
@@ -134,9 +160,9 @@ API returns consistent error objects:
 
 All error codes are centralized in `errorCodes.ts`. Routes use `withPrismaErrors()` (from `errors.ts`) to translate Prisma-specific exceptions (P2002 unique conflict, P2025 not-found) into structured API errors, avoiding raw 500 responses from database constraint violations.
 
-## Test Coverage
+## Test Surfaces
 
-The server test suite covers:
+The checked-in server test suite contains coverage for:
 
 - Authentication and authorization (dev auth, ACL, course-role vs global-role)
 - Input validation (client IDs, strings, dates, enums)
@@ -146,3 +172,5 @@ The server test suite covers:
 - Review queue pagination and entries list pagination (cursor-based, deterministic ordering)
 - Security headers, CORS, rate limiting, and content-type enforcement
 - Error handling (structured errors, Prisma error mapping, stack trace suppression)
+
+The latest server tests were not executed in the current local checkout because `server/node_modules` is absent. The iOS XCTest target passed 125 tests locally on 2026-07-11.

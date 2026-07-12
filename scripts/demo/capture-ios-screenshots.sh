@@ -4,10 +4,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 IOS_DIR="$ROOT_DIR/ios/ResonanceApp"
 SERVER_DIR="$ROOT_DIR/server"
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/artifacts/screenshots/rc-local}"
-DERIVED_DATA_DIR="${DERIVED_DATA_DIR:-$ROOT_DIR/.tmp/derived-data-rc-screenshots}"
-RC_VERSION="${RC_VERSION:-0.1.0-rc}"
-DEVICE_NAME="${IOS_SIM_DEVICE_NAME:-Resonance RC iPad}"
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/artifacts/screenshots/pilot-local}"
+DERIVED_DATA_DIR="${DERIVED_DATA_DIR:-$ROOT_DIR/.tmp/derived-data-pilot-screenshots}"
+CAPTURE_VERSION="${CAPTURE_VERSION:-production-pilot-local}"
+DEVICE_NAME="${IOS_SIM_DEVICE_NAME:-Resonance Pilot iPad}"
 DEFAULT_DEVICE_TYPE='iPad Pro 11-inch (M5)'
 DEVICE_TYPE="${IOS_SIM_DEVICE_TYPE:-$DEFAULT_DEVICE_TYPE}"
 API_BASE="${RESONANCE_API_BASE:-http://localhost:4000}"
@@ -52,7 +52,7 @@ if ! curl -fsS "$API_BASE/health" >/dev/null 2>&1; then
 			export "$key=$value"
 		done <".env.example"
 		npm run dev
-	) >"$ROOT_DIR/.tmp/rc-demo-api.log" 2>&1 &
+	) >"$ROOT_DIR/.tmp/pilot-demo-api.log" 2>&1 &
 	SERVER_PID=$!
 
 	for _ in {1..60}; do
@@ -207,7 +207,7 @@ capture() {
 	local screen="$2"
 	local index="$3"
 	local wait_seconds="$4"
-	local target="$OUTPUT_DIR/rc-${RC_VERSION}-${persona}-${screen}-${index}.png"
+	local target="$OUTPUT_DIR/pilot-${CAPTURE_VERSION}-${persona}-${screen}-${index}.png"
 
 	echo " - Capturing $persona / $screen -> $(basename "$target")"
 
@@ -222,7 +222,7 @@ capture() {
 	xcrun simctl io "$UDID" screenshot "$target" >/dev/null
 }
 
-echo "[7/8] Capturing mandatory RC screenshots"
+echo "[7/8] Capturing production-pilot validation screenshots"
 capture "student" "login" "01" "2"
 capture "student" "courses" "01" "4"
 capture "student" "entry-list" "01" "4"

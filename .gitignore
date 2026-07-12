@@ -59,6 +59,11 @@ docs/agent/
 docs/archive/
 plan.md
 
+# Local and superseded visual evidence. Publish approved captures explicitly
+# under docs/assets/screenshots/approved/ only after review.
+docs/assets/screenshots/local/
+docs/assets/screenshots/rc/
+
 # Xcode
 DerivedData/
 *.xcresult/
@@ -115,6 +120,7 @@ temp/
 .codacy/.gitignore
 .codacy/cli-config.yaml
 .codacy/codacy.yaml
+.codacy/codacy.config.json
 .codacy/configure-*.json
 .codacy/*-summary.json
 .codacy/tools-configs/
@@ -139,3 +145,16 @@ infra/postgres-data/
 credentials.json
 service-account*.json
 *-secret*.json
+
+# Common local credential and provisioning files
+*.mobileprovision
+*.provisionprofile
+*.cer
+*.crt
+*.der
+*.keystore
+*.secrets
+secrets.*
+!.secrets.example
+!secrets.example
+!secrets.*.example

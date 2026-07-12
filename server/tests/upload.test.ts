@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { HeadObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import {
   app,
   setupApp,
@@ -246,5 +246,87 @@ describe('media upload flow', () => {
       .set('Authorization', `Bearer ${teacherToken}`)
       .send();
     expect(confirmRes.status).toBe(403);
+  });
+
+  it('authorizes uploaded artifact playback for the owner and course teacher', async () => {
+    const studentToken = await login('student');
+    const teacherToken = await login('teacher');
+    const entry = await prisma.practiceEntry.create({
+      data: {
+        id: 'entry-download',
+        courseId: 'COURSE_TEST',
+        studentId: 'student-1',
+        practiceDate: new Date(),
+        goalText: 'Review this evidence',
+        tags: [],
+        status: 'submitted',
+      },
+    });
+    const artifact = await prisma.artifact.create({
+      data: {
+        id: 'artifact-download',
+        entryId: entry.id,
+        type: 'audio',
+        durationSeconds: 30,
+        uploadState: 'uploaded',
+        storageKey: 'artifacts/entry-download/artifact-download',
+      },
+    });
+    s3Mock.on(GetObjectCommand).resolves({});
+
+    for (const token of [studentToken, teacherToken]) {
+      const response = await request(app.server)
+        .get(`/artifacts/${artifact.id}/download`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(response.status).toBe(200);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.body.expiresInSeconds).toBe(900);
+      expect(response.body.downloadUrl).toMatch(/^https?:\/\//);
+    }
+  });
+
+  it('rejects unavailable artifacts and unrelated students for playback', async () => {
+    const otherStudent = await prisma.user.create({
+      data: { id: 'student-download-other', displayName: 'Other', globalRole: 'student' },
+    });
+    await prisma.membership.create({
+      data: {
+        userId: otherStudent.id,
+        courseId: 'COURSE_TEST',
+        roleInCourse: 'student',
+      },
+    });
+    const ownerToken = await login('student');
+    const otherToken = await getAccessToken('student', { userId: otherStudent.id });
+    const entry = await prisma.practiceEntry.create({
+      data: {
+        id: 'entry-download-denied',
+        courseId: 'COURSE_TEST',
+        studentId: 'student-1',
+        practiceDate: new Date(),
+        goalText: 'Private evidence',
+        tags: [],
+        status: 'draft',
+      },
+    });
+    const artifact = await prisma.artifact.create({
+      data: {
+        id: 'artifact-download-denied',
+        entryId: entry.id,
+        type: 'audio',
+        durationSeconds: 30,
+      },
+    });
+
+    const unavailable = await request(app.server)
+      .get(`/artifacts/${artifact.id}/download`)
+      .set('Authorization', `Bearer ${ownerToken}`);
+    expect(unavailable.status).toBe(409);
+    expect(unavailable.body.error?.code).toBe('UPLOAD_INVALID');
+
+    const denied = await request(app.server)
+      .get(`/artifacts/${artifact.id}/download`)
+      .set('Authorization', `Bearer ${otherToken}`);
+    expect(denied.status).toBe(403);
   });
 });

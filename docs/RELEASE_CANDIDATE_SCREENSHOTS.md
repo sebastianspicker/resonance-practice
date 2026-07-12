@@ -1,59 +1,37 @@
-# Release Candidate Screenshot Playbook
+# Production-Pilot Screenshot Validation Playbook
 
-## Device Baseline
+Screenshots are supporting visual evidence, not proof of interaction, accessibility, networking, or external-service behavior. The previous `0.1.0-rc` images represented the retired glass interface and are intentionally no longer public.
 
-- Device: iPad (latest available simulator)
-- Orientation: Portrait
-- Appearance: Dark mode
-- Text size: Large
+## Capture Policy
 
-## File Naming Convention
+- Capture from the current source after build and XCTest pass.
+- Keep unreviewed output under `artifacts/screenshots/` or `docs/assets/screenshots/local/`; both are ignored.
+- Publish only reviewed captures under `docs/assets/screenshots/approved/`.
+- Do not restore README screenshots until they match the current interface and have been approved.
+- Use mock identities and content only. Do not capture tokens, real courses, names, calendar URLs, media, or diagnostics.
 
-Use:
+## Pairwise Matrix
 
-```text
-rc-<version>-<persona>-<screen>-<index>.png
-```
+Cover the smallest useful pairwise set across:
 
-Examples:
+- iPhone and iPad.
+- Student and teacher course roles.
+- Light and dark appearance.
+- German and English after localization exists.
+- Large, AX1, AX3, and AX5 Dynamic Type.
+- Portrait, landscape, and narrow iPad window.
 
-- `rc-0.1.0-rc-student-courses-01.png`
-- `rc-0.1.0-rc-teacher-teacher-review-queue-01.png`
+## Required Surfaces
 
-## Mandatory Screens
+- Sign-in and account-conflict protection.
+- Student course, entry list, draft form, entry detail, capture review, feedback, and sync status.
+- Teacher to-review queue, secure media playback, timestamped feedback, and queued-feedback outcome.
+- Calendar, Export, Settings, destructive sign-out, offline, empty, permission, and recoverable-error states.
 
-### Student Persona
+## Acceptance
 
-1. Login page (mock university branding visible)
-2. Courses list
-3. Entry list (status chips visible)
-4. Entry detail (artifact sync phase + feedback section visible)
-5. Export view (practice stats visible)
-6. Settings view (active host + debug section)
-7. Sync Queue view (pending/failed counts)
-
-### Teacher Persona
-
-1. Courses list
-2. Teacher review queue (multiple entries visible)
-3. Feedback editor (status + snippet chips visible)
-
-## Optional Screens
-
-- Calendar screen (optional; not RC-blocking)
-- Entry delete confirmation dialog
-
-## Capture Flow
-
-1. Run `./scripts/demo/capture-ios-screenshots.sh` for the semi-automatic capture flow.
-2. Script output folder is `artifacts/screenshots/rc-local` by default (gitignored). Copy the approved screenshots to `docs/assets/screenshots/rc/` before committing.
-3. Optionally override folder via `OUTPUT_DIR=/absolute/path ./scripts/demo/capture-ios-screenshots.sh`.
-4. Validate filenames against the naming convention.
-
-## Acceptance Criteria
-
-- No empty placeholder states on mandatory screens.
-- Status indicators are readable (`draft/submitted/reviewed`).
-- API host/environment text is visible in Settings.
-- Queue counters and any errors shown are plausible and non-generic.
-- Screenshot filenames follow the naming pattern exactly.
+- No clipped, truncated, overlapping, or hidden critical content.
+- Status is understandable without color.
+- No debug-only or environment information appears in release captures.
+- User-generated content is deliberately long enough to exercise wrapping.
+- Each capture records commit, simulator/device, OS, locale, appearance, and Dynamic Type in accompanying release notes.

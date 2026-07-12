@@ -1,4 +1,6 @@
-# API (Draft)
+# API Reference
+
+This document describes the routes implemented in the current source tree. It is not evidence of a deployed or externally validated service.
 
 Base URL: `http://localhost:4000`
 
@@ -330,6 +332,24 @@ Errors:
 
 - `400 MISSING_STORAGE_KEY` — presign was not called first.
 - `409 UPLOAD_INVALID` — object not found in storage or is empty.
+
+### GET /artifacts/:artifactId/download
+
+Returns a short-lived URL for private playback. The student owner and a teacher
+who belongs to the same course are authorized through the entry access rules.
+The artifact must be uploaded, nondeleted, and have a storage key.
+
+Response:
+```json
+{
+  "downloadUrl": "https://object-storage.example/signed-request",
+  "expiresInSeconds": 900
+}
+```
+
+The response sets `Cache-Control: no-store`. Signed URLs must not be logged.
+Pending or failed artifacts return `409 UPLOAD_INVALID`; unrelated users receive
+the same entry authorization errors as `GET /entries/:entryId`.
 
 ### PUT /entries/:entryId/capture-markers
 

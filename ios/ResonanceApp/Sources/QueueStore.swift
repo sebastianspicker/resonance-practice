@@ -42,6 +42,16 @@ final class QueueStore {
             Self.logger.error("Failed to encode sync payload as UTF-8 for \(type.rawValue)")
             return
         }
+        if let identity = taskIdentity(type: type, payload: payload),
+           let existing = existingTask(type: type, identity: identity) {
+            existing.payloadJSON = json
+            existing.status = SyncStatus.pending.rawValue
+            existing.retryCount = 0
+            existing.lastError = nil
+            existing.nextAttemptAt = nil
+            save()
+            return
+        }
         let item = SyncQueueItem(id: UUID().uuidString, type: type.rawValue, payloadJSON: json)
         modelContext.insert(item)
         save()
@@ -206,5 +216,30 @@ final class QueueStore {
               let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         else { return nil }
         return payload["artifactId"] as? String
+    }
+
+    private func taskIdentity(type: SyncTaskType, payload: [String: Any]) -> String? {
+        switch type {
+        case .syncArtifact:
+            return payload["artifactId"] as? String
+        case .createEntry, .updateEntry, .submitEntry, .deleteEntry, .syncCaptureProfile, .syncCaptureMarkers:
+            return payload["entryId"] as? String
+        case .postFeedback:
+            return payload["feedbackId"] as? String
+        }
+    }
+
+    private func existingTask(type: SyncTaskType, identity: String) -> SyncQueueItem? {
+        let typeValue = type.rawValue
+        let descriptor = FetchDescriptor<SyncQueueItem>(
+            predicate: #Predicate { $0.type == typeValue }
+        )
+        return try? modelContext.fetch(descriptor).first { item in
+            guard item.status != SyncStatus.processing.rawValue,
+                  let data = item.payloadJSON.data(using: .utf8),
+                  let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return false }
+            return taskIdentity(type: type, payload: payload) == identity
+        }
     }
 }

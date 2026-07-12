@@ -59,6 +59,7 @@ final class TaskExecutor {
     private func execute(taskType: SyncTaskType, payload: [String: Any], accessToken: String) async throws {
         switch taskType {
         case .createEntry: try await executeCreateEntry(payload: payload, accessToken: accessToken)
+        case .updateEntry: try await executeUpdateEntry(payload: payload, accessToken: accessToken)
         case .submitEntry: try await executeSubmitEntry(payload: payload, accessToken: accessToken)
         case .deleteEntry: try await executeDeleteEntry(payload: payload, accessToken: accessToken)
         case .syncArtifact: try await executeSyncArtifact(payload: payload, accessToken: accessToken)
@@ -78,10 +79,22 @@ final class TaskExecutor {
         }
     }
 
+    private func executeUpdateEntry(payload: [String: Any], accessToken: String) async throws {
+        let entryId = payload["entryId"] as? String ?? ""
+        let entry = try store.fetchEntry(id: entryId)
+        let response = try await apiClient.updateEntry(accessToken: accessToken, entry: entry)
+        entry.remoteUpdatedAt = response.updatedAt ?? Date()
+        store.save()
+    }
+
     private func executeSubmitEntry(payload: [String: Any], accessToken: String) async throws {
         let entryId = payload["entryId"] as? String ?? ""
-        _ = try await apiClient.submitEntry(accessToken: accessToken, entryId: entryId)
         let entry = try store.fetchEntry(id: entryId)
+        guard !entry.artifacts.isEmpty,
+              entry.artifacts.allSatisfy({ $0.uploadState == .uploaded }) else {
+            throw SyncError.dependenciesPending("Submission is waiting for media uploads")
+        }
+        _ = try await apiClient.submitEntry(accessToken: accessToken, entryId: entryId)
         entry.status = .submitted
         store.save()
     }

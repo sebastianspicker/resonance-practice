@@ -1,6 +1,6 @@
 # RUNBOOK
 
-This runbook captures the current, reproducible commands for local development, verification, and deployment.
+This runbook captures current local-development and verification commands. The final section lists production deployment requirements; the repository does not supply or validate production infrastructure.
 
 ## Prerequisites
 
@@ -166,7 +166,7 @@ Remove local build/runtime artifacts:
 ./scripts/clean-workspace.sh
 ```
 
-## Release Candidate Demo (Mock University)
+## Local Pilot Demo (Mock University)
 
 Bootstrap deterministic local demo state:
 ```bash
@@ -182,13 +182,15 @@ Screenshot instructions:
 
 - See `docs/RELEASE_CANDIDATE_SCREENSHOTS.md`
 
-## Production Deployment
+## Production Deployment Requirements (Unvalidated)
+
+The following is an operator checklist, not a tested deployment recipe. Choose and document infrastructure, backup, recovery, monitoring, TLS, and secret-management systems outside this repository.
 
 ### Production Prerequisites
 
 - A reachable PostgreSQL instance
 - An S3-compatible object store, e.g. MinIO in server mode
-- TLS termination through the deployment reverse proxy, typically Traefik in this infrastructure
+- TLS termination through an operator-managed reverse proxy or ingress
 - Secrets injected via environment variables — **never hardcode in config files**
 
 ### Required Environment Variables (Production)
@@ -216,7 +218,7 @@ S3_SECRET_KEY=<s3-secret-access-key>
 S3_FORCE_PATH_STYLE=true  # true for MinIO path-style
 ```
 
-### Deploy Steps
+### Reference Build and Deploy Sequence
 
 1. **Database**: Run migrations against the production database:
    ```bash
@@ -224,10 +226,10 @@ S3_FORCE_PATH_STYLE=true  # true for MinIO path-style
    DATABASE_URL=<prod-url> npx prisma migrate deploy
    ```
 
-2. **Build**:
+2. **Install, generate, and build**:
    ```bash
    cd server
-   npm ci --production
+   npm ci
    npm run prisma:generate
    npm run build
    ```
@@ -236,7 +238,7 @@ S3_FORCE_PATH_STYLE=true  # true for MinIO path-style
    ```bash
    npm run start
    ```
-   The server listens on `PORT` (default 4000). Put it behind a TLS-terminating reverse proxy.
+   The server listens on `PORT` (default 4000). Put it behind operator-managed TLS termination.
 
 4. **Health check**: Confirm the server is up:
    ```bash
@@ -253,3 +255,4 @@ S3_FORCE_PATH_STYLE=true  # true for MinIO path-style
 - Postgres and S3 should be encrypted at rest.
 - Dev auth endpoints (`/dev/*`) are compiled in but will 404 when `AUTH_MODE` is not `dev`.
 - Run `npm audit --audit-level=high` before each deployment.
+- Validate this sequence in a disposable staging environment before any production use.

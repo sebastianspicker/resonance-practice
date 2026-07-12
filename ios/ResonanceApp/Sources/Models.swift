@@ -145,6 +145,7 @@ final class LocalPracticeEntry {
     var consentScopeRaw: String?
     var captureProfileRaw: String?
     var updatedAt: Date
+    var remoteUpdatedAt: Date?
     var deletedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \LocalArtifact.entry) var artifacts: [LocalArtifact]
@@ -173,6 +174,7 @@ final class LocalPracticeEntry {
         self.consentScopeRaw = captureContext.consentScope?.rawValue
         self.captureProfileRaw = captureContext.captureProfile?.rawValue
         self.updatedAt = Date()
+        self.remoteUpdatedAt = nil
         self.deletedAt = nil
         self.artifacts = []
         self.feedback = []

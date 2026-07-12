@@ -4,22 +4,21 @@ import SwiftData
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var authManager: AuthManager
+    @EnvironmentObject var appState: AppState
+    @EnvironmentObject var syncManager: SyncManager
     @State private var demoStatusMessage: String?
     @State private var showDemoStatusAlert = false
+    @State private var showSignOutOptions = false
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("API") {
-                    Text("Base URL: \(AppConfig.apiBaseURL.absoluteString)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                    Text("Active host: \(AppConfig.apiBaseURL.host() ?? AppConfig.apiBaseURL.absoluteString)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                Section("Account") {
+                    if let session = authManager.session {
+                        LabeledContent("Signed in as", value: session.displayName)
+                    }
                     Button("Sign Out") {
-                        authManager.signOut()
+                        showSignOutOptions = true
                     }
                     .foregroundStyle(.red)
                     .accessibilityLabel("Sign out")
@@ -66,6 +65,23 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .confirmationDialog(
+                "Sign out and delete local data?",
+                isPresented: $showSignOutOptions,
+                titleVisibility: .visible
+            ) {
+                if syncManager.pendingQueueCount > 0 || syncManager.failedQueueCount > 0 {
+                    Button("Sync now") {
+                        Task { await syncManager.processQueue() }
+                    }
+                }
+                Button("Sign out and delete local data", role: .destructive) {
+                    appState.signOutAndDeleteLocalData()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("\(syncManager.pendingQueueCount) pending and \(syncManager.failedQueueCount) failed changes will be deleted from this device.")
+            }
             .alert("Demo Data", isPresented: $showDemoStatusAlert) {
                 Button("OK") { demoStatusMessage = nil }
             } message: {

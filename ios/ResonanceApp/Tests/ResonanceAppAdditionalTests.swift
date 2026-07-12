@@ -622,6 +622,28 @@ final class QueueStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testEnqueueCoalescesRepeatedEntityTaskAndResetsFailure() throws {
+        let (container, store) = makeStore()
+        store.enqueue(type: .updateEntry, payload: ["entryId": "entry-1", "version": 1])
+        let initial = try XCTUnwrap(
+            container.mainContext.fetch(FetchDescriptor<SyncQueueItem>()).first
+        )
+        initial.status = SyncStatus.failed.rawValue
+        initial.retryCount = 3
+        initial.lastError = "offline"
+        try container.mainContext.save()
+
+        store.enqueue(type: .updateEntry, payload: ["entryId": "entry-1", "version": 2])
+
+        let items = try container.mainContext.fetch(FetchDescriptor<SyncQueueItem>())
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].status, SyncStatus.pending.rawValue)
+        XCTAssertEqual(items[0].retryCount, 0)
+        XCTAssertNil(items[0].lastError)
+        XCTAssertTrue(items[0].payloadJSON.contains("\"version\":2"))
+    }
+
+    @MainActor
     func testCountsReturnCorrectValues() throws {
         let (container, store) = makeStore()
         let pending = SyncQueueItem(id: "p", type: "createEntry", payloadJSON: "{}")
@@ -753,5 +775,18 @@ final class QueueStoreTests: XCTestCase {
 
         let fetched = try container.mainContext.fetch(FetchDescriptor<SyncQueueItem>())
         XCTAssertTrue(fetched.isEmpty)
+    }
+}
+
+final class FeedbackMarkerFormatTests: XCTestCase {
+    func testParsesMinutesAndSeconds() {
+        XCTAssertEqual(FeedbackEditorView.parse("01:24"), 84)
+        XCTAssertEqual(FeedbackEditorView.parse("9"), 9)
+        XCTAssertNil(FeedbackEditorView.parse("1:60"))
+        XCTAssertNil(FeedbackEditorView.parse("-1:10"))
+    }
+
+    func testFormatsPlaybackTime() {
+        XCTAssertEqual(FeedbackEditorView.format(84.9), "01:24")
     }
 }
