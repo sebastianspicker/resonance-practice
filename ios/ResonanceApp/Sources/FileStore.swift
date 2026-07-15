@@ -4,14 +4,20 @@ import os
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "resonance", category: "FileStore")
 
 enum FileStore {
-    static func mediaDirectory() -> URL {
-        guard let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            logger.fault("Documents directory unavailable; falling back to Caches directory for media storage.")
-            let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
-                ?? URL(fileURLWithPath: NSTemporaryDirectory())
-            return cachesDir.appendingPathComponent("Media", isDirectory: true)
+    private static func mediaDirectoryURL() -> URL {
+        if let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            return base.appendingPathComponent("Media", isDirectory: true)
         }
-        let dir = base.appendingPathComponent("Media", isDirectory: true)
+        let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        return cachesDir.appendingPathComponent("Media", isDirectory: true)
+    }
+
+    static func mediaDirectory() -> URL {
+        if FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first == nil {
+            logger.fault("Documents directory unavailable; falling back to Caches directory for media storage.")
+        }
+        let dir = mediaDirectoryURL()
         if !FileManager.default.fileExists(atPath: dir.path) {
             do {
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -21,6 +27,36 @@ enum FileStore {
             }
         }
         return dir
+    }
+
+    static func hasStoredMediaFiles() throws -> Bool {
+        let directory = mediaDirectoryURL()
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            return false
+        }
+        return try !FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: []
+        ).isEmpty
+    }
+
+    static func removeAllStoredMediaFiles() throws {
+        let directory = mediaDirectoryURL()
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            return
+        }
+        let mediaFiles = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: []
+        )
+        for file in mediaFiles {
+            try FileManager.default.removeItem(at: file)
+        }
+        guard try !hasStoredMediaFiles() else {
+            throw FileStoreError.mediaDirectoryNotEmpty(directory.path)
+        }
     }
 
     static func createAudioFileURL(entryId: String) -> URL {
@@ -56,15 +92,36 @@ enum FileStore {
         }
     }
 
-    static func deleteFileIfExists(atPath path: String) {
+    static func removeFileIfExists(atPath path: String) throws {
         guard FileManager.default.fileExists(atPath: path) else {
             return
         }
 
+        try FileManager.default.removeItem(atPath: path)
+        guard !FileManager.default.fileExists(atPath: path) else {
+            throw FileStoreError.fileStillExists(path)
+        }
+    }
+
+    static func deleteFileIfExists(atPath path: String) {
         do {
-            try FileManager.default.removeItem(atPath: path)
+            try removeFileIfExists(atPath: path)
         } catch {
             logger.error("Failed to delete file at \(path): \(error.localizedDescription)")
+        }
+    }
+}
+
+enum FileStoreError: LocalizedError {
+    case fileStillExists(String)
+    case mediaDirectoryNotEmpty(String)
+
+    var errorDescription: String? {
+        switch self {
+        case let .fileStillExists(path):
+            return "Media file could not be removed: \(path)"
+        case let .mediaDirectoryNotEmpty(path):
+            return "Media directory could not be emptied: \(path)"
         }
     }
 }

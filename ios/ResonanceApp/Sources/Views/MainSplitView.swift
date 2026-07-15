@@ -209,21 +209,53 @@ struct MainSplitView: View {
     private var detailPane: some View {
         if let scenario = ScreenshotScenario.current, scenario.requiresAuthenticatedSession {
             switch scenario.screen {
+            case .newEntry:
+                if let course = screenshotCourse {
+                    NewEntryView(
+                        courseId: course.id,
+                        initialContent: scenario.formContent,
+                        wrapsInNavigationStack: false
+                    )
+                } else {
+                    defaultDetailPane
+                }
             case .entryDetail:
                 if let entry = screenshotPrimaryEntry {
-                    EntryDetailView(entry: entry)
+                    EntryDetailView(entry: entry, showsArtifacts: false)
                 } else {
                     defaultDetailPane
                 }
             case .teacherReviewQueue:
                 if let course = screenshotCourse {
-                    TeacherQueueView(courseId: course.id)
+                    TeacherQueueView(courseId: course.id, screenshotQueue: screenshotReviewEntries)
+                } else {
+                    defaultDetailPane
+                }
+            case .submissionDetail:
+                if let reviewEntry = screenshotFeedbackEntry {
+                    SubmissionDetailView(entry: reviewEntry, onFeedbackQueued: {}, loadsRemoteMedia: false)
                 } else {
                     defaultDetailPane
                 }
             case .feedbackEditor:
                 if let reviewEntry = screenshotFeedbackEntry {
-                    FeedbackEditorView(entry: reviewEntry)
+                    FeedbackEditorView(entry: reviewEntry, initialContent: scenario.feedbackContent)
+                } else {
+                    defaultDetailPane
+                }
+            case .feedbackQueued:
+                if let course = screenshotCourse {
+                    TeacherQueueView(
+                        courseId: course.id,
+                        screenshotQueue: screenshotReviewEntries,
+                        initiallyQueuedFeedback: scenario.queuedFeedbackEntryIDs
+                    )
+                } else {
+                    defaultDetailPane
+                }
+            case .reviewedFeedback:
+                if let entry = screenshotPrimaryEntry {
+                    EntryDetailView(entry: entry, initialSection: scenario.startsAtFeedback ? "feedback" : nil)
                 } else {
                     defaultDetailPane
                 }
@@ -304,6 +336,10 @@ struct MainSplitView: View {
             return nil
         }
         let entriesInCourse = allEntries.filter { $0.courseId == course.id && $0.deletedAt == nil }
+        if let selectedEntryID = scenario.selectedEntryID,
+           let selectedEntry = entriesInCourse.first(where: { $0.id == selectedEntryID }) {
+            return selectedEntry
+        }
         switch scenario.persona {
         case .student:
             if let currentUserId = authManager.session?.userId,
@@ -342,6 +378,44 @@ struct MainSplitView: View {
                     entryId: $0.entryId,
                     type: $0.type.rawValue,
                     durationSeconds: $0.durationSeconds,
+                    expectedSizeBytes: nil,
+                    uploadState: $0.uploadState.rawValue,
+                    storageKey: $0.storageKey,
+                    remoteUrl: $0.remoteUrl
+                )
+            }
+        )
+    }
+
+    private var screenshotReviewEntries: [ReviewQueueEntry] {
+        guard let course = screenshotCourse else { return [] }
+        return allEntries
+            .filter { $0.courseId == course.id && $0.status == .submitted && $0.deletedAt == nil }
+            .sorted { $0.practiceDate > $1.practiceDate }
+            .map(makeReviewQueueEntry)
+    }
+
+    private func makeReviewQueueEntry(_ entry: LocalPracticeEntry) -> ReviewQueueEntry {
+        ReviewQueueEntry(
+            id: entry.id,
+            courseId: entry.courseId,
+            studentId: entry.studentId,
+            studentName: displayName(for: entry.studentId),
+            kind: entry.kind.rawValue,
+            practiceDate: entry.practiceDate,
+            goalText: entry.goalText,
+            notes: entry.notes,
+            consentConfirmedAt: entry.consentConfirmedAt,
+            consentScope: entry.consentScope?.rawValue,
+            captureProfile: entry.captureProfile?.rawValue,
+            captureMarkerCount: entry.captureMarkers.count,
+            artifacts: entry.artifacts.map {
+                ArtifactResponse(
+                    id: $0.id,
+                    entryId: $0.entryId,
+                    type: $0.type.rawValue,
+                    durationSeconds: $0.durationSeconds,
+                    expectedSizeBytes: nil,
                     uploadState: $0.uploadState.rawValue,
                     storageKey: $0.storageKey,
                     remoteUrl: $0.remoteUrl

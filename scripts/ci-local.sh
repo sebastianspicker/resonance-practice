@@ -6,6 +6,8 @@ usage() {
 Usage: ./scripts/ci-local.sh [--with-docker]
 
 Runs the same repo checks as GitHub CI that are available locally.
+Docker with a running daemon is required for Compose validation, ShellCheck,
+and actionlint. Postgres and MinIO may instead be supplied externally.
 
 Options:
   --with-docker   Start/stop Postgres and MinIO via docker compose for this run.
@@ -13,13 +15,23 @@ USAGE
 }
 
 WITH_DOCKER=0
-if [[ "${1:-}" == "--help" ]]; then
-	usage
-	exit 0
-fi
-if [[ "${1:-}" == "--with-docker" ]]; then
-	WITH_DOCKER=1
-fi
+while [[ "$#" -gt 0 ]]; do
+	case "$1" in
+	--help)
+		usage
+		exit 0
+		;;
+	--with-docker)
+		WITH_DOCKER=1
+		;;
+	*)
+		echo "Unknown argument: $1" >&2
+		usage >&2
+		exit 2
+		;;
+	esac
+	shift
+done
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
@@ -28,42 +40,115 @@ if ! command -v node >/dev/null; then
 	echo "node is required." >&2
 	exit 1
 fi
+
+export DATABASE_URL="${DATABASE_URL:-postgresql://resonance:resonance@localhost:5432/resonance_test}"
+node ./scripts/assert-test-database-url.mjs
+
 if ! command -v npm >/dev/null; then
 	echo "npm is required." >&2
 	exit 1
 fi
-
-if [[ "$WITH_DOCKER" -eq 1 ]]; then
-	if ! command -v docker >/dev/null; then
-		echo "docker is required for --with-docker." >&2
-		exit 1
-	fi
-	echo "Starting Postgres and MinIO via docker compose..."
-	docker compose -f infra/docker-compose.yml up -d postgres minio
-
-	cleanup() {
-		echo "Stopping Postgres via docker compose..."
-		docker compose -f infra/docker-compose.yml down
-	}
-	trap cleanup EXIT
-
-	echo "Waiting for Postgres to be ready..."
-	for _ in {1..30}; do
-		if docker compose -f infra/docker-compose.yml exec -T postgres pg_isready -U resonance >/dev/null 2>&1; then
-			break
-		fi
-		sleep 1
-	done
-	echo "Waiting for MinIO to be ready..."
-	for _ in {1..30}; do
-		if curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1; then
-			break
-		fi
-		sleep 1
-	done
+if ! command -v docker >/dev/null; then
+	echo "docker is required for Compose validation, ShellCheck, and actionlint." >&2
+	exit 1
+fi
+if ! docker info >/dev/null 2>&1; then
+	echo "A running Docker daemon is required for local CI checks." >&2
+	exit 1
 fi
 
-export DATABASE_URL="${DATABASE_URL:-postgresql://resonance:resonance@localhost:5432/resonance_test}"
+SERVER_PID=""
+COMPOSE_STARTED=0
+
+stop_server() {
+	local pid="$SERVER_PID"
+	if [[ -z "$pid" ]]; then
+		return
+	fi
+
+	if kill -0 "$pid" >/dev/null 2>&1; then
+		echo "Stopping local API server (PID $pid)..."
+		kill -TERM "$pid" >/dev/null 2>&1 || true
+		# Allow the server's three independent five-second shutdown budgets.
+		for _ in {1..20}; do
+			if ! kill -0 "$pid" >/dev/null 2>&1; then
+				break
+			fi
+			sleep 1
+		done
+		if kill -0 "$pid" >/dev/null 2>&1; then
+			echo "API server did not stop after 20 seconds; terminating its child process." >&2
+			kill -KILL "$pid" >/dev/null 2>&1 || true
+		fi
+	fi
+
+	wait "$pid" >/dev/null 2>&1 || true
+	SERVER_PID=""
+}
+
+cleanup() {
+	local status=$?
+	trap - EXIT INT TERM
+	stop_server
+	if [[ "$COMPOSE_STARTED" -eq 1 ]]; then
+		echo "Stopping Postgres and MinIO via docker compose..."
+		docker compose -f infra/docker-compose.yml down >/dev/null 2>&1 || true
+	fi
+	exit "$status"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+ensure_test_database() {
+	local database_exists
+	database_exists="$(docker compose -f infra/docker-compose.yml exec -T postgres \
+		psql -U resonance -d postgres -tAc \
+		"SELECT 1 FROM pg_database WHERE datname = 'resonance_test'" 2>/dev/null || true)"
+	if [[ "$database_exists" != "1" ]]; then
+		echo "Creating local CI database resonance_test..."
+		docker compose -f infra/docker-compose.yml exec -T postgres \
+			psql -U resonance -d postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE resonance_test'
+	fi
+	docker compose -f infra/docker-compose.yml exec -T postgres \
+		psql -U resonance -d resonance_test -v ON_ERROR_STOP=1 -c 'SELECT 1' >/dev/null
+}
+
+if [[ "$WITH_DOCKER" -eq 1 ]]; then
+	echo "Starting Postgres and MinIO via docker compose..."
+	COMPOSE_STARTED=1
+	docker compose -f infra/docker-compose.yml up -d postgres minio
+
+	echo "Waiting for Postgres to be ready..."
+	POSTGRES_READY=0
+	for _ in {1..30}; do
+		if docker compose -f infra/docker-compose.yml exec -T postgres pg_isready -U resonance >/dev/null 2>&1; then
+			POSTGRES_READY=1
+			break
+		fi
+		sleep 1
+	done
+	if [[ "$POSTGRES_READY" -ne 1 ]]; then
+		echo "Postgres did not become ready within 30 seconds." >&2
+		exit 1
+	fi
+	ensure_test_database
+	echo "Waiting for MinIO to be ready..."
+	MINIO_READY=0
+	for _ in {1..30}; do
+		if curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+			MINIO_READY=1
+			break
+		fi
+		sleep 1
+	done
+	if [[ "$MINIO_READY" -ne 1 ]]; then
+		echo "MinIO did not become ready within 30 seconds." >&2
+		exit 1
+	fi
+fi
+
 export PORT="${PORT:-4000}"
 export AUTH_MODE="${AUTH_MODE:-dev}"
 export JWT_SECRET="${JWT_SECRET:-CHANGE-ME-generate-a-real-secret-at-least-32-chars}"
@@ -84,6 +169,9 @@ echo "Running secret scan..."
 
 echo "Validating demo fixture..."
 node ./scripts/demo/validate-fixture.mjs
+
+echo "Validating public documentation and screenshots..."
+node ./scripts/validate-public-docs.mjs
 
 echo "Checking committed build artifacts..."
 ./scripts/check-no-build-artifacts.sh
@@ -115,27 +203,20 @@ echo "Running migrations..."
 echo "Typechecking..."
 (cd server && npm run build)
 
-echo "Running server health probe..."
-SERVER_PID=""
-cleanup_server() {
-	if [[ -n "$SERVER_PID" ]]; then
-		kill "$SERVER_PID" >/dev/null 2>&1 || true
-	fi
-}
-(cd server && npm run start) >/tmp/resonance-server-local.log 2>&1 &
+echo "Running server readiness probe..."
+(cd server && exec node dist/index.js) >/tmp/resonance-server-local.log 2>&1 &
 SERVER_PID=$!
 for _ in {1..30}; do
-	if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+	if curl -fsS "http://127.0.0.1:${PORT}/ready" >/dev/null 2>&1; then
 		break
 	fi
 	sleep 1
 done
-if ! curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
-	cleanup_server
+if ! curl -fsS "http://127.0.0.1:${PORT}/ready" >/dev/null 2>&1; then
 	cat /tmp/resonance-server-local.log >&2
 	exit 1
 fi
-cleanup_server
+stop_server
 
 echo "Running tests with coverage..."
 (cd server && npx vitest run --coverage)

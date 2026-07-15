@@ -1,7 +1,7 @@
 import AVFoundation
 import SwiftUI
 
-struct MarkerDraft: Identifiable {
+struct MarkerDraft: Identifiable, Equatable {
     let id = UUID()
     var time: String
     var text: String
@@ -24,6 +24,20 @@ struct FeedbackEditorView: View {
     @State private var isSending = false
     @State private var validationMessage: String?
     @State private var confirmDiscard = false
+
+    init(
+        entry: ReviewQueueEntry,
+        playbackTime: @escaping () -> TimeInterval = { 0 },
+        onQueued: (() -> Void)? = nil,
+        initialContent: ScreenshotFeedbackContent? = nil
+    ) {
+        self.entry = entry
+        self.playbackTime = playbackTime
+        self.onQueued = onQueued
+        _status = State(initialValue: initialContent?.status ?? .ok)
+        _commentsText = State(initialValue: initialContent?.commentsText ?? "")
+        _markers = State(initialValue: initialContent?.markers ?? [])
+    }
 
     var body: some View {
         Form {

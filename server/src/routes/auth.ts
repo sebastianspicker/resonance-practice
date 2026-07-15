@@ -4,7 +4,8 @@ import {
   consumeDevAuthCode,
   hashToken,
   issueDevAuthCode,
-  issueTokens,
+  issueSessionTokens,
+  revokeRefreshTokenFamily,
   rotateRefreshToken,
   upsertDevUser,
 } from '../auth.js';
@@ -145,7 +146,7 @@ export function registerAuthRoutes(
       );
     }
     const client = await getOidcClient();
-    const state = issueOidcState();
+    const state = await issueOidcState(prisma);
     const authorizationUrl = client.authorizationUrl({
       scope: oidcConfig.scopes,
       state,
@@ -165,7 +166,7 @@ export function registerAuthRoutes(
     const params = client.callbackParams(request.raw);
     const state = typeof params.state === 'string' ? params.state : undefined;
 
-    if (!state || !consumeOidcState(state)) {
+    if (!state || !(await consumeOidcState(prisma, state))) {
       throw new ApiError(
         400,
         ErrorCodes.VALIDATION_ERROR,
@@ -197,7 +198,7 @@ export function registerAuthRoutes(
       create: { id: userId, displayName, globalRole },
     });
 
-    const code = issueProdAuthCode(userId);
+    const code = await issueProdAuthCode(prisma, userId);
 
     // Redirect to the app's custom URL scheme with the internal code.
     // The iOS app registers resonance:// so ASWebAuthenticationSession captures this redirect.
@@ -236,7 +237,7 @@ export function registerAuthRoutes(
       if (config.authMode === 'dev') {
         userId = consumeDevAuthCode(code);
       } else {
-        userId = consumeProdAuthCode(code);
+        userId = await consumeProdAuthCode(prisma, code);
       }
 
       if (!userId) {
@@ -247,7 +248,7 @@ export function registerAuthRoutes(
       if (!user) {
         throw new ApiError(401, ErrorCodes.USER_NOT_FOUND, 'User not found');
       }
-      const tokens = await issueTokens(prisma, user);
+      const tokens = await issueSessionTokens(prisma, user);
       return reply.status(201).send({
         ...tokens,
         user: { id: user.id, displayName: user.displayName, globalRole: user.globalRole },
@@ -321,10 +322,7 @@ export function registerAuthRoutes(
         where: { tokenHash },
       });
       if (token) {
-        await prisma.refreshToken.updateMany({
-          where: { userId: token.userId, revokedAt: null },
-          data: { revokedAt: new Date() },
-        });
+        await revokeRefreshTokenFamily(prisma, token.userId);
       }
       return { success: true };
     }
@@ -334,15 +332,7 @@ export function registerAuthRoutes(
     const user = request.user!;
 
     // Revoke all refresh tokens for this user
-    await prisma.refreshToken.updateMany({
-      where: {
-        userId: user.id,
-        revokedAt: null,
-      },
-      data: {
-        revokedAt: new Date(),
-      },
-    });
+    await revokeRefreshTokenFamily(prisma, user.id);
 
     return { success: true };
   });

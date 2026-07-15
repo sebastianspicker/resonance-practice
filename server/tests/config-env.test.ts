@@ -41,11 +41,12 @@ function importConfigWithEnv(overrides: Record<string, string | undefined>): str
     }
   }
 
-  // Use tsx to run a tiny script that imports config.ts
+  // Load tsx through Node so this subprocess does not create the IPC listener
+  // used by the tsx CLI. The test only needs TypeScript module loading.
   const script = `import '${serverDir}/src/config.ts'`;
 
   try {
-    execFileSync(path.resolve(serverDir, 'node_modules/.bin/tsx'), ['--eval', script], {
+    execFileSync(process.execPath, ['--import', 'tsx', '--eval', script], {
       env,
       cwd: serverDir,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -66,37 +67,61 @@ describe('config top-level validation (subprocess)', () => {
 
   it('rejects non-numeric PORT', () => {
     const stderr = importConfigWithEnv({ PORT: 'abc' });
-    expect(stderr).toContain('PORT must be a valid number');
+    expect(stderr).toContain('PORT must be an integer between 1 and 65535');
+  });
+
+  it.each(['Infinity', '-Infinity', '12.5', '0', '65536'])(
+    'rejects invalid PORT value %s',
+    (PORT) => {
+      const stderr = importConfigWithEnv({ PORT });
+      expect(stderr).toContain('PORT must be an integer between 1 and 65535');
+    }
+  );
+
+  it.each([
+    ['ACCESS_TOKEN_TTL_MINUTES', 'Infinity'],
+    ['REFRESH_TOKEN_TTL_DAYS', '-Infinity'],
+    ['S3_PRESIGN_TTL_SECONDS', 'Infinity'],
+    ['DEPENDENCY_TIMEOUT_MS', 'Infinity'],
+  ])('rejects non-finite %s', (name, value) => {
+    const stderr = importConfigWithEnv({ [name]: value });
+    expect(stderr).toContain(
+      name === 'S3_PRESIGN_TTL_SECONDS'
+        ? 'integer between 1 and 604800'
+        : name === 'DEPENDENCY_TIMEOUT_MS'
+          ? 'integer between 100 and 300000'
+          : 'positive integer'
+    );
   });
 
   it('rejects NaN ACCESS_TOKEN_TTL_MINUTES', () => {
     const stderr = importConfigWithEnv({ ACCESS_TOKEN_TTL_MINUTES: 'not-a-number' });
-    expect(stderr).toContain('ACCESS_TOKEN_TTL_MINUTES must be a positive number');
+    expect(stderr).toContain('ACCESS_TOKEN_TTL_MINUTES must be a positive integer');
   });
 
   it('rejects zero ACCESS_TOKEN_TTL_MINUTES', () => {
     const stderr = importConfigWithEnv({ ACCESS_TOKEN_TTL_MINUTES: '0' });
-    expect(stderr).toContain('ACCESS_TOKEN_TTL_MINUTES must be a positive number');
+    expect(stderr).toContain('ACCESS_TOKEN_TTL_MINUTES must be a positive integer');
   });
 
   it('rejects negative ACCESS_TOKEN_TTL_MINUTES', () => {
     const stderr = importConfigWithEnv({ ACCESS_TOKEN_TTL_MINUTES: '-5' });
-    expect(stderr).toContain('ACCESS_TOKEN_TTL_MINUTES must be a positive number');
+    expect(stderr).toContain('ACCESS_TOKEN_TTL_MINUTES must be a positive integer');
   });
 
   it('rejects NaN REFRESH_TOKEN_TTL_DAYS', () => {
     const stderr = importConfigWithEnv({ REFRESH_TOKEN_TTL_DAYS: 'nope' });
-    expect(stderr).toContain('REFRESH_TOKEN_TTL_DAYS must be a positive number');
+    expect(stderr).toContain('REFRESH_TOKEN_TTL_DAYS must be a positive integer');
   });
 
   it('rejects zero REFRESH_TOKEN_TTL_DAYS', () => {
     const stderr = importConfigWithEnv({ REFRESH_TOKEN_TTL_DAYS: '0' });
-    expect(stderr).toContain('REFRESH_TOKEN_TTL_DAYS must be a positive number');
+    expect(stderr).toContain('REFRESH_TOKEN_TTL_DAYS must be a positive integer');
   });
 
   it('rejects negative REFRESH_TOKEN_TTL_DAYS', () => {
     const stderr = importConfigWithEnv({ REFRESH_TOKEN_TTL_DAYS: '-1' });
-    expect(stderr).toContain('REFRESH_TOKEN_TTL_DAYS must be a positive number');
+    expect(stderr).toContain('REFRESH_TOKEN_TTL_DAYS must be a positive integer');
   });
 
   it('rejects DEV_LOGIN_CALLBACK_URL with bad scheme', () => {
@@ -118,8 +143,33 @@ describe('config top-level validation (subprocess)', () => {
 
   it('rejects non-positive S3 presign TTL values', () => {
     const stderr = importConfigWithEnv({ S3_PRESIGN_TTL_SECONDS: '0' });
-    expect(stderr).toContain('S3_PRESIGN_TTL_SECONDS must be positive');
+    expect(stderr).toContain('S3_PRESIGN_TTL_SECONDS must be an integer between 1 and 604800');
   });
+
+  it.each([
+    ['ACCESS_TOKEN_TTL_MINUTES', '1.5'],
+    ['REFRESH_TOKEN_TTL_DAYS', '2.5'],
+    ['S3_PRESIGN_TTL_SECONDS', '1.5'],
+    ['S3_PRESIGN_TTL_SECONDS', '604801'],
+  ])('rejects out-of-contract %s value %s', (name, value) => {
+    const stderr = importConfigWithEnv({ [name]: value });
+    expect(stderr).toContain(
+      name === 'S3_PRESIGN_TTL_SECONDS' ? 'integer between 1 and 604800' : 'positive integer'
+    );
+  });
+
+  it('rejects invalid S3_FORCE_PATH_STYLE booleans', () => {
+    const stderr = importConfigWithEnv({ S3_FORCE_PATH_STYLE: 'tru' });
+    expect(stderr).toContain('S3_FORCE_PATH_STYLE must be "true" or "false"');
+  });
+
+  it.each(['0', '99', '1.5', '300001'])(
+    'rejects out-of-contract dependency timeout %s',
+    (DEPENDENCY_TIMEOUT_MS) => {
+      const stderr = importConfigWithEnv({ DEPENDENCY_TIMEOUT_MS });
+      expect(stderr).toContain('DEPENDENCY_TIMEOUT_MS must be an integer between 100 and 300000');
+    }
+  );
 
   it('rejects JWT_REFRESH_SECRET shorter than 32 characters', () => {
     const stderr = importConfigWithEnv({ JWT_REFRESH_SECRET: 'short-refresh-secret' });

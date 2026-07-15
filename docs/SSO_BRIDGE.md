@@ -137,6 +137,7 @@ Set `CORS_ORIGINS` to your app's origin. For an iOS-only app with no web fronten
 
 - The OIDC `state` parameter is validated on every callback to prevent CSRF attacks.
 - The internal auth code issued after successful OIDC authentication is single-use and expires after 5 minutes.
+- OIDC state and internal auth codes are stored only as short-lived SHA-256 hashes in PostgreSQL, so single-use consumption remains correct across multiple API replicas.
 - `redirectUri` in `POST /auth/session` is validated against the registered OIDC callback URI in production mode.
 - Dev auth endpoints (`/dev/*`) return 404 in `AUTH_MODE=prod` — they are not accessible.
 - Keep `OIDC_CLIENT_SECRET` and `JWT_SECRET` in a secrets manager (e.g. AWS Secrets Manager, HashiCorp Vault) and inject them as environment variables at runtime.

@@ -1,14 +1,17 @@
-import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 
 function buildOriginRequest(app: any, origin?: string) {
-  const req = request(app.server).options('/health');
-  if (origin) {
-    req.set('Origin', origin);
-    req.set('Access-Control-Request-Method', 'GET');
-  }
-  return req;
+  return app.inject({
+    method: 'OPTIONS',
+    url: '/health',
+    headers: origin
+      ? {
+          origin,
+          'access-control-request-method': 'GET',
+        }
+      : undefined,
+  });
 }
 
 describe('cors', () => {
@@ -21,7 +24,7 @@ describe('cors', () => {
     await app.ready();
 
     const res = await buildOriginRequest(app, 'https://example.com');
-    expect(res.status).toBe(404);
+    expect(res.statusCode).toBe(404);
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
 
     await app.close();
@@ -37,11 +40,11 @@ describe('cors', () => {
     await app.ready();
 
     const allowed = await buildOriginRequest(app, 'https://allowed.example');
-    expect(allowed.status).toBe(204);
+    expect(allowed.statusCode).toBe(204);
     expect(allowed.headers['access-control-allow-origin']).toBe('https://allowed.example');
 
     const blocked = await buildOriginRequest(app, 'https://blocked.example');
-    expect(blocked.status).toBe(204);
+    expect(blocked.statusCode).toBe(204);
     expect(blocked.headers['access-control-allow-origin']).toBeUndefined();
 
     await app.close();

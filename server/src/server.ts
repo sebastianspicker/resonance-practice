@@ -14,6 +14,8 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerCourseRoutes } from './routes/courses.js';
 import { registerEntryRoutes } from './routes/entries.js';
 import { registerFeedbackRoutes } from './routes/feedback.js';
+import { withDeadline } from './services/deadline.js';
+import { checkBucketAvailable } from './storage.js';
 
 /** HTTP methods that carry a request body and must send application/json. */
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH']);
@@ -78,6 +80,31 @@ export function buildServer(prisma: PrismaClient, s3: S3Client) {
     requestIdLogLabel: 'requestId',
     bodyLimit: limits.bodyLimitBytes,
   });
+  let activeReadinessCheck: Promise<void> | null = null;
+
+  function checkDependencies(): Promise<void> {
+    if (activeReadinessCheck) return activeReadinessCheck;
+    const check = (async () => {
+      const results = await Promise.allSettled([
+        prisma.$queryRaw`SELECT 1`,
+        checkBucketAvailable(s3),
+      ]);
+      const failure = results.find(
+        (result): result is PromiseRejectedResult => result.status === 'rejected'
+      );
+      if (failure) throw failure.reason;
+    })();
+    activeReadinessCheck = check;
+    void check.then(
+      () => {
+        if (activeReadinessCheck === check) activeReadinessCheck = null;
+      },
+      () => {
+        if (activeReadinessCheck === check) activeReadinessCheck = null;
+      }
+    );
+    return check;
+  }
 
   // --- Rate limiting --------------------------------------------------------
   const isLoopback = (ip: string | undefined) =>
@@ -88,7 +115,7 @@ export function buildServer(prisma: PrismaClient, s3: S3Client) {
     timeWindow: '1 minute',
     allowList: (req, _key) => {
       // Health endpoint should never be throttled (uptime probes, load balancers)
-      if (req.url === '/health') return true;
+      if (req.url === '/health' || req.url === '/ready') return true;
       // In dev mode, exempt localhost to avoid throttling dev/test traffic
       if (config.authMode === 'dev' && isLoopback(req.ip)) return true;
       return false;
@@ -184,10 +211,23 @@ export function buildServer(prisma: PrismaClient, s3: S3Client) {
 
   // --- Routes ---------------------------------------------------------------
   app.get('/health', async () => ({ status: 'ok' }));
+  app.get('/ready', async (request, reply) => {
+    try {
+      await withDeadline(
+        () => checkDependencies(),
+        config.dependencyTimeoutMs,
+        'Dependency readiness check'
+      );
+      return { status: 'ready' };
+    } catch (error) {
+      request.log.warn({ err: error }, 'Readiness dependency check failed');
+      return reply.status(503).send({ status: 'unavailable' });
+    }
+  });
 
   registerAuthRoutes(app, prisma, requireAuth);
   registerCourseRoutes(app, prisma, requireAuth);
-  registerEntryRoutes(app, prisma, s3, requireAuth);
+  registerEntryRoutes(app, prisma, requireAuth);
   registerArtifactRoutes(app, prisma, s3, requireAuth);
   registerFeedbackRoutes(app, prisma, requireAuth);
 

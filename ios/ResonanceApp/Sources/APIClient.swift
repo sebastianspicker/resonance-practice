@@ -66,11 +66,10 @@ final class APIClient {
     }
 
     func fetchEntries(accessToken: String, courseId: String, limit: Int = 50, cursor: String? = nil) async throws -> PaginatedResponse<EntryResponse> {
-        var components = URLComponents(url: AppConfig.apiBaseURL.appendingPathComponent("courses/\(courseId)/entries"), resolvingAgainstBaseURL: false)!
         var items = [URLQueryItem(name: "limit", value: String(limit))]
         if let cursor { items.append(URLQueryItem(name: "cursor", value: cursor)) }
-        components.queryItems = items
-        return try await send(url: components.url!, method: "GET", body: Optional<EmptyBody>.none, accessToken: accessToken)
+        let url = try makeURL(path: "courses/\(courseId)/entries", queryItems: items)
+        return try await send(url: url, method: "GET", body: Optional<EmptyBody>.none, accessToken: accessToken)
     }
 
     func fetchEntry(accessToken: String, entryId: String) async throws -> EntryResponse {
@@ -147,17 +146,19 @@ final class APIClient {
         return try await send(url: url, method: "PATCH", body: body, accessToken: accessToken)
     }
 
-    func createArtifact(accessToken: String, entryId: String, artifact: LocalArtifact) async throws -> ArtifactResponse {
+    func createArtifact(accessToken: String, entryId: String, artifact: LocalArtifact, sizeBytes: Int) async throws -> ArtifactResponse {
         let url = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entryId)/artifacts")
         struct Body: Encodable {
             let id: String
             let type: String
             let durationSeconds: Int
+            let sizeBytes: Int
         }
         let body = Body(
             id: artifact.id,
             type: artifact.type.rawValue,
-            durationSeconds: artifact.durationSeconds
+            durationSeconds: artifact.durationSeconds,
+            sizeBytes: sizeBytes
         )
         return try await send(url: url, method: "POST", body: body, accessToken: accessToken)
     }
@@ -215,12 +216,10 @@ final class APIClient {
 
     /// Fetch the teacher review queue using the API's cursor-paginated envelope.
     func fetchReviewQueue(accessToken: String, courseId: String, limit: Int? = nil, cursor: String? = nil) async throws -> PaginatedResponse<ReviewQueueEntry> {
-        var components = URLComponents(url: AppConfig.apiBaseURL.appendingPathComponent("courses/\(courseId)/review-queue"), resolvingAgainstBaseURL: false)!
         var queryItems: [URLQueryItem] = []
         if let limit { queryItems.append(URLQueryItem(name: "limit", value: String(limit))) }
         if let cursor { queryItems.append(URLQueryItem(name: "cursor", value: cursor)) }
-        if !queryItems.isEmpty { components.queryItems = queryItems }
-        let url = components.url!
+        let url = try makeURL(path: "courses/\(courseId)/review-queue", queryItems: queryItems)
         return try await send(url: url, method: "GET", body: Optional<EmptyBody>.none, accessToken: accessToken)
     }
 
@@ -255,6 +254,22 @@ final class APIClient {
     }
 
     private struct EmptyBody: Encodable {}
+
+    private func makeURL(path: String, queryItems: [URLQueryItem]) throws -> URL {
+        guard var components = URLComponents(
+            url: AppConfig.apiBaseURL.appendingPathComponent(path),
+            resolvingAgainstBaseURL: false
+        ) else {
+            throw URLError(.badURL)
+        }
+        if !queryItems.isEmpty {
+            components.queryItems = queryItems
+        }
+        guard let url = components.url else {
+            throw URLError(.badURL)
+        }
+        return url
+    }
 
     private func perform(_ request: URLRequest) async throws -> Data {
         let (data, response) = try await session.data(for: request)

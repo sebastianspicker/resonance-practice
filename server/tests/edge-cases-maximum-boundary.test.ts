@@ -321,7 +321,7 @@ describe('edge cases', () => {
         const res = await request(app.server)
           .post('/entries/entry-art-maxid/artifacts')
           .set('Authorization', `Bearer ${token}`)
-          .send({ id: maxId, type: 'audio', durationSeconds: 60 });
+          .send({ id: maxId, type: 'audio', durationSeconds: 60, sizeBytes: 1 });
         expect(res.status).toBe(201);
         expect(res.body.id).toBe(maxId);
       });
@@ -342,7 +342,7 @@ describe('edge cases', () => {
         const res = await request(app.server)
           .post('/entries/entry-art-zero-dur/artifacts')
           .set('Authorization', `Bearer ${token}`)
-          .send({ id: 'art-zero-dur', type: 'audio', durationSeconds: 0 });
+          .send({ id: 'art-zero-dur', type: 'audio', durationSeconds: 0, sizeBytes: 1 });
         expect(res.status).toBe(201);
         expect(res.body.durationSeconds).toBe(0);
       });

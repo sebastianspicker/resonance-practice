@@ -44,6 +44,8 @@ placeholder emblems, generic templates, and card-per-section layouts.
 Target WCAG 2.2 AA-equivalent native behavior and support VoiceOver, Voice
 Control, Switch Control, Full Keyboard Access, Reduce Motion, Reduce
 Transparency, Increase Contrast, Bold Text, and AX1 through AX5 Dynamic Type.
-The production-pilot target is German as the primary locale with a complete English fallback; localization resources are not yet implemented. Core student
-capture and recovery flows must be validated on iPhone; the full product must be validated on
-iPad in portrait, landscape, and resizable windows.
+The later production-pilot target is German as the primary locale with a
+complete English fallback; `v0.1.0-alpha.1` has English UI only and has not
+completed that accessibility matrix. Core student capture and recovery flows
+must be validated on iPhone; the full product must be validated on iPad in
+portrait, landscape, and resizable windows.

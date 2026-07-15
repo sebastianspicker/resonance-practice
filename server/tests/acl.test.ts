@@ -187,7 +187,7 @@ describe('acl', () => {
     expect(res.status).toBe(400);
   });
 
-  it('soft deletes entries and hard deletes artifacts and feedback', async () => {
+  it('hard deletes entry data, retains a minimal ID tombstone, and queues storage cleanup', async () => {
     s3Mock.on(DeleteObjectCommand).resolves({});
 
     const entry = await prisma.practiceEntry.create({
@@ -247,7 +247,7 @@ describe('acl', () => {
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(204);
-    expect(s3Mock.commandCalls(DeleteObjectCommand).length).toBe(1);
+    expect(s3Mock.commandCalls(DeleteObjectCommand)).toHaveLength(0);
 
     const entryAfter = await prisma.practiceEntry.findUnique({ where: { id: entry.id } });
     const artifactAfter = await prisma.artifact.findUnique({ where: { id: artifact.id } });
@@ -256,15 +256,30 @@ describe('acl', () => {
       where: { targetId: artifact.id },
     });
     const markerAfter = await prisma.marker.findUnique({ where: { id: 'mk_entry_1' } });
+    const tombstone = await prisma.deletedEntryTombstone.findUnique({ where: { id: entry.id } });
+    const deletionJobs = await prisma.storageDeletionJob.findMany({ where: { entryId: entry.id } });
 
-    // Entry is soft-deleted (deletedAt set), not removed from DB
-    expect(entryAfter).not.toBeNull();
-    expect(entryAfter!.deletedAt).not.toBeNull();
-    // Artifacts and feedback are hard-deleted
+    expect(entryAfter).toBeNull();
+    expect(tombstone).toMatchObject({ id: entry.id });
+    expect(deletionJobs.map((job) => job.storageKey)).toEqual([
+      'artifacts/entry-hard-delete/artifact-hard-delete',
+    ]);
     expect(artifactAfter).toBeNull();
     expect(feedbackAfter.length).toBe(0);
     expect(artifactFeedbackAfter.length).toBe(0);
     expect(markerAfter).toBeNull();
+
+    const staleRecreate = await request(app.server)
+      .post('/courses/COURSE_TEST/entries')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        id: entry.id,
+        practiceDate: entry.practiceDate.toISOString(),
+        goalText: entry.goalText,
+        tags: entry.tags,
+      });
+    expect(staleRecreate.status).toBe(410);
+    expect(staleRecreate.body.error?.code).toBe('ENTRY_DELETED');
   });
 
   it('cascade delete handles multiple artifacts atomically (bug #20)', async () => {
@@ -334,19 +349,23 @@ describe('acl', () => {
 
     expect(res.status).toBe(204);
 
-    // Both artifacts should trigger S3 cleanup
-    expect(s3Mock.commandCalls(DeleteObjectCommand).length).toBe(2);
+    // Object deletion is durable and asynchronous, not part of the request.
+    expect(s3Mock.commandCalls(DeleteObjectCommand)).toHaveLength(0);
 
-    // Entry is soft-deleted, artifacts and feedback are hard-deleted
     const entryAfter = await prisma.practiceEntry.findUnique({ where: { id: entry.id } });
+    const tombstone = await prisma.deletedEntryTombstone.findUnique({ where: { id: entry.id } });
+    const deletionJobs = await prisma.storageDeletionJob.findMany({ where: { entryId: entry.id } });
     const artifact1After = await prisma.artifact.findUnique({ where: { id: artifact1.id } });
     const artifact2After = await prisma.artifact.findUnique({ where: { id: artifact2.id } });
     const feedbackAfter = await prisma.feedback.findMany({
       where: { targetId: { in: [artifact1.id, artifact2.id] } },
     });
 
-    expect(entryAfter).not.toBeNull();
-    expect(entryAfter!.deletedAt).not.toBeNull();
+    expect(entryAfter).toBeNull();
+    expect(tombstone).toMatchObject({ id: entry.id });
+    expect(deletionJobs.map((job) => job.storageKey).sort()).toEqual(
+      [artifact1.storageKey, artifact2.storageKey].sort()
+    );
     expect(artifact1After).toBeNull();
     expect(artifact2After).toBeNull();
     expect(feedbackAfter.length).toBe(0);
@@ -409,7 +428,7 @@ describe('acl', () => {
     const res = await request(app.server)
       .post(`/entries/${entry.id}/artifacts`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ id: 'artifact-bad', type: 'image', durationSeconds: 5 });
+      .send({ id: 'artifact-bad', type: 'image', durationSeconds: 5, sizeBytes: 1 });
 
     expect(res.status).toBe(400);
   });
@@ -712,7 +731,7 @@ describe('acl', () => {
     const res = await request(app.server)
       .post(`/entries/${entry.id}/artifacts`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ id: 'artifact-blocked', type: 'audio', durationSeconds: 10 });
+      .send({ id: 'artifact-blocked', type: 'audio', durationSeconds: 10, sizeBytes: 1 });
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('ENTRY_LOCKED');
@@ -735,7 +754,7 @@ describe('acl', () => {
     const res = await request(app.server)
       .post(`/entries/${entry.id}/artifacts`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ id: 'artifact-blocked-2', type: 'audio', durationSeconds: 10 });
+      .send({ id: 'artifact-blocked-2', type: 'audio', durationSeconds: 10, sizeBytes: 1 });
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('ENTRY_LOCKED');
@@ -758,7 +777,7 @@ describe('acl', () => {
     const res = await request(app.server)
       .post(`/entries/${entry.id}/artifacts`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ id: 'artifact-allowed', type: 'audio', durationSeconds: 10 });
+      .send({ id: 'artifact-allowed', type: 'audio', durationSeconds: 10, sizeBytes: 1 });
 
     expect(res.status).toBe(201);
     expect(res.body.id).toBe('artifact-allowed');

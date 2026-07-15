@@ -50,10 +50,10 @@ const ENTRIES_MAX_LIMIT = 200;
 function parseLimitParam(raw: string | undefined, defaultLimit: number, maxLimit: number): number {
   if (raw === undefined) return defaultLimit;
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 1) {
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 1) {
     throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'limit must be a positive integer');
   }
-  return Math.min(Math.floor(parsed), maxLimit);
+  return Math.min(parsed, maxLimit);
 }
 
 /**

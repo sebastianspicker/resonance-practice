@@ -335,6 +335,41 @@ final class APIModelDecodeTests: XCTestCase {
     }
 }
 
+// MARK: - App Configuration Tests
+
+final class AppConfigResolveURLTests: XCTestCase {
+    func testValidAbsoluteHTTPBaseURLIsAccepted() {
+        let url = AppConfig.resolveAPIBaseURL("https://api.example.edu/resonance")
+
+        XCTAssertEqual(url.absoluteString, "https://api.example.edu/resonance")
+    }
+
+    func testMalformedOrRelativeBaseURLFallsBackToLocalDefault() {
+        XCTAssertEqual(
+            AppConfig.resolveAPIBaseURL("%").absoluteString,
+            "http://localhost:4000"
+        )
+        XCTAssertEqual(
+            AppConfig.resolveAPIBaseURL("api.example.edu").absoluteString,
+            "http://localhost:4000"
+        )
+    }
+
+    func testBaseURLRejectsCredentialsQueryAndUnsupportedScheme() {
+        for value in [
+            "https://user:password@api.example.edu",
+            "https://api.example.edu?token=secret",
+            "ftp://api.example.edu"
+        ] {
+            XCTAssertEqual(
+                AppConfig.resolveAPIBaseURL(value).absoluteString,
+                "http://localhost:4000",
+                "Expected invalid API base URL to fall back: \(value)"
+            )
+        }
+    }
+}
+
 // MARK: - APIClient Request Encoding Tests
 
 final class APIClientRequestEncodingTests: XCTestCase {
@@ -497,6 +532,43 @@ final class APIClientRequestEncodingTests: XCTestCase {
         let body = try XCTUnwrap(capturedBody)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
         XCTAssertEqual(json["captureProfile"] as? String, "ensemble_group")
+    }
+
+    @MainActor
+    func testCreateArtifactEncodesLocalFileByteSize() async throws {
+        let expectedURL = AppConfig.apiBaseURL.appendingPathComponent("entries/entry-1/artifacts")
+        var capturedBody: Data?
+        APIClientCaptureURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url, expectedURL)
+            XCTAssertEqual(request.httpMethod, "POST")
+            capturedBody = try XCTUnwrap(requestBodyData(request))
+            return (
+                HTTPURLResponse(url: expectedURL, statusCode: 201, httpVersion: nil, headerFields: nil)!,
+                Data("{\"id\":\"artifact-1\",\"entryId\":\"entry-1\",\"type\":\"audio\",\"durationSeconds\":30,\"uploadState\":\"pending\",\"storageKey\":null,\"remoteUrl\":null}".utf8)
+            )
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [APIClientCaptureURLProtocol.self]
+        let artifact = LocalArtifact(
+            id: "artifact-1",
+            entryId: "entry-1",
+            type: .audio,
+            durationSeconds: 30,
+            localPath: "/tmp/artifact-1.m4a"
+        )
+
+        _ = try await APIClient(session: URLSession(configuration: configuration)).createArtifact(
+            accessToken: "access-token",
+            entryId: "entry-1",
+            artifact: artifact,
+            sizeBytes: 4_096
+        )
+
+        let body = try XCTUnwrap(capturedBody)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["id"] as? String, "artifact-1")
+        XCTAssertEqual(json["sizeBytes"] as? Int, 4_096)
     }
 
     @MainActor

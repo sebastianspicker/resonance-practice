@@ -32,6 +32,17 @@ describe('input validation', () => {
   // ── POST /courses/:courseId/entries ──
 
   describe('POST /courses/:courseId/entries', () => {
+    it('rejects a JSON null request body', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .post('/courses/COURSE_TEST/entries')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Content-Type', 'application/json')
+        .send('null');
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    });
+
     it('rejects durationSeconds exceeding upper bound', async () => {
       const token = await login('student');
       const res = await request(app.server)
@@ -277,6 +288,17 @@ describe('input validation', () => {
       });
     });
 
+    it('rejects a JSON null request body', async () => {
+      const token = await login('student');
+      const res = await request(app.server)
+        .patch(`/entries/${entryId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Content-Type', 'application/json')
+        .send('null');
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    });
+
     it('rejects durationSeconds exceeding upper bound', async () => {
       const token = await login('student');
       const res = await request(app.server)
@@ -400,6 +422,30 @@ describe('input validation', () => {
       expect(res.body.error?.code).toBe('VALIDATION_ERROR');
     });
 
+    it('preserves the original consent timestamp when confirmed consent is re-sent', async () => {
+      const confirmedAt = new Date('2026-04-29T09:00:00.000Z');
+      await prisma.practiceEntry.update({
+        where: { id: entryId },
+        data: {
+          kind: 'teaching_lesson',
+          consentConfirmedAt: confirmedAt,
+          consentScope: 'private_course_review',
+        },
+      });
+      const token = await login('student');
+      const res = await request(app.server)
+        .patch(`/entries/${entryId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          goalText: 'Updated without reconfirming consent',
+          kind: 'teaching_lesson',
+          consentConfirmed: true,
+          consentScope: 'private_course_review',
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.consentConfirmedAt).toBe(confirmedAt.toISOString());
+    });
+
     it('accepts captureProfile updates for draft teaching lesson entries', async () => {
       await prisma.practiceEntry.update({
         where: { id: entryId },
@@ -460,7 +506,7 @@ describe('input validation', () => {
       const res = await request(app.server)
         .post(`/entries/${entryId}/artifacts`)
         .set('Authorization', `Bearer ${token}`)
-        .send({ id: 'artifact-dur-ok', type: 'audio', durationSeconds: 28800 });
+        .send({ id: 'artifact-dur-ok', type: 'audio', durationSeconds: 28800, sizeBytes: 1 });
       expect(res.status).toBe(201);
       expect(res.body.durationSeconds).toBe(28800);
     });
@@ -470,9 +516,44 @@ describe('input validation', () => {
       const res = await request(app.server)
         .post(`/entries/${entryId}/artifacts`)
         .set('Authorization', `Bearer ${token}`)
-        .send({ id: 'artifact-video-accepted', type: 'video', durationSeconds: 60 });
+        .send({ id: 'artifact-video-accepted', type: 'video', durationSeconds: 60, sizeBytes: 1 });
       expect(res.status).toBe(201);
       expect(res.body.type).toBe('video');
+    });
+
+    it('requires a positive integer upload size within the configured limit', async () => {
+      const token = await login('student');
+      for (const [id, sizeBytes] of [
+        ['artifact-size-zero', 0],
+        ['artifact-size-decimal', 1.5],
+        ['artifact-size-too-large', 104_857_601],
+      ] as const) {
+        const res = await request(app.server)
+          .post(`/entries/${entryId}/artifacts`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({ id, type: 'audio', durationSeconds: 60, sizeBytes });
+        expect(res.status).toBe(400);
+        expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+      }
+
+      const missing = await request(app.server)
+        .post(`/entries/${entryId}/artifacts`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ id: 'artifact-size-missing', type: 'audio', durationSeconds: 60 });
+      expect(missing.status).toBe(400);
+      expect(missing.body.error?.code).toBe('VALIDATION_ERROR');
+
+      const boundary = await request(app.server)
+        .post(`/entries/${entryId}/artifacts`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          id: 'artifact-size-boundary',
+          type: 'audio',
+          durationSeconds: 60,
+          sizeBytes: 104_857_600,
+        });
+      expect(boundary.status).toBe(201);
+      expect(boundary.body.expectedSizeBytes).toBe(104_857_600);
     });
 
     it('rejects negative durationSeconds', async () => {

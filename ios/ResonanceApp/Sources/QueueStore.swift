@@ -17,6 +17,9 @@ final class QueueStore {
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
+        // A processing status is only valid while its owning process is alive.
+        // Recover persisted work before any sync pass can select queue items.
+        resetStuckProcessing()
     }
 
     // MARK: - Enqueueing
@@ -128,7 +131,7 @@ final class QueueStore {
 
     /// Reset any items currently stuck in `processing` back to `pending`.
     ///
-    /// Called from the UIApplication background-task expiration handler.
+    /// Called at store initialization and from the background-task expiration handler.
     func resetStuckProcessing() {
         let processingValue = SyncStatus.processing.rawValue
         let descriptor = FetchDescriptor<SyncQueueItem>(

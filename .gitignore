@@ -47,6 +47,19 @@ DECISIONS.md
 FINDINGS.md
 LOG.md
 REFACTOR_PLAN.md
+RELEASE_STATUS.md
+REMEDIATION.md
+REMEDIATION_*.md
+*_REMEDIATION.md
+STATUS.md
+*_STATUS.md
+PLAN.md
+*_PLAN.md
+LEDGER.md
+*_LEDGER.md
+AGENT.md
+AGENT_*.md
+*_AGENT.md
 progress.md
 docs/*-audit.md
 docs/*-ledger.md
@@ -63,6 +76,8 @@ plan.md
 # under docs/assets/screenshots/approved/ only after review.
 docs/assets/screenshots/local/
 docs/assets/screenshots/rc/
+docs/assets/screenshots/retired/
+artifacts/screenshots/
 
 # Xcode
 DerivedData/
@@ -103,6 +118,7 @@ junit-*.xml
 reports/
 .cache/
 .tmp/
+scratch/
 tmp/
 temp/
 .pytest_cache/

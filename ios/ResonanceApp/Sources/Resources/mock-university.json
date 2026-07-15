@@ -93,6 +93,9 @@
       "syncPhase": "uploaded",
       "storageKey": "artifacts/demo_entry_lea_submitted_1/demo_artifact_lea_submitted_1.m4a",
       "remoteUrl": "https://mock-storage.local/demo/leasubmitted1.m4a",
+      "expectedSizeBytes": 524288,
+      "uploadExpiresAt": null,
+      "confirmationToken": null,
       "localPath": "/tmp/mock-demo-artifacts/demo_artifact_lea_submitted_1.m4a"
     },
     {
@@ -101,10 +104,13 @@
       "type": "audio",
       "durationSeconds": 58,
       "createdAt": "2026-02-21T10:55:00.000Z",
-      "uploadState": "uploading",
-      "syncPhase": "confirming",
-      "storageKey": "artifacts/demo_entry_noah_submitted_1/demo_artifact_noah_submitted_1.m4a",
+      "uploadState": "pending",
+      "syncPhase": "queued",
+      "storageKey": null,
       "remoteUrl": null,
+      "expectedSizeBytes": 466944,
+      "uploadExpiresAt": null,
+      "confirmationToken": null,
       "localPath": "/tmp/mock-demo-artifacts/demo_artifact_noah_submitted_1.m4a"
     },
     {
@@ -117,6 +123,9 @@
       "syncPhase": "uploaded",
       "storageKey": "artifacts/demo_entry_lea_reviewed_1/demo_artifact_lea_reviewed_1.m4a",
       "remoteUrl": "https://mock-storage.local/demo/leareviewed1.m4a",
+      "expectedSizeBytes": 589824,
+      "uploadExpiresAt": null,
+      "confirmationToken": null,
       "localPath": "/tmp/mock-demo-artifacts/demo_artifact_lea_reviewed_1.m4a"
     },
     {
@@ -129,6 +138,9 @@
       "syncPhase": "failed",
       "storageKey": null,
       "remoteUrl": null,
+      "expectedSizeBytes": 262144,
+      "uploadExpiresAt": null,
+      "confirmationToken": null,
       "localPath": "/tmp/mock-demo-artifacts/demo_artifact_lea_draft_1.m4a"
     }
   ],
@@ -147,15 +159,15 @@
       ]
     },
     {
-      "id": "demo_feedback_artifact_noah_reviewed_1",
+      "id": "demo_feedback_artifact_lea_reviewed_1",
       "targetType": "artifact",
-      "targetId": "demo_artifact_noah_submitted_1",
+      "targetId": "demo_artifact_lea_reviewed_1",
       "teacherId": "demo_teacher_anna",
       "createdAt": "2026-02-21T13:20:00.000Z",
       "status": "needs_revision",
       "commentsText": "Tempo drifts in bars 9-12. Retry with metronome click.",
       "markers": [
-        { "id": "demo_marker_artifact_noah_reviewed_1_a", "timeSeconds": 22, "text": "Timing slips here." }
+        { "id": "demo_marker_artifact_lea_reviewed_1_a", "timeSeconds": 22, "text": "Timing slips here." }
       ]
     }
   ],

@@ -588,6 +588,33 @@ final class RetryPolicyTests: XCTestCase {
     func testIsNotTerminalForURLErrorTimedOut() {
         XCTAssertFalse(policy.isTerminal(URLError(.timedOut)))
     }
+
+    func testPermanentServerStateErrorsAreTerminal() {
+        for code in ["ENTRY_DELETED", "ENTRY_NOT_FOUND", "ARTIFACT_NOT_FOUND", "ID_CONFLICT"] {
+            let error = APIError(
+                error: APIError.APIErrorBody(code: code, message: "Permanent", details: nil)
+            )
+            XCTAssertTrue(policy.isTerminal(error), "Expected \(code) to be terminal")
+        }
+    }
+
+    func testStorageUnavailableRemainsRetryable() {
+        let error = APIError(
+            error: APIError.APIErrorBody(
+                code: "STORAGE_UNAVAILABLE",
+                message: "Temporary",
+                details: nil
+            )
+        )
+        XCTAssertFalse(policy.isTerminal(error))
+    }
+
+    func testBareServerErrorCodeMapsToFriendlyMessage() {
+        XCTAssertEqual(
+            SyncErrorMessageMapper.message(for: "STORAGE_UNAVAILABLE"),
+            "Media storage is unavailable. Try again later."
+        )
+    }
 }
 
 // MARK: - QueueStore Tests
@@ -761,6 +788,33 @@ final class QueueStoreTests: XCTestCase {
         XCTAssertEqual(fetched.first?.status, SyncStatus.pending.rawValue)
     }
 
+    @MainActor
+    func testInitializationRecoversPersistedProcessingItemAfterReopen() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let storeURL = directory.appendingPathComponent("queue.store")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        do {
+            let initialContainer = try makePersistentQueueContainer(at: storeURL)
+            let item = SyncQueueItem(id: "interrupted", type: SyncTaskType.createEntry.rawValue, payloadJSON: "{}")
+            item.status = SyncStatus.processing.rawValue
+            item.nextAttemptAt = Date().addingTimeInterval(60)
+            initialContainer.mainContext.insert(item)
+            try initialContainer.mainContext.save()
+        }
+
+        let reopenedContainer = try makePersistentQueueContainer(at: storeURL)
+        let reopenedStore = QueueStore(modelContext: reopenedContainer.mainContext)
+        let recovered = try XCTUnwrap(
+            reopenedContainer.mainContext.fetch(FetchDescriptor<SyncQueueItem>()).first
+        )
+
+        XCTAssertEqual(recovered.status, SyncStatus.pending.rawValue)
+        XCTAssertNil(recovered.nextAttemptAt)
+        XCTAssertEqual(try reopenedStore.fetchReady(now: Date()).map(\.id), ["interrupted"])
+    }
+
     // MARK: delete
 
     @MainActor
@@ -776,6 +830,28 @@ final class QueueStoreTests: XCTestCase {
         let fetched = try container.mainContext.fetch(FetchDescriptor<SyncQueueItem>())
         XCTAssertTrue(fetched.isEmpty)
     }
+
+    @MainActor
+    private func makePersistentQueueContainer(at storeURL: URL) throws -> ModelContainer {
+        let schema = Schema([
+            LocalCourse.self,
+            LocalPracticeEntry.self,
+            LocalArtifact.self,
+            LocalFeedback.self,
+            LocalMarker.self,
+            LocalCaptureMarker.self,
+            SyncQueueItem.self,
+            CalendarEvent.self
+        ])
+        let configuration = ModelConfiguration(
+            "QueueRecovery",
+            schema: schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none
+        )
+        return try ModelContainer(for: schema, configurations: [configuration])
+    }
 }
 
 final class FeedbackMarkerFormatTests: XCTestCase {
@@ -788,5 +864,67 @@ final class FeedbackMarkerFormatTests: XCTestCase {
 
     func testFormatsPlaybackTime() {
         XCTAssertEqual(FeedbackEditorView.format(84.9), "01:24")
+    }
+}
+
+final class DemoDataCleanupTests: XCTestCase {
+    @MainActor
+    func testClearMockDataRemovesUUIDQueueRowsByPayloadAndDeletesArtifactFile() throws {
+        let container = PersistenceController.createContainer(inMemory: true)
+        let context = container.mainContext
+        let entry = LocalPracticeEntry(
+            id: "demo_entry_cleanup",
+            courseId: "demo_course_cleanup",
+            studentId: "demo_student_cleanup",
+            details: PracticeEntryDetails(practiceDate: Date(), goalText: "Demo", durationSeconds: nil, tags: [], notes: nil),
+            status: .draft
+        )
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("demo-cleanup-artifact.m4a")
+        try Data("demo-media".utf8).write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let artifact = LocalArtifact(
+            id: "demo_artifact_cleanup",
+            entryId: entry.id,
+            type: .audio,
+            durationSeconds: 1,
+            localPath: fileURL.path
+        )
+        let feedback = LocalFeedback(
+            id: "demo_feedback_cleanup",
+            targetType: "artifact",
+            targetId: artifact.id,
+            teacherName: "Demo Teacher",
+            status: .ok,
+            commentsText: "Demo"
+        )
+        entry.artifacts.append(artifact)
+        entry.feedback.append(feedback)
+        context.insert(entry)
+        context.insert(artifact)
+        context.insert(feedback)
+        let demoQueueItems = try [
+            makeQueueItem(type: .createEntry, payload: ["entryId": entry.id]),
+            makeQueueItem(type: .syncArtifact, payload: ["artifactId": artifact.id]),
+            makeQueueItem(type: .postFeedback, payload: ["feedbackId": feedback.id, "targetId": artifact.id])
+        ]
+        demoQueueItems.forEach(context.insert)
+        let nonDemoQueueItem = try makeQueueItem(type: .createEntry, payload: ["entryId": "entry-real"])
+        context.insert(nonDemoQueueItem)
+        try context.save()
+
+        try DemoDataManager(modelContext: context).clearMockUniversityData()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
+        XCTAssertTrue(try context.fetch(FetchDescriptor<LocalPracticeEntry>()).isEmpty)
+        XCTAssertTrue(try context.fetch(FetchDescriptor<LocalArtifact>()).isEmpty)
+        XCTAssertTrue(try context.fetch(FetchDescriptor<LocalFeedback>()).isEmpty)
+        let remainingQueueItems = try context.fetch(FetchDescriptor<SyncQueueItem>())
+        XCTAssertEqual(remainingQueueItems.map(\.id), [nonDemoQueueItem.id])
+    }
+
+    private func makeQueueItem(type: SyncTaskType, payload: [String: Any]) throws -> SyncQueueItem {
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let payloadJSON = try XCTUnwrap(String(data: data, encoding: .utf8))
+        return SyncQueueItem(id: UUID().uuidString, type: type.rawValue, payloadJSON: payloadJSON)
     }
 }

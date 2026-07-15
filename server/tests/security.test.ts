@@ -121,7 +121,7 @@ describe('security', () => {
       expect(res.body.id).toBe('entry_2025-03-21_abc123');
     });
 
-    it('returns 409 on duplicate entry ID', async () => {
+    it('treats an exact duplicate entry request as an idempotent retry', async () => {
       const token = await login('student');
       const payload = {
         id: 'duplicate-entry-id',
@@ -139,8 +139,8 @@ describe('security', () => {
         .post('/courses/COURSE_TEST/entries')
         .set('Authorization', `Bearer ${token}`)
         .send(payload);
-      expect(second.status).toBe(409);
-      expect(second.body.error?.code).toBe('ID_CONFLICT');
+      expect(second.status).toBe(200);
+      expect(second.body.id).toBe(payload.id);
     });
 
     it('rejects artifact ID with special characters', async () => {
@@ -160,12 +160,17 @@ describe('security', () => {
       const res = await request(app.server)
         .post('/entries/entry-for-artifact-id-test/artifacts')
         .set('Authorization', `Bearer ${token}`)
-        .send({ id: 'art<script>alert(1)</script>', type: 'audio', durationSeconds: 10 });
+        .send({
+          id: 'art<script>alert(1)</script>',
+          type: 'audio',
+          durationSeconds: 10,
+          sizeBytes: 1,
+        });
       expect(res.status).toBe(400);
       expect(res.body.error?.code).toBe('VALIDATION_ERROR');
     });
 
-    it('returns 409 on duplicate artifact ID', async () => {
+    it('treats an exact duplicate artifact request as an idempotent retry', async () => {
       await prisma.practiceEntry.create({
         data: {
           id: 'entry-for-dup-artifact',
@@ -179,7 +184,12 @@ describe('security', () => {
       });
 
       const token = await login('student');
-      const payload = { id: 'dup-artifact-id', type: 'audio', durationSeconds: 10 };
+      const payload = {
+        id: 'dup-artifact-id',
+        type: 'audio',
+        durationSeconds: 10,
+        sizeBytes: 1,
+      };
       const first = await request(app.server)
         .post('/entries/entry-for-dup-artifact/artifacts')
         .set('Authorization', `Bearer ${token}`)
@@ -190,8 +200,9 @@ describe('security', () => {
         .post('/entries/entry-for-dup-artifact/artifacts')
         .set('Authorization', `Bearer ${token}`)
         .send(payload);
-      expect(second.status).toBe(409);
-      expect(second.body.error?.code).toBe('ID_CONFLICT');
+      expect(second.status).toBe(200);
+      expect(second.body.id).toBe(payload.id);
+      expect(second.body.expectedSizeBytes).toBe(payload.sizeBytes);
     });
   });
 

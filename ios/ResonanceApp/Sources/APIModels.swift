@@ -76,6 +76,7 @@ struct ArtifactResponse: Decodable {
     let entryId: String
     let type: String
     let durationSeconds: Int
+    let expectedSizeBytes: Int?
     let uploadState: String
     let storageKey: String?
     let remoteUrl: String?
@@ -141,7 +142,11 @@ final class EntryReconciliationService {
         let queuedEntryIds = pendingEntryIds()
 
         for response in responses {
-            upsert(response, existing: localById[response.id])
+            upsert(
+                response,
+                existing: localById[response.id],
+                preserveLocalChanges: queuedEntryIds.contains(response.id)
+            )
         }
 
         for local in localEntries where local.remoteUpdatedAt != nil &&
@@ -173,7 +178,11 @@ final class EntryReconciliationService {
         return responses
     }
 
-    private func upsert(_ response: EntryResponse, existing local: LocalPracticeEntry?) {
+    private func upsert(
+        _ response: EntryResponse,
+        existing local: LocalPracticeEntry?,
+        preserveLocalChanges: Bool
+    ) {
         guard let local else {
             let details = PracticeEntryDetails(
                 practiceDate: response.practiceDate,
@@ -196,17 +205,23 @@ final class EntryReconciliationService {
                 status: EntryStatus(rawValue: response.status) ?? .draft,
                 captureContext: context
             )
-            inserted.remoteUpdatedAt = response.updatedAt ?? response.createdAt ?? Date()
+            let remoteDate = response.updatedAt ?? response.createdAt ?? Date()
+            inserted.remoteUpdatedAt = remoteDate
+            inserted.updatedAt = remoteDate
             modelContext.insert(inserted)
             mergeArtifacts(response.artifacts ?? [], into: inserted)
             return
         }
-        merge(response, into: local)
+        merge(response, into: local, preserveLocalChanges: preserveLocalChanges)
     }
 
-    private func merge(_ response: EntryResponse, into local: LocalPracticeEntry) {
+    private func merge(
+        _ response: EntryResponse,
+        into local: LocalPracticeEntry,
+        preserveLocalChanges: Bool
+    ) {
         let remoteDate = response.updatedAt ?? response.createdAt ?? Date()
-        if let previousRemote = local.remoteUpdatedAt, local.updatedAt > previousRemote {
+        if preserveLocalChanges || local.remoteUpdatedAt.map({ local.updatedAt > $0 }) == true {
             local.status = EntryStatus(rawValue: response.status) ?? local.status
             local.remoteUpdatedAt = remoteDate
             mergeArtifacts(response.artifacts ?? [], into: local)

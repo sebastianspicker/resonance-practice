@@ -60,4 +60,4 @@ recoverable-error, and terminal-error states. Release validation covers light
 and dark appearance, German and English, iPhone and iPad, Large/AX1/AX3/AX5
 text, keyboard, VoiceOver, Voice Control, and Switch Control.
 
-These are acceptance requirements. They have not all been exercised in the current local checkout; see the release checklist for the open matrix.
+These are acceptance requirements. `v0.1.0-alpha.1` has not exercised the complete matrix; see the [release checklist](./RELEASE_CHECKLIST.md) for the explicit gaps.

@@ -1,4 +1,3 @@
-import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 
@@ -47,18 +46,22 @@ describe('dev auth disabled', () => {
   });
 
   it('returns 404 for dev login', async () => {
-    const res = await request(app.server).get('/dev/login');
-    expect(res.status).toBe(404);
+    const res = await app.inject({ method: 'GET', url: '/dev/login' });
+    expect(res.statusCode).toBe(404);
   });
 
   it('returns 404 for dev issue', async () => {
-    const res = await request(app.server).post('/dev/issue').send({ role: 'student' });
-    expect(res.status).toBe(404);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/dev/issue',
+      payload: { role: 'student' },
+    });
+    expect(res.statusCode).toBe(404);
   });
 
   it('redirects app login to the OIDC login route', async () => {
-    const res = await request(app.server).get('/auth/login');
-    expect(res.status).toBe(302);
+    const res = await app.inject({ method: 'GET', url: '/auth/login' });
+    expect(res.statusCode).toBe(302);
     expect(res.headers.location).toBe('/auth/oidc/login');
   });
 });

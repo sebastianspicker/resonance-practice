@@ -129,27 +129,55 @@ final class DemoDataManager {
 
     func clearMockUniversityData() throws {
         let courses = try modelContext.fetch(FetchDescriptor<LocalCourse>())
-        courses.filter { $0.id.hasPrefix(demoPrefix) }.forEach(modelContext.delete)
-
         let entries = try modelContext.fetch(FetchDescriptor<LocalPracticeEntry>())
-        entries.filter { $0.id.hasPrefix(demoPrefix) || $0.courseId.hasPrefix(demoPrefix) }.forEach(modelContext.delete)
-
         let artifacts = try modelContext.fetch(FetchDescriptor<LocalArtifact>())
-        artifacts.filter { $0.id.hasPrefix(demoPrefix) || $0.entryId.hasPrefix(demoPrefix) }.forEach(modelContext.delete)
-
         let feedback = try modelContext.fetch(FetchDescriptor<LocalFeedback>())
-        feedback.filter { $0.id.hasPrefix(demoPrefix) || $0.targetId.hasPrefix(demoPrefix) }.forEach(modelContext.delete)
-
         let markers = try modelContext.fetch(FetchDescriptor<LocalMarker>())
-        markers.filter { $0.id.hasPrefix(demoPrefix) }.forEach(modelContext.delete)
-
         let captureMarkers = try modelContext.fetch(FetchDescriptor<LocalCaptureMarker>())
-        captureMarkers.filter { $0.id.hasPrefix(demoPrefix) }.forEach(modelContext.delete)
-
         let queueItems = try modelContext.fetch(FetchDescriptor<SyncQueueItem>())
-        queueItems.filter { $0.id.hasPrefix(demoPrefix) }.forEach(modelContext.delete)
+
+        let demoCourses = courses.filter { $0.id.hasPrefix(demoPrefix) }
+        let demoEntries = entries.filter { $0.id.hasPrefix(demoPrefix) || $0.courseId.hasPrefix(demoPrefix) }
+        let demoEntryIDs = Set(demoEntries.map(\.id))
+        let demoArtifacts = artifacts.filter {
+            $0.id.hasPrefix(demoPrefix) || $0.entryId.hasPrefix(demoPrefix) || demoEntryIDs.contains($0.entryId)
+        }
+        let demoArtifactIDs = Set(demoArtifacts.map(\.id))
+        let demoFeedback = feedback.filter {
+            $0.id.hasPrefix(demoPrefix) || $0.targetId.hasPrefix(demoPrefix) || demoEntryIDs.contains($0.targetId) || demoArtifactIDs.contains($0.targetId)
+        }
+        let demoCaptureMarkers = captureMarkers.filter {
+            $0.id.hasPrefix(demoPrefix) || demoEntryIDs.contains($0.entryId) || demoArtifactIDs.contains($0.artifactId)
+        }
+        let demoQueueItems = queueItems.filter { isDemoQueueItem($0) }
+
+        // Artifact rows do not delete their files automatically. Remove media
+        // before SwiftData records so demo cleanup leaves no local evidence.
+        for artifact in demoArtifacts where !artifact.localPath.isEmpty {
+            FileStore.deleteFileIfExists(atPath: artifact.localPath)
+        }
+
+        demoCourses.forEach(modelContext.delete)
+        demoEntries.forEach(modelContext.delete)
+        demoArtifacts.forEach(modelContext.delete)
+        demoFeedback.forEach(modelContext.delete)
+        markers.filter { $0.id.hasPrefix(demoPrefix) }.forEach(modelContext.delete)
+        demoCaptureMarkers.forEach(modelContext.delete)
+        demoQueueItems.forEach(modelContext.delete)
 
         try modelContext.save()
+    }
+
+    private func isDemoQueueItem(_ item: SyncQueueItem) -> Bool {
+        guard let data = item.payloadJSON.data(using: .utf8),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return item.id.hasPrefix(demoPrefix)
+        }
+        let referencedIDs = ["entryId", "artifactId", "feedbackId", "targetId"]
+        return item.id.hasPrefix(demoPrefix) || referencedIDs.contains {
+            (payload[$0] as? String)?.hasPrefix(demoPrefix) == true
+        }
     }
 
     private func loadFixture() throws -> DemoFixture {
@@ -158,19 +186,13 @@ final class DemoDataManager {
         }
         let data = try Data(contentsOf: url)
         let decoder = JSONDecoder()
-        let fractional: ISO8601DateFormatter = {
-            let f = ISO8601DateFormatter()
-            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return f
-        }()
-        let standard: ISO8601DateFormatter = {
-            let f = ISO8601DateFormatter()
-            f.formatOptions = [.withInternetDateTime]
-            return f
-        }()
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let value = try container.decode(String.self)
+            let fractional = ISO8601DateFormatter()
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let standard = ISO8601DateFormatter()
+            standard.formatOptions = [.withInternetDateTime]
             if let date = fractional.date(from: value) { return date }
             if let date = standard.date(from: value) { return date }
             throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid ISO8601 date: \(value)")

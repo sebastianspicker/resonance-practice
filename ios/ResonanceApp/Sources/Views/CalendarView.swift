@@ -17,8 +17,12 @@ struct CalendarView: View {
                             .accessibilityLabel("iCal URL")
                             .accessibilityHint("Enter your ASIMUT calendar URL")
                         Button("Save & Refresh") {
-                            CalendarSubscriptionStore.save(icalURLString)
-                            Task { await refresh() }
+                            do {
+                                try CalendarSubscriptionStore.save(icalURLString)
+                                Task { await refresh() }
+                            } catch {
+                                errorMessage = error.localizedDescription
+                            }
                         }
                         .accessibilityLabel("Save and refresh calendar")
                         .accessibilityHint("Double-tap to save the URL and reload calendar events")

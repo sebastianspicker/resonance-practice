@@ -4,6 +4,7 @@ import { buildServer } from '../src/server.js';
 import { S3Client } from '@aws-sdk/client-s3';
 import { mockClient } from 'aws-sdk-client-mock';
 import { createS3Client } from '../src/storage.js';
+import { assertTestDatabaseUrl } from './databaseSafety.js';
 
 export const prisma = new PrismaClient();
 export const s3Client = createS3Client();
@@ -13,12 +14,7 @@ export const app = buildServer(prisma, s3Client);
 export type TestRole = 'student' | 'teacher';
 
 function assertTestDatabase() {
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl || !dbUrl.toLowerCase().includes('test')) {
-    throw new Error(
-      `Refusing destructive test setup against non-test database: ${dbUrl ?? '<unset>'}`
-    );
-  }
+  assertTestDatabaseUrl(process.env.DATABASE_URL);
 }
 
 export async function getAccessToken(
@@ -46,7 +42,7 @@ export async function teardownApp() {
 export async function resetDb() {
   assertTestDatabase();
   await prisma.$executeRawUnsafe(
-    'TRUNCATE "CaptureMarker", "Marker", "Feedback", "Artifact", "PracticeEntry", "Membership", "Course", "User", "RefreshToken" CASCADE;'
+    'TRUNCATE "AuthFlowToken", "StorageDeletionJob", "DeletedEntryTombstone", "CaptureMarker", "Marker", "Feedback", "Artifact", "PracticeEntry", "Membership", "Course", "User", "RefreshToken" CASCADE;'
   );
 }
 

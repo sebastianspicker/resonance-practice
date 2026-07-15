@@ -11,10 +11,10 @@ import SwiftData
 /// ## Retry contract
 /// Queue items may run more than once after transient failures, so each task
 /// documents how duplicate work is handled:
-/// - `createEntry`: server returns **409 Conflict** on
-///   duplicate client-generated UUIDs; the client treats 409 as success.
-/// - `syncArtifact`: duplicate artifact creation is safe, but presign/confirm
-///   state still comes from the server and should not be treated as a pure PUT.
+/// - `createEntry`: the server treats exact repeats as idempotent; an ID conflict
+///   is accepted only after the remote entry is proven to match the local create.
+/// - `syncArtifact`: exact artifact retries are idempotent, but presign/confirm
+///   state still comes from the server and is reconciled before continuing.
 /// - `syncCaptureProfile`: idempotently patches one teaching-lesson metadata field.
 /// - `syncCaptureMarkers`: marker IDs are client-generated and the server upserts them.
 /// - `submitEntry`: repeated submits can return `ENTRY_LOCKED` once the server
@@ -72,11 +72,22 @@ final class TaskExecutor {
     private func executeCreateEntry(payload: [String: Any], accessToken: String) async throws {
         let entryId = payload["entryId"] as? String ?? ""
         let entry = try store.fetchEntry(id: entryId)
+        let response: EntryResponse
         do {
-            _ = try await apiClient.createEntry(accessToken: accessToken, courseId: entry.courseId, entry: entry)
+            response = try await apiClient.createEntry(
+                accessToken: accessToken,
+                courseId: entry.courseId,
+                entry: entry
+            )
         } catch let error as APIError where error.error.code == "ID_CONFLICT" {
-            return
+            let remote = try await apiClient.fetchEntry(accessToken: accessToken, entryId: entryId)
+            guard isExactCreateRetry(remote: remote, local: entry) else {
+                throw error
+            }
+            response = remote
         }
+        entry.remoteUpdatedAt = response.updatedAt ?? response.createdAt ?? Date()
+        store.save()
     }
 
     private func executeUpdateEntry(payload: [String: Any], accessToken: String) async throws {
@@ -94,9 +105,22 @@ final class TaskExecutor {
               entry.artifacts.allSatisfy({ $0.uploadState == .uploaded }) else {
             throw SyncError.dependenciesPending("Submission is waiting for media uploads")
         }
-        _ = try await apiClient.submitEntry(accessToken: accessToken, entryId: entryId)
-        entry.status = .submitted
-        store.save()
+        do {
+            _ = try await apiClient.submitEntry(accessToken: accessToken, entryId: entryId)
+            entry.status = .submitted
+            store.save()
+        } catch let error as APIError where error.error.code == "ENTRY_LOCKED" {
+            // A lost submit response can leave this queue item pending even
+            // though the server already moved the entry out of draft. Fetch
+            // the authoritative state instead of turning that successful
+            // operation into a terminal local failure.
+            let remote = try await apiClient.fetchEntry(accessToken: accessToken, entryId: entryId)
+            guard let remoteStatus = EntryStatus(rawValue: remote.status), remoteStatus != .draft else {
+                throw error
+            }
+            entry.status = remoteStatus
+            store.save()
+        }
     }
 
     private func executeDeleteEntry(payload: [String: Any], accessToken: String) async throws {
@@ -112,20 +136,78 @@ final class TaskExecutor {
     private func executeSyncArtifact(payload: [String: Any], accessToken: String) async throws {
         let artifactId = payload["artifactId"] as? String ?? ""
         let artifact = try store.fetchArtifact(id: artifactId)
+        let fileSize = try artifactFileSize(artifact)
+        let remoteArtifact = try await createOrReconcileArtifact(
+            artifact,
+            artifactId: artifactId,
+            fileSize: fileSize,
+            accessToken: accessToken
+        )
 
-        do {
-            _ = try await apiClient.createArtifact(accessToken: accessToken, entryId: artifact.entryId, artifact: artifact)
-        } catch let error as APIError where error.error.code == "ID_CONFLICT" {
-            // Already exists on server — continue to upload.
+        guard remoteArtifact.uploadState != UploadState.uploaded.rawValue else {
+            markArtifactUploaded(artifact, from: remoteArtifact)
+            return
         }
 
+        try await uploadAndConfirmArtifact(artifact, artifactId: artifactId, accessToken: accessToken)
+    }
+
+    private func artifactFileSize(_ artifact: LocalArtifact) throws -> Int {
+        guard FileManager.default.fileExists(atPath: artifact.localPath) else {
+            throw SyncError.localFileNotFound("Local file not found for artifact \(artifact.id) at \(artifact.localPath)")
+        }
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: artifact.localPath)
+            guard let size = attributes[.size] as? NSNumber else {
+                throw SyncError.localFileMetadataUnavailable("Could not determine size for artifact \(artifact.id)")
+            }
+            return size.intValue
+        } catch let error as SyncError {
+            throw error
+        } catch {
+            throw SyncError.localFileMetadataUnavailable("Could not read local file metadata for artifact \(artifact.id): \(error.localizedDescription)")
+        }
+    }
+
+    private func createOrReconcileArtifact(
+        _ artifact: LocalArtifact,
+        artifactId: String,
+        fileSize: Int,
+        accessToken: String
+    ) async throws -> ArtifactResponse {
+        do {
+            return try await apiClient.createArtifact(
+                accessToken: accessToken,
+                entryId: artifact.entryId,
+                artifact: artifact,
+                sizeBytes: fileSize
+            )
+        } catch let error as APIError where error.error.code == "ID_CONFLICT" {
+            let remoteEntry = try await apiClient.fetchEntry(accessToken: accessToken, entryId: artifact.entryId)
+            guard let matchingArtifact = remoteEntry.artifacts?.first(where: { $0.id == artifactId }),
+                  isExactArtifactRetry(remote: matchingArtifact, local: artifact, sizeBytes: fileSize) else {
+                throw error
+            }
+            return matchingArtifact
+        }
+    }
+
+    private func markArtifactUploaded(_ artifact: LocalArtifact, from remoteArtifact: ArtifactResponse) {
+        artifact.uploadState = .uploaded
+        artifact.syncPhase = .uploaded
+        artifact.storageKey = remoteArtifact.storageKey
+        artifact.remoteUrl = remoteArtifact.remoteUrl
+        store.save()
+    }
+
+    private func uploadAndConfirmArtifact(
+        _ artifact: LocalArtifact,
+        artifactId: String,
+        accessToken: String
+    ) async throws {
         artifact.uploadState = .uploading
         artifact.syncPhase = .uploading
         store.save()
-
-        guard FileManager.default.fileExists(atPath: artifact.localPath) else {
-            throw SyncError.localFileNotFound("Local file not found for artifact \(artifactId) at \(artifact.localPath)")
-        }
 
         let presign = try await apiClient.presignArtifact(accessToken: accessToken, artifactId: artifact.id)
         guard let uploadURL = URL(string: presign.uploadUrl), uploadURL.scheme != nil else {
@@ -143,14 +225,41 @@ final class TaskExecutor {
         store.save()
     }
 
+    private func isExactCreateRetry(remote: EntryResponse, local: LocalPracticeEntry) -> Bool {
+        remote.courseId == local.courseId &&
+            remote.studentId == local.studentId &&
+            (remote.kind ?? EntryKind.practice.rawValue) == local.kind.rawValue &&
+            abs(remote.practiceDate.timeIntervalSince(local.practiceDate)) < 0.001 &&
+            remote.goalText == local.goalText &&
+            remote.durationSeconds == local.durationSeconds &&
+            remote.tags == local.tags &&
+            remote.notes == local.notes &&
+            (remote.consentConfirmedAt != nil) == (local.consentConfirmedAt != nil) &&
+            remote.consentScope == local.consentScope?.rawValue &&
+            remote.captureProfile == local.captureProfile?.rawValue
+    }
+
+    private func isExactArtifactRetry(
+        remote: ArtifactResponse,
+        local: LocalArtifact,
+        sizeBytes: Int
+    ) -> Bool {
+        remote.entryId == local.entryId &&
+            remote.type == local.type.rawValue &&
+            remote.durationSeconds == local.durationSeconds &&
+            remote.expectedSizeBytes == sizeBytes
+    }
+
     private func executeSyncCaptureProfile(payload: [String: Any], accessToken: String) async throws {
         let entryId = payload["entryId"] as? String ?? ""
         let entry = try store.fetchEntry(id: entryId)
-        _ = try await apiClient.updateEntryCaptureProfile(
+        let response = try await apiClient.updateEntryCaptureProfile(
             accessToken: accessToken,
             entryId: entryId,
             captureProfile: entry.captureProfile
         )
+        entry.remoteUpdatedAt = response.updatedAt ?? Date()
+        store.save()
     }
 
     private func executeSyncCaptureMarkers(payload: [String: Any], accessToken: String) async throws {

@@ -10,6 +10,14 @@ export function requireField<T>(value: T | undefined | null, name: string) {
   return value;
 }
 
+/** Require a JSON object (not null or an array) from a request body. */
+export function requireRecord(value: unknown, name: string): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, `Invalid object: ${name}`);
+  }
+  return value as Record<string, unknown>;
+}
+
 /**
  * Validate a client-supplied resource ID.
  * Accepts 1-128 characters of alphanumeric, hyphens, and underscores.

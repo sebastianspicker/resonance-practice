@@ -1,6 +1,11 @@
 import { PrismaClient } from '@prisma/client';
 import type { DemoFixture } from './demoFixture.js';
-import { loadDemoFixture, resetDemoData } from './demoFixture.js';
+import {
+  assertDemoDatabaseUrl,
+  loadDemoFixture,
+  resetDemoData,
+  resolveDemoFeedbackEntryId,
+} from './demoFixture.js';
 
 const prisma = new PrismaClient();
 
@@ -97,6 +102,9 @@ function artifactWriteData(artifact: DemoFixture['artifacts'][number]) {
     uploadState: artifact.uploadState,
     storageKey: artifact.storageKey,
     remoteUrl: artifact.remoteUrl,
+    expectedSizeBytes: artifact.expectedSizeBytes,
+    uploadExpiresAt: artifact.uploadExpiresAt ? new Date(artifact.uploadExpiresAt) : null,
+    confirmationToken: artifact.confirmationToken,
   };
 }
 
@@ -115,11 +123,12 @@ async function seedArtifacts(fixture: DemoFixture) {
   }
 }
 
-function feedbackWriteData(item: DemoFixture['feedback'][number]) {
+function feedbackWriteData(fixture: DemoFixture, item: DemoFixture['feedback'][number]) {
   return {
     targetType: item.targetType,
     targetId: item.targetId,
     teacherId: item.teacherId,
+    entryId: resolveDemoFeedbackEntryId(fixture, item),
     status: item.status,
     commentsText: item.commentsText,
     createdAt: new Date(item.createdAt),
@@ -128,7 +137,7 @@ function feedbackWriteData(item: DemoFixture['feedback'][number]) {
 
 async function seedFeedback(fixture: DemoFixture) {
   for (const item of fixture.feedback) {
-    const writeData = feedbackWriteData(item);
+    const writeData = feedbackWriteData(fixture, item);
     await prisma.feedback.upsert({
       where: { id: item.id },
       update: writeData,
@@ -150,6 +159,11 @@ async function seedFeedback(fixture: DemoFixture) {
         })),
       });
     }
+
+    await prisma.practiceEntry.update({
+      where: { id: writeData.entryId },
+      data: { status: 'reviewed' },
+    });
   }
 }
 
@@ -166,6 +180,7 @@ function demoSummary(fixture: DemoFixture) {
 }
 
 async function main() {
+  assertDemoDatabaseUrl(process.env.DATABASE_URL);
   const fixture = await loadDemoFixture();
 
   await resetDemoData(prisma);

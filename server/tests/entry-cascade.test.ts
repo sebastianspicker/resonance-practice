@@ -1,14 +1,15 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { mockClient } from 'aws-sdk-client-mock';
-import { cascadeDeleteEntry, cleanupS3Objects } from '../src/services/entryCascade.js';
+import {
+  cascadeDeleteEntry,
+  expireStaleArtifactUploads,
+  retryStorageDeletionJobs,
+} from '../src/services/entryCascade.js';
 import { ApiError } from '../src/errors.js';
 
 /**
  * Tests for entryCascade.ts:
- * - cleanupS3Objects: S3 deletion failure logs error but does not throw
- * - cleanupS3Objects: successful deletion
- * - cleanupS3Objects: empty storage keys (no-op)
  * - cascadeDeleteEntry: entry not found (P2025)
  * - cascadeDeleteEntry: successful cascade with artifacts/feedback/markers
  */
@@ -20,63 +21,180 @@ describe('entryCascade', () => {
     s3Mock.reset();
   });
 
-  // ── cleanupS3Objects ──
-  describe('cleanupS3Objects', () => {
-    it('successfully deletes S3 objects for given storage keys', async () => {
-      s3Mock.on(DeleteObjectCommand).resolves({});
-      const s3 = new S3Client({});
+  describe('retryStorageDeletionJobs', () => {
+    it('removes successfully deleted jobs and retains failed jobs with retry state', async () => {
+      s3Mock.on(DeleteObjectCommand).resolvesOnce({}).rejectsOnce(new Error('S3 network error'));
+      const prisma = {
+        storageDeletionJob: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: 'job-success',
+              storageKey: 'success-key',
+              attemptCount: 0,
+              createdAt: new Date(),
+            },
+            {
+              id: 'job-fail',
+              storageKey: 'failure-key',
+              attemptCount: 0,
+              createdAt: new Date(),
+            },
+          ]),
+          deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+      } as any;
       const logger = { error: vi.fn() };
 
-      await cleanupS3Objects(s3, ['key1', 'key2', 'key3'], logger);
+      await retryStorageDeletionJobs(prisma, new S3Client({}), logger);
 
-      expect(s3Mock.commandCalls(DeleteObjectCommand).length).toBe(3);
-      expect(logger.error).not.toHaveBeenCalled();
-    });
-
-    it('does nothing when storage keys array is empty', async () => {
-      const s3 = new S3Client({});
-      const logger = { error: vi.fn() };
-
-      await cleanupS3Objects(s3, [], logger);
-
-      expect(s3Mock.commandCalls(DeleteObjectCommand).length).toBe(0);
-      expect(logger.error).not.toHaveBeenCalled();
-    });
-
-    it('logs error but does not throw when S3 deletion fails', async () => {
-      s3Mock.on(DeleteObjectCommand).rejects(new Error('S3 network error'));
-      const s3 = new S3Client({});
-      const logger = { error: vi.fn() };
-
-      // Should NOT throw
-      await cleanupS3Objects(s3, ['failing-key'], logger);
-
-      expect(logger.error).toHaveBeenCalledTimes(1);
+      expect(prisma.storageDeletionJob.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'job-success' },
+      });
+      expect(prisma.storageDeletionJob.updateMany).toHaveBeenCalledWith({
+        where: { id: 'job-fail' },
+        data: {
+          attemptCount: { increment: 1 },
+          lastError: 'S3 network error',
+          nextAttemptAt: expect.any(Date),
+        },
+      });
       expect(logger.error).toHaveBeenCalledWith(
-        expect.objectContaining({ err: expect.any(Error), storageKey: 'failing-key' }),
-        'Failed to delete S3 object after entry deletion'
+        expect.objectContaining({ jobId: 'job-fail', storageKey: 'failure-key' }),
+        'Failed to delete queued S3 object'
       );
     });
 
-    it('logs errors for individual failures but continues processing remaining keys', async () => {
-      // First call fails, second succeeds, third fails
-      s3Mock
-        .on(DeleteObjectCommand)
-        .rejectsOnce(new Error('fail-1'))
-        .resolvesOnce({})
-        .rejectsOnce(new Error('fail-3'));
-      const s3 = new S3Client({});
+    it('times out a stuck delete and preserves its durable retry job', async () => {
+      s3Mock.on(DeleteObjectCommand).callsFake(() => new Promise(() => {}));
+      const prisma = {
+        storageDeletionJob: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: 'job-timeout',
+              storageKey: 'stuck-key',
+              attemptCount: 0,
+              createdAt: new Date(),
+            },
+          ]),
+          deleteMany: vi.fn(),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+      } as any;
       const logger = { error: vi.fn() };
 
-      await cleanupS3Objects(s3, ['key-fail-1', 'key-ok', 'key-fail-3'], logger);
+      await expect(
+        retryStorageDeletionJobs(prisma, new S3Client({}), logger, { requestTimeoutMs: 10 })
+      ).resolves.toBe(1);
+      expect(prisma.storageDeletionJob.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.storageDeletionJob.updateMany).toHaveBeenCalledWith({
+        where: { id: 'job-timeout' },
+        data: expect.objectContaining({
+          attemptCount: { increment: 1 },
+          lastError: 'S3 DeleteObject timed out after 10ms',
+          nextAttemptAt: expect.any(Date),
+        }),
+      });
+    });
+  });
 
-      expect(s3Mock.commandCalls(DeleteObjectCommand).length).toBe(3);
-      expect(logger.error).toHaveBeenCalledTimes(2);
+  describe('expireStaleArtifactUploads', () => {
+    it('skips an upload that disappears after candidate selection', async () => {
+      const update = vi.fn();
+      const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([{ id: 'entry-missing-artifact' }]),
+        practiceEntry: {
+          findUnique: vi.fn().mockResolvedValue({ id: 'entry-missing-artifact', deletedAt: null }),
+        },
+        artifact: { findUnique: vi.fn().mockResolvedValue(null), update },
+      };
+      const prisma = {
+        artifact: {
+          findMany: vi
+            .fn()
+            .mockResolvedValue([{ id: 'artifact-gone', entryId: 'entry-missing-artifact' }]),
+        },
+        $transaction: vi.fn(async (operation: (client: typeof tx) => unknown) => operation(tx)),
+      } as any;
+
+      await expect(expireStaleArtifactUploads(prisma)).resolves.toBe(0);
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('queues the old key before resetting a legacy upload slot with no expiry', async () => {
+      const now = new Date('2026-07-15T12:00:00.000Z');
+      const upsert = vi.fn().mockResolvedValue({ id: 'job-1' });
+      const update = vi.fn().mockResolvedValue({ id: 'artifact-expired' });
+      const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([{ id: 'entry-expired' }]),
+        practiceEntry: {
+          findUnique: vi.fn().mockResolvedValue({ id: 'entry-expired', deletedAt: null }),
+        },
+        artifact: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'artifact-expired',
+            entryId: 'entry-expired',
+            uploadState: 'uploading',
+            storageKey: 'artifacts/expired-key',
+            uploadExpiresAt: null,
+          }),
+          update,
+        },
+        storageDeletionJob: { upsert },
+      };
+      const prisma = {
+        artifact: {
+          findMany: vi
+            .fn()
+            .mockResolvedValue([{ id: 'artifact-expired', entryId: 'entry-expired' }]),
+        },
+        $transaction: vi.fn(async (operation: (client: typeof tx) => unknown) => operation(tx)),
+      } as any;
+
+      await expect(expireStaleArtifactUploads(prisma, { now })).resolves.toBe(1);
+      expect(upsert).toHaveBeenCalledWith({
+        where: { storageKey: 'artifacts/expired-key' },
+        create: { entryId: 'entry-expired', storageKey: 'artifacts/expired-key' },
+        update: {},
+      });
+      expect(update).toHaveBeenCalledWith({
+        where: { id: 'artifact-expired' },
+        data: {
+          uploadState: 'failed',
+          storageKey: null,
+          remoteUrl: null,
+          uploadExpiresAt: null,
+          confirmationToken: null,
+        },
+      });
+      expect(upsert.mock.invocationCallOrder[0]).toBeLessThan(update.mock.invocationCallOrder[0]!);
     });
   });
 
   // ── cascadeDeleteEntry ──
   describe('cascadeDeleteEntry', () => {
+    it('rejects an entry already tombstoned by a concurrent deletion', async () => {
+      const artifactFindMany = vi.fn();
+      const mockPrisma = {
+        $transaction: vi.fn(async (fn: (tx: any) => unknown) =>
+          fn({
+            $queryRaw: vi.fn().mockResolvedValue([{ id: 'entry-deleted' }]),
+            practiceEntry: {
+              findUnique: vi.fn().mockResolvedValue({ id: 'entry-deleted', deletedAt: new Date() }),
+              update: vi.fn(),
+            },
+            artifact: { findMany: artifactFindMany },
+          })
+        ),
+      } as any;
+
+      await expect(cascadeDeleteEntry(mockPrisma, 'entry-deleted')).rejects.toMatchObject({
+        statusCode: 410,
+        code: 'ENTRY_DELETED',
+      });
+      expect(artifactFindMany).not.toHaveBeenCalled();
+    });
+
     it('throws ENTRY_NOT_FOUND when Prisma returns P2025 (entry does not exist)', async () => {
       const p2025Error = Object.assign(new Error('Record not found'), {
         code: 'P2025',
@@ -86,6 +204,7 @@ describe('entryCascade', () => {
       const mockPrisma = {
         $transaction: vi.fn(async (fn: (tx: any) => any) => {
           const mockTx = {
+            $queryRaw: vi.fn().mockResolvedValue([{ id: 'nonexistent-entry' }]),
             artifact: {
               findMany: vi.fn().mockResolvedValue([]),
               deleteMany: vi.fn(),
@@ -98,8 +217,11 @@ describe('entryCascade', () => {
               deleteMany: vi.fn(),
             },
             practiceEntry: {
-              update: vi.fn().mockRejectedValue(p2025Error),
+              findUnique: vi.fn().mockResolvedValue({ id: 'nonexistent-entry' }),
+              delete: vi.fn().mockRejectedValue(p2025Error),
             },
+            storageDeletionJob: { createMany: vi.fn() },
+            deletedEntryTombstone: { upsert: vi.fn().mockResolvedValue({}) },
           };
           return fn(mockTx);
         }),
@@ -132,6 +254,7 @@ describe('entryCascade', () => {
 
     it('returns storage keys after successful cascade delete', async () => {
       const mockTx = {
+        $queryRaw: vi.fn().mockResolvedValue([{ id: 'entry-1' }]),
         artifact: {
           findMany: vi.fn().mockResolvedValue([
             { id: 'art-1', storageKey: 'artifacts/entry-1/art-1' },
@@ -148,8 +271,11 @@ describe('entryCascade', () => {
           deleteMany: vi.fn().mockResolvedValue({ count: 5 }),
         },
         practiceEntry: {
-          update: vi.fn().mockResolvedValue({ id: 'entry-1', deletedAt: expect.any(Date) }),
+          findUnique: vi.fn().mockResolvedValue({ id: 'entry-1' }),
+          delete: vi.fn().mockResolvedValue({ id: 'entry-1' }),
         },
+        storageDeletionJob: { createMany: vi.fn().mockResolvedValue({ count: 2 }) },
+        deletedEntryTombstone: { upsert: vi.fn().mockResolvedValue({ id: 'entry-1' }) },
       };
 
       const mockPrisma = {
@@ -164,14 +290,24 @@ describe('entryCascade', () => {
       expect(mockTx.marker.deleteMany).toHaveBeenCalled();
       expect(mockTx.feedback.deleteMany).toHaveBeenCalled();
       expect(mockTx.artifact.deleteMany).toHaveBeenCalled();
-      expect(mockTx.practiceEntry.update).toHaveBeenCalledWith({
-        where: { id: 'entry-1' },
-        data: { deletedAt: expect.any(Date) },
+      expect(mockTx.storageDeletionJob.createMany).toHaveBeenCalledWith({
+        data: [
+          { entryId: 'entry-1', storageKey: 'artifacts/entry-1/art-1' },
+          { entryId: 'entry-1', storageKey: 'artifacts/entry-1/art-2' },
+        ],
+        skipDuplicates: true,
       });
+      expect(mockTx.deletedEntryTombstone.upsert).toHaveBeenCalledWith({
+        where: { id: 'entry-1' },
+        create: { id: 'entry-1' },
+        update: {},
+      });
+      expect(mockTx.practiceEntry.delete).toHaveBeenCalledWith({ where: { id: 'entry-1' } });
     });
 
     it('handles entry with no artifacts', async () => {
       const mockTx = {
+        $queryRaw: vi.fn().mockResolvedValue([{ id: 'entry-no-arts' }]),
         artifact: {
           findMany: vi.fn().mockResolvedValue([]),
           deleteMany: vi.fn(),
@@ -184,7 +320,12 @@ describe('entryCascade', () => {
           deleteMany: vi.fn(),
         },
         practiceEntry: {
-          update: vi.fn().mockResolvedValue({ id: 'entry-no-arts', deletedAt: expect.any(Date) }),
+          findUnique: vi.fn().mockResolvedValue({ id: 'entry-no-arts' }),
+          delete: vi.fn().mockResolvedValue({ id: 'entry-no-arts' }),
+        },
+        storageDeletionJob: { createMany: vi.fn() },
+        deletedEntryTombstone: {
+          upsert: vi.fn().mockResolvedValue({ id: 'entry-no-arts' }),
         },
       };
 
@@ -201,6 +342,7 @@ describe('entryCascade', () => {
     it('handles entry with artifacts that have feedback and markers', async () => {
       const feedbackCallCount = { count: 0 };
       const mockTx = {
+        $queryRaw: vi.fn().mockResolvedValue([{ id: 'entry-with-fb' }]),
         artifact: {
           findMany: vi.fn().mockResolvedValue([{ id: 'art-1', storageKey: 'key-1' }]),
           deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -220,7 +362,12 @@ describe('entryCascade', () => {
           deleteMany: vi.fn().mockResolvedValue({ count: 2 }),
         },
         practiceEntry: {
-          update: vi.fn().mockResolvedValue({ id: 'entry-with-fb', deletedAt: expect.any(Date) }),
+          findUnique: vi.fn().mockResolvedValue({ id: 'entry-with-fb' }),
+          delete: vi.fn().mockResolvedValue({ id: 'entry-with-fb' }),
+        },
+        storageDeletionJob: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        deletedEntryTombstone: {
+          upsert: vi.fn().mockResolvedValue({ id: 'entry-with-fb' }),
         },
       };
 

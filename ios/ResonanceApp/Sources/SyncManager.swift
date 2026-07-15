@@ -27,6 +27,7 @@ enum SyncError: LocalizedError {
     case unknownTaskType(String)
     case localFileNotFound(String)
     case invalidPresignUrl(String)
+    case localFileMetadataUnavailable(String)
     case localFeedbackNotFound(String)
     case localCaptureMarkersNotFound(String)
     case dependenciesPending(String)
@@ -37,6 +38,7 @@ enum SyncError: LocalizedError {
         case .unknownTaskType(let message): return message
         case .localFileNotFound(let message): return message
         case .invalidPresignUrl(let message): return message
+        case .localFileMetadataUnavailable(let message): return message
         case .localFeedbackNotFound(let message): return message
         case .localCaptureMarkersNotFound(let message): return message
         case .dependenciesPending(let message): return message
@@ -66,6 +68,8 @@ final class SyncManager: ObservableObject {
     private let processItemOverride: ((SyncQueueItem, String) async throws -> Void)?
     private var isProcessingQueue = false
     private var needsAnotherQueuePass = false
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    private var backgroundTaskGeneration: UUID?
 
     @Published var lastSyncedAt: Date?
     @Published var pendingQueueCount: Int = 0
@@ -136,18 +140,24 @@ final class SyncManager: ObservableObject {
             return
         }
 
-        let taskId = UIApplication.shared.beginBackgroundTask(withName: "ResonanceSync") {
+        let backgroundTaskGeneration = UUID()
+        self.backgroundTaskGeneration = backgroundTaskGeneration
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "ResonanceSync") {
             // Background time expired: reset any stuck "processing" items so they retry next launch.
             // Use DispatchQueue.main.async instead of Task { @MainActor } to avoid queueing
             // behind the current async sync operation, which could cause the expiration handler
             // to run too late (after the OS suspends the app).
             DispatchQueue.main.async { [weak self] in
-                self?.store.resetStuckProcessing()
+                guard let self, self.backgroundTaskGeneration == backgroundTaskGeneration else {
+                    return
+                }
+                self.store.resetStuckProcessing()
+                self.endBackgroundTask(generation: backgroundTaskGeneration)
             }
         }
 
         defer {
-            UIApplication.shared.endBackgroundTask(taskId)
+            endBackgroundTask(generation: backgroundTaskGeneration)
         }
 
         await authManager.refreshIfNeeded()
@@ -155,6 +165,16 @@ final class SyncManager: ObservableObject {
         guard let items = fetchReadyItems() else { return }
         await process(items: items)
         finishQueuePass(items)
+    }
+
+    private func endBackgroundTask(generation: UUID) {
+        guard backgroundTaskGeneration == generation else { return }
+        let taskID = backgroundTaskID
+        backgroundTaskID = .invalid
+        backgroundTaskGeneration = nil
+        if taskID != .invalid {
+            UIApplication.shared.endBackgroundTask(taskID)
+        }
     }
 
     private func fetchReadyItems() -> [SyncQueueItem]? {
@@ -190,8 +210,15 @@ final class SyncManager: ObservableObject {
                     item.nextAttemptAt = Date().addingTimeInterval(2)
                     continue
                 }
+                if let apiError = error as? APIError, isSessionBoundaryError(apiError) {
+                    item.status = SyncStatus.pending.rawValue
+                    item.lastError = apiError.error.code
+                    item.nextAttemptAt = nil
+                    authManager.signOut()
+                    break
+                }
                 item.retryCount += 1
-                item.lastError = String(describing: error)
+                item.lastError = stableErrorDescription(error)
 
                 if item.retryCount >= retryPolicy.maxAttempts {
                     item.status = SyncStatus.failed.rawValue
@@ -203,8 +230,33 @@ final class SyncManager: ObservableObject {
                     item.status = SyncStatus.pending.rawValue
                     item.nextAttemptAt = Date().addingTimeInterval(retryPolicy.backoffDelay(retryCount: item.retryCount))
                     store.resetArtifactStateForRetryIfNeeded(item: item)
+                    // Preserve FIFO ordering when an earlier operation needs
+                    // a retry. Later items can depend on its remote result.
+                    break
                 }
             }
+        }
+    }
+
+    private func stableErrorDescription(_ error: Error) -> String {
+        if let apiError = error as? APIError {
+            return apiError.error.code
+        }
+        return error.localizedDescription
+    }
+
+    private func isSessionBoundaryError(_ error: APIError) -> Bool {
+        switch error.error.code {
+        case "MISSING_AUTH",
+             "INVALID_TOKEN",
+             "INVALID_REFRESH",
+             "REFRESH_REVOKED",
+             "REFRESH_MISMATCH",
+             "REFRESH_ALREADY_USED",
+             "USER_NOT_FOUND":
+            return true
+        default:
+            return false
         }
     }
 

@@ -5,57 +5,58 @@ struct EntryDeletionResult {
     let enqueuedRemoteDelete: Bool
 }
 
+enum EntryDeletionError: LocalizedError {
+    case invalidDeletePayload
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidDeletePayload:
+            return "Unable to create the remote deletion request."
+        }
+    }
+}
+
 @MainActor
 enum EntryDeletionCoordinator {
     /// Delete a local entry without leaving orphaned queue work behind.
     ///
-    /// Offline deletion has two cases:
-    /// - Unsynced entries only exist locally, so their pending create/artifact/feedback tasks are removed.
-    /// - Already-synced entries need one remote delete task, but duplicate delete tasks are avoided.
+    /// Pending work for the entry is cancelled and replaced by one durable remote
+    /// delete intent. DELETE is idempotent at the API boundary, so this remains
+    /// correct even when a local create may already have reached the server.
     ///
     /// Local audio files are removed immediately because the queue no longer has
     /// any valid task that can upload them after the parent entry is gone.
     static func delete(
         entry: LocalPracticeEntry,
         modelContext: ModelContext,
-        enqueue: (SyncTaskType, [String: Any]) -> Void
+        additionalOwnedMediaPaths: [String] = [],
+        removeArtifactFile: (String) throws -> Void = FileStore.removeFileIfExists
     ) throws -> EntryDeletionResult {
         let entryId = entry.id
         let artifactIds = Set(entry.artifacts.map(\.id))
         let queueItems = try modelContext.fetch(FetchDescriptor<SyncQueueItem>())
+        let remoteDelete = try makeRemoteDeleteIntent(entryId: entryId)
 
-        let hasPendingCreate = queueItems.contains {
-            $0.type == SyncTaskType.createEntry.rawValue && referencesDeletedData($0, entryId: entryId, artifactIds: artifactIds)
-        }
-        let hasPendingDelete = queueItems.contains {
-            $0.type == SyncTaskType.deleteEntry.rawValue && referencesDeletedData($0, entryId: entryId, artifactIds: artifactIds)
+        // This is deliberately before every SwiftData mutation. A verified
+        // filesystem failure leaves local records and queued work intact.
+        var encounteredPaths = Set<String>()
+        let mediaPaths = entry.artifacts.map(\.localPath) + additionalOwnedMediaPaths
+        for path in mediaPaths where !path.isEmpty && encounteredPaths.insert(path).inserted {
+            try removeArtifactFile(path)
         }
 
         for item in queueItems {
             guard referencesDeletedData(item, entryId: entryId, artifactIds: artifactIds) else {
                 continue
             }
-
-            if item.type == SyncTaskType.deleteEntry.rawValue && hasPendingCreate == false {
-                continue
-            }
-
             modelContext.delete(item)
         }
 
-        for artifact in entry.artifacts {
-            FileStore.deleteFileIfExists(atPath: artifact.localPath)
-        }
-
-        let shouldEnqueueRemoteDelete = hasPendingCreate == false && hasPendingDelete == false
-        if shouldEnqueueRemoteDelete {
-            enqueue(.deleteEntry, ["entryId": entryId])
-        }
-
+        modelContext.insert(remoteDelete)
         modelContext.delete(entry)
         try modelContext.save()
 
-        return EntryDeletionResult(enqueuedRemoteDelete: shouldEnqueueRemoteDelete)
+        return EntryDeletionResult(enqueuedRemoteDelete: true)
     }
 
     private static func referencesDeletedData(
@@ -83,5 +84,21 @@ enum EntryDeletionCoordinator {
         }
 
         return false
+    }
+
+    private static func makeRemoteDeleteIntent(entryId: String) throws -> SyncQueueItem {
+        let payload = ["entryId": entryId]
+        guard JSONSerialization.isValidJSONObject(payload) else {
+            throw EntryDeletionError.invalidDeletePayload
+        }
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        guard let payloadJSON = String(data: data, encoding: .utf8) else {
+            throw EntryDeletionError.invalidDeletePayload
+        }
+        return SyncQueueItem(
+            id: UUID().uuidString,
+            type: SyncTaskType.deleteEntry.rawValue,
+            payloadJSON: payloadJSON
+        )
     }
 }

@@ -18,9 +18,13 @@ struct ContentView: View {
             } else if let userId = conflictingProfileUserId {
                 LocalProfileConflictView(
                     continueWithAccount: {
-                        appState.replaceLocalProfile(with: userId)
-                        conflictingProfileUserId = nil
-                        activeLocalProfileUserId = userId
+                        do {
+                            try appState.replaceLocalProfile(with: userId)
+                            conflictingProfileUserId = nil
+                            activeLocalProfileUserId = userId
+                        } catch {
+                            appState.reportError(error)
+                        }
                     },
                     signOut: { authManager.signOut() }
                 )
@@ -35,7 +39,9 @@ struct ContentView: View {
             if let userId = authManager.session?.userId {
                 prepareLocalProfile(userId: userId)
             }
-            await syncManager.processQueue()
+            if ScreenshotScenario.current == nil {
+                await syncManager.processQueue()
+            }
         }
         .onChange(of: authManager.session?.userId) { _, userId in
             if let userId {
@@ -47,6 +53,7 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
+                guard ScreenshotScenario.current == nil else { return }
                 Task { await syncManager.processQueue() }
             }
         }
@@ -60,12 +67,18 @@ struct ContentView: View {
     }
 
     private func prepareLocalProfile(userId: String) {
-        if appState.activateLocalProfile(userId: userId) {
-            activeLocalProfileUserId = userId
-            conflictingProfileUserId = nil
-        } else {
+        do {
+            if try appState.activateLocalProfile(userId: userId) {
+                activeLocalProfileUserId = userId
+                conflictingProfileUserId = nil
+            } else {
+                activeLocalProfileUserId = nil
+                conflictingProfileUserId = userId
+            }
+        } catch {
             activeLocalProfileUserId = nil
             conflictingProfileUserId = userId
+            appState.reportError(error)
         }
     }
 

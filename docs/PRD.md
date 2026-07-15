@@ -1,4 +1,6 @@
-# Resonance Production-Pilot Requirements
+# Resonance Post-Alpha Production-Pilot Requirements
+
+`v0.1.0-alpha.1` is a source-only public alpha. This document describes the product and acceptance target for a later production pilot; it is not a claim that those requirements have all been implemented or validated.
 
 ## Product
 

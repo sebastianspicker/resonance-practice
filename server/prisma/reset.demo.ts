@@ -1,9 +1,10 @@
 import { PrismaClient } from '@prisma/client';
-import { resetDemoData } from './demoFixture.js';
+import { assertDemoDatabaseUrl, resetDemoData } from './demoFixture.js';
 
 const prisma = new PrismaClient();
 
 async function main() {
+  assertDemoDatabaseUrl(process.env.DATABASE_URL);
   await resetDemoData(prisma);
   console.log('Removed all demo_* records from database.');
 }

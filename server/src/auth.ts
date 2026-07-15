@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { PrismaClient, User } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 import { nanoid } from 'nanoid';
 import { config, limits } from './config.js';
@@ -63,8 +64,9 @@ export function verifyRefreshToken(token: string) {
 /** Accepts PrismaClient or a Prisma transaction (which exposes the same model methods). */
 type PrismaLike = Pick<PrismaClient, 'refreshToken'>;
 
-export async function issueTokens(prisma: PrismaLike, user: User) {
+export async function issueTokens(prisma: PrismaLike, user: User, existingFamilyId?: string) {
   const tokenId = `rt_${nanoid(24)}`;
+  const familyId = existingFamilyId ?? tokenId;
   const refreshToken = signRefreshToken(user, tokenId);
   const accessToken = signAccessToken(user);
 
@@ -74,12 +76,48 @@ export async function issueTokens(prisma: PrismaLike, user: User) {
     data: {
       id: tokenId,
       userId: user.id,
+      familyId,
       tokenHash: hashToken(refreshToken),
       expiresAt,
     },
   });
 
   return { accessToken, refreshToken };
+}
+
+async function lockAuthUser(tx: Prisma.TransactionClient, userId: string): Promise<User | null> {
+  const users = await tx.$queryRaw<User[]>`
+    SELECT "id", "displayName", "globalRole"
+    FROM "User"
+    WHERE "id" = ${userId}
+    FOR UPDATE
+  `;
+  return users[0] ?? null;
+}
+
+export async function issueSessionTokens(prisma: PrismaClient, user: User) {
+  return prisma.$transaction(async (tx) => {
+    const lockedUser = await lockAuthUser(tx, user.id);
+    if (!lockedUser) {
+      throw new ApiError(401, ErrorCodes.USER_NOT_FOUND, 'User not found');
+    }
+    return issueTokens(tx, lockedUser);
+  });
+}
+
+/** Serialize logout with token rotation so logout cannot miss a new token. */
+export async function revokeRefreshTokenFamily(
+  prisma: PrismaClient,
+  userId: string
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const user = await lockAuthUser(tx, userId);
+    if (!user) return;
+    await tx.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  });
 }
 
 export async function rotateRefreshToken(prisma: PrismaClient, refreshToken: string) {
@@ -91,7 +129,12 @@ export async function rotateRefreshToken(prisma: PrismaClient, refreshToken: str
     throw new ApiError(401, ErrorCodes.INVALID_REFRESH, 'Invalid refresh token payload');
   }
 
-  return await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
+    const user = await lockAuthUser(tx, userId);
+    if (!user) {
+      throw new ApiError(401, ErrorCodes.USER_NOT_FOUND, 'User not found');
+    }
+
     // Verify token hash first (before any updates)
     const record = await tx.refreshToken.findUnique({
       where: { id: tokenId },
@@ -113,26 +156,36 @@ export async function rotateRefreshToken(prisma: PrismaClient, refreshToken: str
 
     // Atomic conditional update: only revoke if not already revoked
     // This prevents race conditions where two concurrent requests could both succeed
+    const revokedAt = new Date();
     const updateResult = await tx.refreshToken.updateMany({
       where: {
         id: tokenId,
         revokedAt: null, // Only update if not already revoked
       },
-      data: { revokedAt: new Date() },
+      data: { revokedAt },
     });
 
-    // If no rows were updated, the token was already used (race condition detected)
+    // If no rows were updated, the token was already used. Revoke any active
+    // descendants in this lineage before returning a sentinel; throwing inside
+    // the transaction would roll the containment write back.
     if (updateResult.count === 0) {
-      throw new ApiError(401, ErrorCodes.REFRESH_ALREADY_USED, 'Refresh token was already used');
+      await tx.refreshToken.updateMany({
+        where: { userId, familyId: record.familyId, revokedAt: null },
+        data: { revokedAt },
+      });
+      return { kind: 'reused' as const };
     }
 
-    const user = await tx.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      throw new ApiError(401, ErrorCodes.USER_NOT_FOUND, 'User not found');
-    }
-
-    return issueTokens(tx, user);
+    return {
+      kind: 'rotated' as const,
+      tokens: await issueTokens(tx, user, record.familyId),
+    };
   });
+
+  if (result.kind === 'reused') {
+    throw new ApiError(401, ErrorCodes.REFRESH_ALREADY_USED, 'Refresh token was already used');
+  }
+  return result.tokens;
 }
 
 export function issueDevAuthCode(userId: string) {

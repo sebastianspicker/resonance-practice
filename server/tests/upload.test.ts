@@ -50,7 +50,7 @@ describe('media upload flow', () => {
     const artifactRes = await request(app.server)
       .post(`/entries/${entry.id}/artifacts`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ id: 'artifact-1', type: 'audio', durationSeconds: 60 });
+      .send({ id: 'artifact-1', type: 'audio', durationSeconds: 60, sizeBytes: 128 });
 
     expect(artifactRes.status).toBe(201);
 
@@ -62,6 +62,7 @@ describe('media upload flow', () => {
     expect(presignRes.status).toBe(200);
     expect(typeof presignRes.body.uploadUrl).toBe('string');
     expect(presignRes.body.requiredHeaders?.['Content-Type']).toBe('audio/m4a');
+    expect(presignRes.body.requiredHeaders?.['Content-Length']).toBe('128');
 
     s3Mock.on(HeadObjectCommand).resolves({ ContentLength: 128 });
 
@@ -92,7 +93,7 @@ describe('media upload flow', () => {
     const artifactRes = await request(app.server)
       .post(`/entries/${entry.id}/artifacts`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ id: 'artifact-retry', type: 'audio', durationSeconds: 60 });
+      .send({ id: 'artifact-retry', type: 'audio', durationSeconds: 60, sizeBytes: 128 });
 
     expect(artifactRes.status).toBe(201);
 
@@ -102,7 +103,9 @@ describe('media upload flow', () => {
       .send();
 
     expect(firstPresign.status).toBe(200);
-    expect(firstPresign.body.storageKey).toBe(`artifacts/${entry.id}/${artifactRes.body.id}`);
+    expect(firstPresign.body.storageKey).toMatch(
+      new RegExp(`^artifacts/${entry.id}/${artifactRes.body.id}-`)
+    );
 
     const afterFirstPresign = await prisma.artifact.findUniqueOrThrow({
       where: { id: artifactRes.body.id },
@@ -138,6 +141,130 @@ describe('media upload flow', () => {
     expect(presignUploaded.body.error?.code).toBe('UPLOAD_INVALID');
   });
 
+  it('repairs a matching pending artifact created before size binding was introduced', async () => {
+    const token = await login('student');
+    const entry = await prisma.practiceEntry.create({
+      data: {
+        id: 'entry-legacy-artifact',
+        courseId: 'COURSE_TEST',
+        studentId: 'student-1',
+        practiceDate: new Date(),
+        goalText: 'Resume an older upload',
+        tags: [],
+        status: 'draft',
+      },
+    });
+    await prisma.artifact.create({
+      data: {
+        id: 'artifact-legacy-pending',
+        entryId: entry.id,
+        type: 'audio',
+        durationSeconds: 30,
+      },
+    });
+
+    const response = await request(app.server)
+      .post(`/entries/${entry.id}/artifacts`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        id: 'artifact-legacy-pending',
+        type: 'audio',
+        durationSeconds: 30,
+        sizeBytes: 128,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.expectedSizeBytes).toBe(128);
+  });
+
+  it('verifies and repairs a matching uploaded legacy artifact', async () => {
+    const token = await login('student');
+    const entry = await prisma.practiceEntry.create({
+      data: {
+        id: 'entry-legacy-uploaded',
+        courseId: 'COURSE_TEST',
+        studentId: 'student-1',
+        practiceDate: new Date(),
+        goalText: 'Recover confirmed upload',
+        tags: [],
+        status: 'submitted',
+      },
+    });
+    await prisma.artifact.create({
+      data: {
+        id: 'artifact-legacy-uploaded',
+        entryId: entry.id,
+        type: 'audio',
+        durationSeconds: 30,
+        uploadState: 'uploaded',
+        storageKey: 'artifacts/legacy-uploaded',
+      },
+    });
+    s3Mock.on(HeadObjectCommand).resolves({ ContentLength: 128 });
+
+    const payload = {
+      id: 'artifact-legacy-uploaded',
+      type: 'audio',
+      durationSeconds: 30,
+      sizeBytes: 128,
+    };
+    const responses = await Promise.all([
+      request(app.server)
+        .post(`/entries/${entry.id}/artifacts`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(payload),
+      request(app.server)
+        .post(`/entries/${entry.id}/artifacts`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(payload),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    expect(responses.map((response) => response.body.expectedSizeBytes)).toEqual([128, 128]);
+  });
+
+  it('rejects a legacy uploaded artifact when its stored size differs', async () => {
+    const token = await login('student');
+    const entry = await prisma.practiceEntry.create({
+      data: {
+        id: 'entry-legacy-size-mismatch',
+        courseId: 'COURSE_TEST',
+        studentId: 'student-1',
+        practiceDate: new Date(),
+        goalText: 'Reject mismatched legacy upload',
+        tags: [],
+        status: 'draft',
+      },
+    });
+    await prisma.artifact.create({
+      data: {
+        id: 'artifact-legacy-size-mismatch',
+        entryId: entry.id,
+        type: 'audio',
+        durationSeconds: 30,
+        uploadState: 'uploaded',
+        storageKey: 'artifacts/legacy-size-mismatch',
+      },
+    });
+    s3Mock.on(HeadObjectCommand).resolves({ ContentLength: 64 });
+
+    const response = await request(app.server)
+      .post(`/entries/${entry.id}/artifacts`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        id: 'artifact-legacy-size-mismatch',
+        type: 'audio',
+        durationSeconds: 30,
+        sizeBytes: 128,
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error?.code).toBe('ID_CONFLICT');
+    await expect(
+      prisma.artifact.findUniqueOrThrow({ where: { id: 'artifact-legacy-size-mismatch' } })
+    ).resolves.toMatchObject({ expectedSizeBytes: null });
+  });
+
   it('presigns video uploads with a video content type', async () => {
     const token = await login('student');
 
@@ -158,6 +285,7 @@ describe('media upload flow', () => {
         entryId: entry.id,
         type: 'video',
         durationSeconds: 30,
+        expectedSizeBytes: 128,
       },
     });
 
@@ -197,7 +325,7 @@ describe('media upload flow', () => {
     const artifactRes = await request(app.server)
       .post(`/entries/${entry.id}/artifacts`)
       .set('Authorization', `Bearer ${ownerToken}`)
-      .send({ id: 'artifact-2', type: 'audio', durationSeconds: 30 });
+      .send({ id: 'artifact-2', type: 'audio', durationSeconds: 30, sizeBytes: 128 });
     expect(artifactRes.status).toBe(201);
 
     const presignRes = await request(app.server)
@@ -232,7 +360,7 @@ describe('media upload flow', () => {
     const artifactRes = await request(app.server)
       .post(`/entries/${entry.id}/artifacts`)
       .set('Authorization', `Bearer ${studentToken}`)
-      .send({ id: 'artifact-3', type: 'audio', durationSeconds: 30 });
+      .send({ id: 'artifact-3', type: 'audio', durationSeconds: 30, sizeBytes: 128 });
     expect(artifactRes.status).toBe(201);
 
     const presignRes = await request(app.server)

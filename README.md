@@ -1,60 +1,52 @@
-# Resonance – Practice & Feedback
+# Resonance
 
 [![CI](https://github.com/sebastianspicker/resonance/actions/workflows/ci.yml/badge.svg)](https://github.com/sebastianspicker/resonance/actions/workflows/ci.yml)
 
-Resonance is an offline-first iOS and iPadOS practice-evidence and teacher-feedback application for a university of music. Students create goals, capture audio or consented teaching-lesson video, submit evidence privately to a course, and receive structured timestamped feedback.
+Resonance is an offline-first iOS and iPadOS app for practice evidence and private teacher feedback in music education. Students can set goals, capture audio or consented teaching-lesson video, submit evidence to a course, and receive structured timestamped feedback.
 
-## Current Local Status
+`v0.1.0-alpha.1` is prepared as a source-only public alpha for developers and contributors. Until its tag and GitHub pre-release exist, the release checklist treats this branch as an unpublished candidate. It is not a signed app, a TestFlight build, a hosted service, or a production deployment.
 
-The current checkout contains the production-pilot foundation, not a finished production release.
+## What the alpha includes
 
-Implemented in source:
+- SwiftUI and SwiftData client foundations for local entries, media, feedback, calendar data, and a durable sync queue.
+- Student and teacher course roles, paginated hydration, local/remote reconciliation, retry and task deduplication.
+- Audio and consented teaching-lesson video evidence with manual markers and private course review.
+- Account-owner isolation, explicit local-profile replacement, and protected local media.
+- Fastify API, Prisma/PostgreSQL schema and migrations, S3-compatible storage, loopback-only development auth, and configurable OIDC.
+- Deterministic mock-university fixtures, local demo tooling, server tests, iOS XCTest, and CI-equivalent local verification.
 
-- SwiftData-backed local entries, media, feedback, calendar events, and sync queue.
-- Course-role-aware student and teacher navigation.
-- Paginated entry hydration with local/remote reconciliation.
-- Deduplicated, retrying sync tasks and dependency-aware submission.
-- Account-owner locking and confirmed local-data deletion on sign-out or account replacement.
-- Audio and teaching-lesson video capture with consent metadata and manual markers.
-- Authorized short-lived media playback for the owner or a same-course teacher.
-- Native semantic light/dark UI foundations without the retired glass presentation.
-- Fastify, Prisma/PostgreSQL, S3-compatible storage, dev auth, and configurable OIDC support.
+## Known limitations
 
-Open production-pilot work:
+- English is the current interface language. Complete German localization and the promised English fallback remain open.
+- Capture draft editing and some preview, accept, retake, reviewed-history, Calendar, Export, Settings, and Sync states need further product polish.
+- The complete accessibility, assistive-technology, Dynamic Type, keyboard, device-window, and performance matrices have not been validated.
+- Real OIDC, PostgreSQL, object storage, backups, retention, signing, TestFlight, and production deployment have not been validated here.
+- The published screenshots are deterministic visual evidence only; they do not prove interaction, networking, authorization, persistence, or accessibility.
 
-- Complete German and English localization.
-- Reusable draft editing and complete preview/accept/retake capture paths.
-- Reviewed-history and remaining Calendar, Export, Settings, and Sync polish.
-- A dedicated XCUITest accessibility and device-matrix target.
-- Manual VoiceOver, keyboard, switch, Dynamic Type, device-window, and performance validation.
-- Deployment validation with real OIDC, PostgreSQL, and object storage.
+## Gallery
 
-Local evidence from 2026-07-11:
+| Student evidence history | Reviewed student feedback |
+|---|---|
+| ![Student entry list showing draft, submitted, and reviewed practice evidence](docs/assets/screenshots/approved/v0.1.0-alpha.1/03-student-entry-list.png) | ![Reviewed student entry showing teacher comments and timestamped feedback markers](docs/assets/screenshots/approved/v0.1.0-alpha.1/12-student-reviewed-feedback.png) |
 
-- Generic iOS device build passed with Xcode 26.3.
-- 125 XCTest methods passed on an iPhone 17 Pro simulator.
-- Backend checks were not rerun after the latest media endpoint change because this checkout does not currently contain `server/node_modules`.
+| Teacher review queue | Teacher feedback editor |
+|---|---|
+| ![Teacher course view showing two mock practice evidence rows](docs/assets/screenshots/approved/v0.1.0-alpha.1/08-teacher-review-queue.png) | ![Teacher feedback editor with structured comments and timestamped markers](docs/assets/screenshots/approved/v0.1.0-alpha.1/10-teacher-feedback-editor.png) |
 
-No current UI screenshots are published: the previous RC captures represented the retired interface and were removed. See the [screenshot playbook](docs/RELEASE_CANDIDATE_SCREENSHOTS.md) for future approved captures.
+See the [complete 12-screen alpha walkthrough](docs/ALPHA_WALKTHROUGH.md) for the student and teacher sequence, capture metadata, and evidence boundaries.
 
-## Repository Layout
+## Repository layout
 
 - `ios/ResonanceApp/` — SwiftUI/SwiftData client and XCTest target.
-- `server/` — Fastify/TypeScript API, Prisma schema, and server tests.
+- `server/` — Fastify/TypeScript API, Prisma schema, migrations, and tests.
 - `infra/` — local PostgreSQL and MinIO Docker Compose services.
 - `demo/` — deterministic mock-university fixture.
-- `docs/` — canonical public product, architecture, API, security, and operations docs.
-- `scripts/` — local verification, cleanup, and demo helpers.
+- `docs/` — public product, architecture, API, security, evidence, and operations docs.
+- `scripts/` — local verification, cleanup, demo, and screenshot helpers.
 
-## Requirements
+## Local setup
 
-- Node.js 20.x and npm.
-- Docker Desktop for local PostgreSQL and MinIO.
-- Xcode 16 or newer with an iOS 17-or-newer runtime.
-
-## Local Development
-
-### Backend
+Requirements: Node.js 20.x, npm, Docker Desktop, and Xcode 16 or newer with an iOS 17-or-newer runtime.
 
 ```bash
 cp server/.env.example server/.env
@@ -67,44 +59,32 @@ npm run prisma:seed
 npm run dev
 ```
 
-Use `AUTH_MODE=dev` only on a loopback-only local environment. The API listens on `http://localhost:4000` by default.
+The copied local environment sets `AUTH_MODE=dev`. Keep `npm run dev` running in that terminal and do not expose it beyond loopback. Open `ios/ResonanceApp/ResonanceApp.xcodeproj`, select the shared `ResonanceApp` scheme, and run an iPhone or iPad Simulator. The client defaults to `http://localhost:4000`; set `RESONANCE_API_BASE` in the Xcode scheme to override it. Tap sign in, then choose **Student Persona** or **Teacher Persona** in the development login page; no credentials are used.
 
-### iOS
-
-Open `ios/ResonanceApp/ResonanceApp.xcodeproj`, select the shared `ResonanceApp` scheme, and run on an iPhone or iPad simulator. The client uses `http://localhost:4000` by default; set `RESONANCE_API_BASE` in the Xcode scheme to override it.
+For deterministic mock data, run `./scripts/demo/bootstrap-local-demo.sh`; see the [local demo runbook](docs/LOCAL_DEMO.md).
 
 ## Verification
 
-```bash
-./scripts/check-no-build-artifacts.sh
-./scripts/secret-scan.sh
-./scripts/verify-ios.sh
-```
-
-With Docker and server dependencies available:
+Run the complete local gate, including Docker-backed migrations, service E2E, server coverage, and iOS XCTest:
 
 ```bash
 ./scripts/ci-local.sh --with-docker
 ```
 
-Backend-only commands are documented in [the runbook](docs/RUNBOOK.md). Test database URLs must contain `test`; the test harness refuses destructive setup against other database names.
+Smaller gates and database-safety requirements are documented in the [runbook](docs/RUNBOOK.md). Exact immutable verification results for this alpha belong in its [release notes](docs/release-notes/v0.1.0-alpha.1.md), not in this landing page.
 
-## Local Demo
+## Security and privacy
 
-`./scripts/demo/bootstrap-local-demo.sh` builds a deterministic mock-university dataset for local QA. It is not production or accessibility evidence. See [the local demo runbook](docs/RELEASE_CANDIDATE_DEMO.md).
+- Secrets belong in environment variables and must never be committed.
+- Development auth is unavailable unless explicitly enabled and is restricted to loopback clients.
+- Local media uses iOS file protection; private downloads require course authorization, use short-lived URLs, and return `Cache-Control: no-store`.
+- Teaching-lesson video requires explicit private-course-review consent and remains local until submission begins.
 
-## Security
-
-- Dev auth is unavailable unless `AUTH_MODE=dev` and remains loopback-only.
-- Secrets belong in environment variables and must not be committed.
-- Local media uses iOS file protection.
-- Media download URLs are authorized, short-lived, and returned with `Cache-Control: no-store`.
-
-See [the security policy and threat model](docs/SECURITY.md). Report vulnerabilities through GitHub private vulnerability reporting, not a public issue.
+Read the [security model](docs/SECURITY.md). Report vulnerabilities through [GitHub private vulnerability reporting](https://github.com/sebastianspicker/resonance/security/advisories/new), not a public issue.
 
 ## Documentation
 
-Start at [docs/INDEX.md](docs/INDEX.md). Product direction and visual rules are defined in [PRODUCT.md](PRODUCT.md) and [DESIGN.md](DESIGN.md).
+Start with the [documentation index](docs/INDEX.md). Product and visual contracts are in [PRODUCT.md](PRODUCT.md) and [DESIGN.md](DESIGN.md). The [alpha release checklist](docs/RELEASE_CHECKLIST.md) distinguishes completed source-release gates from open production work.
 
 ## License
 

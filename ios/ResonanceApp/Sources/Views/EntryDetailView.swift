@@ -17,6 +17,19 @@ struct EntryDetailView: View {
     @State private var showSubmitConfirmation = false
     @State private var showVideoImporter = false
     @State private var showCameraCapture = false
+    @State private var playingArtifactID: String?
+    @State private var playbackLoadingArtifactID: String?
+    @State private var playbackErrorArtifactID: String?
+    @State private var playbackErrorMessage: String?
+    @State private var playbackTask: Task<Void, Never>?
+    @State private var scrollTarget: String?
+    private let showsArtifacts: Bool
+
+    init(entry: LocalPracticeEntry, initialSection: String? = nil, showsArtifacts: Bool = true) {
+        self.entry = entry
+        self.showsArtifacts = showsArtifacts
+        _scrollTarget = State(initialValue: initialSection)
+    }
 
     var body: some View {
         ZStack {
@@ -143,7 +156,7 @@ struct EntryDetailView: View {
                     .groupedSection()
 
                     // Artifacts
-                    if !entry.artifacts.isEmpty {
+                    if showsArtifacts && !entry.artifacts.isEmpty {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Artifacts")
                                 .font(.subheadline.weight(.semibold))
@@ -162,14 +175,11 @@ struct EntryDetailView: View {
                                         }
                                         Spacer()
                                         if artifact.type == .audio {
-                                            Button(isPlaying(artifact) ? "Stop" : "Play") {
-                                                if isPlaying(artifact) {
-                                                    player.stop()
-                                                } else {
-                                                    player.play(url: URL(fileURLWithPath: artifact.localPath))
-                                                }
+                                            Button(playbackButtonTitle(for: artifact)) {
+                                                togglePlayback(for: artifact)
                                             }
                                             .buttonStyle(.bordered)
+                                            .disabled(playbackLoadingArtifactID == artifact.id)
                                             .accessibilityLabel(isPlaying(artifact) ? "Stop playback" : "Play \(artifact.type.rawValue) recording")
                                             .accessibilityHint(isPlaying(artifact) ? "Double-tap to stop playback" : "Double-tap to play this recording")
                                         } else {
@@ -183,6 +193,24 @@ struct EntryDetailView: View {
                                                         .foregroundStyle(AppTheme.accentVibrant)
                                                 }
                                             }
+                                        }
+                                    }
+
+                                    if playbackLoadingArtifactID == artifact.id {
+                                        ProgressView("Preparing secure playback…")
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    if let playbackError = playbackError(for: artifact) {
+                                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                            Label(playbackError, systemImage: "exclamationmark.triangle")
+                                                .font(.caption)
+                                                .foregroundStyle(.red)
+                                                .accessibilityLabel("Playback unavailable. \(playbackError)")
+                                            Spacer()
+                                            Button("Try again") {
+                                                beginPlayback(for: artifact)
+                                            }
+                                            .font(.caption.weight(.semibold))
                                         }
                                     }
 
@@ -322,6 +350,7 @@ struct EntryDetailView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .groupedSection()
+                    .id("feedback")
 
                     // Actions
                     VStack(spacing: 16) {
@@ -362,11 +391,21 @@ struct EntryDetailView: View {
                     .padding(.bottom, 40)
                 }
                 .padding()
+                .scrollTargetLayout()
             }
+            .scrollPosition(id: $scrollTarget, anchor: .top)
         }
         .navigationTitle(entry.kind == .teachingLesson ? "Teaching Lesson" : "Practice Entry")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await refreshFeedback() }
+        .task {
+            if ScreenshotScenario.current == nil {
+                await refreshFeedback()
+            }
+        }
+        .onDisappear {
+            playbackTask?.cancel()
+            player.stop()
+        }
         .alert("Submit entry?", isPresented: $showSubmitConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Submit") { submitEntry() }
@@ -383,7 +422,11 @@ struct EntryDetailView: View {
             isPresented: $showVideoImporter,
             allowedContentTypes: [.movie],
             allowsMultipleSelection: false,
-            onCompletion: attachLessonVideo
+            onCompletion: { result in
+                Task { @MainActor in
+                    await attachLessonVideo(result)
+                }
+            }
         )
         .sheet(isPresented: $showCameraCapture) {
             TeachingLessonCameraView(
@@ -443,6 +486,7 @@ struct EntryDetailView: View {
     private func updateCaptureProfile(_ profile: CaptureProfile) {
         guard entry.captureProfile != profile else { return }
         entry.captureProfile = profile
+        entry.updatedAt = Date()
         do {
             try modelContext.save()
         } catch {
@@ -458,10 +502,11 @@ struct EntryDetailView: View {
             return false
         }
         entry.captureProfile = .teacherLearner
+        entry.updatedAt = Date()
         return true
     }
 
-    private func attachLessonVideo(_ result: Result<[URL], Error>) {
+    private func attachLessonVideo(_ result: Result<[URL], Error>) async {
         do {
             guard let sourceURL = try result.get().first else { return }
             let didAccess = sourceURL.startAccessingSecurityScopedResource()
@@ -482,7 +527,7 @@ struct EntryDetailView: View {
                 id: UUID().uuidString,
                 entryId: entry.id,
                 type: .video,
-                durationSeconds: videoDurationSeconds(url: destination),
+                durationSeconds: await videoDurationSeconds(url: destination),
                 localPath: destination.path
             )
             let didSetDefaultProfile = ensureTeachingLessonCaptureProfile()
@@ -506,6 +551,7 @@ struct EntryDetailView: View {
             localPath: result.videoURL.path
         )
         entry.captureProfile = result.captureProfile
+        entry.updatedAt = Date()
         entry.artifacts.append(artifact)
         modelContext.insert(artifact)
 
@@ -532,9 +578,10 @@ struct EntryDetailView: View {
         syncManager.enqueue(type: .syncCaptureProfile, payload: ["entryId": entry.id])
     }
 
-    private func videoDurationSeconds(url: URL) -> Int {
+    private func videoDurationSeconds(url: URL) async -> Int {
         let asset = AVURLAsset(url: url)
-        let seconds = CMTimeGetSeconds(asset.duration)
+        guard let duration = try? await asset.load(.duration) else { return 0 }
+        let seconds = CMTimeGetSeconds(duration)
         if seconds.isFinite && seconds > 0 {
             return Int(seconds.rounded())
         }
@@ -610,18 +657,21 @@ struct EntryDetailView: View {
     }
 
     private func deleteEntry() {
+        playbackTask?.cancel()
         player.stop()
         if recorder.isRecording {
             recorder.stopRecording()
-            if let lastURL = recorder.lastURL {
-                FileStore.deleteFileIfExists(atPath: lastURL.path)
-            }
         }
+        // Keep forwarding the last recorder URL on retries after a verified
+        // deletion failure; stopping the recorder changes isRecording to false.
+        let stoppedRecorderPath = recorder.lastURL?.path
 
         do {
-            _ = try EntryDeletionCoordinator.delete(entry: entry, modelContext: modelContext) { type, payload in
-                syncManager.enqueue(type: type, payload: payload)
-            }
+            _ = try EntryDeletionCoordinator.delete(
+                entry: entry,
+                modelContext: modelContext,
+                additionalOwnedMediaPaths: stoppedRecorderPath.map { [$0] } ?? []
+            )
             dismiss()
         } catch {
             appState.reportError(error)
@@ -668,7 +718,75 @@ struct EntryDetailView: View {
     }
 
     private func isPlaying(_ artifact: LocalArtifact) -> Bool {
-        player.isPlaying && player.currentFilePath == artifact.localPath
+        player.isPlaying && playingArtifactID == artifact.id
+    }
+
+    private func playbackButtonTitle(for artifact: LocalArtifact) -> String {
+        if isPlaying(artifact) { return "Stop" }
+        if playbackLoadingArtifactID == artifact.id { return "Loading…" }
+        return "Play"
+    }
+
+    private func togglePlayback(for artifact: LocalArtifact) {
+        if isPlaying(artifact) {
+            playbackTask?.cancel()
+            player.stop()
+            playingArtifactID = nil
+            return
+        }
+        beginPlayback(for: artifact)
+    }
+
+    private func beginPlayback(for artifact: LocalArtifact) {
+        playbackTask?.cancel()
+        player.stop()
+        playingArtifactID = nil
+        playbackTask = Task {
+            await startPlayback(for: artifact)
+        }
+    }
+
+    private func startPlayback(for artifact: LocalArtifact) async {
+        let artifactID = artifact.id
+        playbackLoadingArtifactID = artifactID
+        playbackErrorArtifactID = nil
+        playbackErrorMessage = nil
+        defer {
+            if playbackLoadingArtifactID == artifactID {
+                playbackLoadingArtifactID = nil
+            }
+        }
+
+        do {
+            let sourceURL = try await ArtifactPlaybackSourceResolver(apiClient: appState.apiClient).resolve(
+                artifact: artifact,
+                accessToken: authManager.session?.accessToken
+            )
+            guard !Task.isCancelled else { return }
+            guard player.play(url: sourceURL) else {
+                setPlaybackError(player.playbackError ?? "Playback could not be started.", artifactID: artifactID)
+                return
+            }
+            playingArtifactID = artifactID
+        } catch {
+            guard !Task.isCancelled, (error as? URLError)?.code != .cancelled else { return }
+            setPlaybackError(error.localizedDescription, artifactID: artifactID)
+        }
+    }
+
+    private func setPlaybackError(_ message: String, artifactID: String) {
+        playbackErrorArtifactID = artifactID
+        playbackErrorMessage = message
+    }
+
+    private func playbackError(for artifact: LocalArtifact) -> String? {
+        if playbackErrorArtifactID == artifact.id {
+            return playbackErrorMessage
+        }
+        if playingArtifactID == artifact.id {
+            return player.playbackError
+        }
+        return nil
     }
 
     private func captureMarkers(for artifact: LocalArtifact) -> [LocalCaptureMarker] {

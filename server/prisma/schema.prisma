@@ -77,6 +77,11 @@ enum FeedbackTargetType {
   artifact
 }
 
+enum AuthFlowTokenKind {
+  oidc_state
+  prod_code
+}
+
 // ── CASCADE DELETE implications ─────────────────────────────────────
 // All child relations use `onDelete: Cascade`.  This means:
 //
@@ -96,29 +101,29 @@ enum FeedbackTargetType {
 // ────────────────────────────────────────────────────────────────────
 
 model User {
-  id          String        @id
-  displayName String
-  globalRole  GlobalRole
-  memberships Membership[]
-  entries     PracticeEntry[] @relation("StudentEntries")
-  feedback    Feedback[]
+  id             String          @id
+  displayName    String
+  globalRole     GlobalRole
+  memberships    Membership[]
+  entries        PracticeEntry[] @relation("StudentEntries")
+  feedback       Feedback[]
   captureMarkers CaptureMarker[]
-  refreshTokens RefreshToken[]
+  refreshTokens  RefreshToken[]
 }
 
 model Course {
-  id          String        @id
+  id          String          @id
   title       String
   memberships Membership[]
   entries     PracticeEntry[]
 }
 
 model Membership {
-  userId   String
-  courseId String
+  userId       String
+  courseId     String
   roleInCourse CourseRole
-  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course       Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@id([userId, courseId])
   @@index([userId])
@@ -126,27 +131,27 @@ model Membership {
 }
 
 model PracticeEntry {
-  id              String      @id
-  courseId        String
-  studentId       String
-  createdAt       DateTime    @default(now())
-  kind            EntryKind   @default(practice)
-  practiceDate    DateTime
-  goalText        String
-  durationSeconds Int?
-  tags            String[]
-  notes           String?
-  status          EntryStatus @default(draft)
+  id                 String          @id
+  courseId           String
+  studentId          String
+  createdAt          DateTime        @default(now())
+  kind               EntryKind       @default(practice)
+  practiceDate       DateTime
+  goalText           String
+  durationSeconds    Int?
+  tags               String[]
+  notes              String?
+  status             EntryStatus     @default(draft)
   consentConfirmedAt DateTime?
-  consentScope    ConsentScope?
-  captureProfile  CaptureProfile?
-  updatedAt       DateTime    @updatedAt
-  deletedAt       DateTime?
+  consentScope       ConsentScope?
+  captureProfile     CaptureProfile?
+  updatedAt          DateTime        @updatedAt
+  deletedAt          DateTime?
 
-  course  Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  student User   @relation("StudentEntries", fields: [studentId], references: [id], onDelete: Cascade)
-  artifacts Artifact[]
-  feedback  Feedback[]
+  course         Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student        User            @relation("StudentEntries", fields: [studentId], references: [id], onDelete: Cascade)
+  artifacts      Artifact[]
+  feedback       Feedback[]
   captureMarkers CaptureMarker[]
 
   @@index([courseId])
@@ -155,20 +160,57 @@ model PracticeEntry {
   @@index([courseId, deletedAt])
 }
 
-model Artifact {
-  id              String      @id
-  entryId         String
-  type            ArtifactType
-  durationSeconds Int
-  createdAt       DateTime    @default(now())
-  uploadState     UploadState @default(pending)
-  storageKey      String?
-  remoteUrl       String?
+/// Minimal non-personal tombstone that prevents a deleted client-generated ID
+/// from being reused by stale offline work. Entry content and relationships are
+/// hard-deleted by the deletion service.
+model DeletedEntryTombstone {
+  id        String   @id
+  deletedAt DateTime @default(now())
 
-  entry PracticeEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  @@index([deletedAt])
+}
+
+model Artifact {
+  id                String       @id
+  entryId           String
+  type              ArtifactType
+  durationSeconds   Int
+  createdAt         DateTime     @default(now())
+  uploadState       UploadState  @default(pending)
+  storageKey        String?
+  remoteUrl         String?
+  expectedSizeBytes Int?
+  uploadExpiresAt   DateTime?
+  confirmationToken String?
+
+  entry          PracticeEntry   @relation(fields: [entryId], references: [id], onDelete: Cascade)
   captureMarkers CaptureMarker[]
 
   @@index([entryId])
+}
+
+model StorageDeletionJob {
+  id            String   @id @default(cuid())
+  entryId       String
+  storageKey    String   @unique
+  attemptCount  Int      @default(0)
+  lastError     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  nextAttemptAt DateTime @default(now())
+
+  @@index([nextAttemptAt, createdAt])
+  @@index([entryId])
+}
+
+model AuthFlowToken {
+  tokenHash String            @id
+  kind      AuthFlowTokenKind
+  userId    String?
+  expiresAt DateTime
+  createdAt DateTime          @default(now())
+
+  @@index([kind, expiresAt])
 }
 
 model CaptureMarker {
@@ -191,16 +233,16 @@ model CaptureMarker {
 }
 
 model Feedback {
-  id          String      @id
-  targetType  FeedbackTargetType
-  targetId    String
-  teacherId   String
-  entryId     String?
-  createdAt   DateTime    @default(now())
-  status      FeedbackStatus
+  id           String             @id
+  targetType   FeedbackTargetType
+  targetId     String
+  teacherId    String
+  entryId      String?
+  createdAt    DateTime           @default(now())
+  status       FeedbackStatus
   commentsText String
 
-  teacher User @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacher User           @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   entry   PracticeEntry? @relation(fields: [entryId], references: [id], onDelete: Cascade)
   markers Marker[]
 
@@ -210,7 +252,7 @@ model Feedback {
 }
 
 model Marker {
-  id          String   @id
+  id          String @id
   feedbackId  String
   timeSeconds Int
   text        String
@@ -221,14 +263,16 @@ model Marker {
 }
 
 model RefreshToken {
-  id         String   @id
-  userId     String
-  tokenHash  String   @unique
-  expiresAt  DateTime
-  revokedAt  DateTime?
-  createdAt  DateTime @default(now())
+  id        String    @id
+  userId    String
+  familyId  String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([userId, familyId])
 }

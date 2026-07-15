@@ -4,239 +4,281 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 IOS_DIR="$ROOT_DIR/ios/ResonanceApp"
 SERVER_DIR="$ROOT_DIR/server"
-OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/artifacts/screenshots/pilot-local}"
-DERIVED_DATA_DIR="${DERIVED_DATA_DIR:-$ROOT_DIR/.tmp/derived-data-pilot-screenshots}"
-CAPTURE_VERSION="${CAPTURE_VERSION:-production-pilot-local}"
-DEVICE_NAME="${IOS_SIM_DEVICE_NAME:-Resonance Pilot iPad}"
-DEFAULT_DEVICE_TYPE='iPad Pro 11-inch (M5)'
-DEVICE_TYPE="${IOS_SIM_DEVICE_TYPE:-$DEFAULT_DEVICE_TYPE}"
-API_BASE="${RESONANCE_API_BASE:-http://localhost:4000}"
-DEMO_UNIVERSITY_NAME="${RESONANCE_DEMO_UNIVERSITY_NAME:-Mock University Conservatory}"
-
+OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/artifacts/e2e-walkthrough}"
+DERIVED_DATA_DIR="${DERIVED_DATA_DIR:-$ROOT_DIR/.tmp/derived-data-e2e-walkthrough}"
+API_PORT="${RESONANCE_WALKTHROUGH_API_PORT:-4100}"
+API_BASE="http://127.0.0.1:$API_PORT"
+RUNTIME_ID=""
+APP_PATH=""
+BUNDLE_ID=""
 SERVER_PID=""
+STUDENT_UDID=""
+TEACHER_UDID=""
+STUDENT_CREATED=0
+TEACHER_CREATED=0
+STUDENT_BOOTED_BY_SCRIPT=0
+TEACHER_BOOTED_BY_SCRIPT=0
+CAPTURE_ROWS="$OUTPUT_DIR/.capture-rows.tsv"
 
 require_cmd() {
-	if ! command -v "$1" >/dev/null 2>&1; then
+	command -v "$1" >/dev/null 2>&1 || {
 		echo "Missing required command: $1" >&2
 		exit 1
+	}
+}
+
+stop_server() {
+	[[ -n "$SERVER_PID" ]] || return
+	if kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+		kill -TERM "$SERVER_PID" >/dev/null 2>&1 || true
+		for _ in {1..20}; do
+			kill -0 "$SERVER_PID" >/dev/null 2>&1 || break
+			sleep 1
+		done
+		kill -0 "$SERVER_PID" >/dev/null 2>&1 && kill -KILL "$SERVER_PID" >/dev/null 2>&1 || true
 	fi
+	wait "$SERVER_PID" >/dev/null 2>&1 || true
+	SERVER_PID=""
 }
 
 cleanup() {
-	if [[ -n "$SERVER_PID" ]]; then
-		kill "$SERVER_PID" >/dev/null 2>&1 || true
-	fi
+	local status=$?
+	trap - EXIT INT TERM
+	stop_server
+	if [[ "$STUDENT_BOOTED_BY_SCRIPT" -eq 1 ]]; then xcrun simctl shutdown "$STUDENT_UDID" >/dev/null 2>&1 || true; fi
+	if [[ "$TEACHER_BOOTED_BY_SCRIPT" -eq 1 ]]; then xcrun simctl shutdown "$TEACHER_UDID" >/dev/null 2>&1 || true; fi
+	if [[ "$STUDENT_CREATED" -eq 1 ]]; then xcrun simctl delete "$STUDENT_UDID" >/dev/null 2>&1 || true; fi
+	if [[ "$TEACHER_CREATED" -eq 1 ]]; then xcrun simctl delete "$TEACHER_UDID" >/dev/null 2>&1 || true; fi
+	exit "$status"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-require_cmd xcodebuild
-require_cmd xcrun
-require_cmd curl
-require_cmd npm
-require_cmd node
-require_cmd docker
-
+for command in xcodebuild xcrun curl npm node docker jq shasum; do require_cmd "$command"; done
 mkdir -p "$OUTPUT_DIR" "$ROOT_DIR/.tmp"
+find "$OUTPUT_DIR" -maxdepth 1 -type f \( -name '*.png' -o -name 'manifest.json' -o -name 'WALKTHROUGH.md' -o -name 'VERIFICATION_BLOCKED.md' \) -delete
+: >"$CAPTURE_ROWS"
 
-echo "[1/8] Bootstrapping local demo backend + seed"
-"$ROOT_DIR/scripts/demo/bootstrap-local-demo.sh"
-
-if ! curl -fsS "$API_BASE/health" >/dev/null 2>&1; then
-	echo "[2/8] Starting API server in background"
-	(
-		cd "$SERVER_DIR"
-		while IFS= read -r line || [[ -n "$line" ]]; do
-			[[ -z "$line" || "$line" == \#* ]] && continue
-			key="${line%%=*}"
-			value="${line#*=}"
-			export "$key=$value"
-		done <".env.example"
-		npm run dev
-	) >"$ROOT_DIR/.tmp/pilot-demo-api.log" 2>&1 &
-	SERVER_PID=$!
-
-	for _ in {1..60}; do
-		if curl -fsS "$API_BASE/health" >/dev/null 2>&1; then
-			break
+if ! docker info >/dev/null 2>&1; then
+	echo "Launching Docker Desktop…"
+	if ! open -a Docker >/dev/null 2>&1; then
+		DOCKER_DESKTOP='/Applications/Docker.app/Contents/MacOS/Docker Desktop.app/Contents/MacOS/Docker Desktop'
+		if [[ -x "$DOCKER_DESKTOP" ]]; then
+			"$DOCKER_DESKTOP" >/dev/null 2>&1 &
+		else
+			echo "Docker Desktop could not be launched." >&2
+			exit 1
 		fi
-		sleep 1
+	fi
+	for _ in {1..60}; do
+		docker info >/dev/null 2>&1 && break
+		sleep 2
 	done
 fi
+docker info >/dev/null 2>&1 || { echo "Docker Desktop did not become ready." >&2; exit 1; }
 
-if ! curl -fsS "$API_BASE/health" >/dev/null 2>&1; then
-	echo "API not reachable at $API_BASE" >&2
+echo "[1/7] Validating fixtures and bootstrapping dedicated local services"
+DATABASE_URL='postgresql://resonance:resonance@127.0.0.1:5432/resonance' \
+	"$ROOT_DIR/scripts/demo/bootstrap-local-demo.sh"
+if curl -fsS "$API_BASE/health" >/dev/null 2>&1; then
+	echo "Refusing to reuse a process already listening at $API_BASE." >&2
 	exit 1
 fi
-
-echo "[3/8] Resolving simulator runtime and device"
-RUNTIME_ID="$(
-	xcrun simctl list runtimes available | awk '/iOS/ { gsub(/[()]/, "", $NF); print $NF }' | tail -n 1
-)"
-if [[ -z "$RUNTIME_ID" ]]; then
-	echo "No available iOS simulator runtime found. Install one in Xcode Settings > Platforms." >&2
-	exit 1
-fi
-
-DEVICE_TYPE_ID="$(
-	xcrun simctl list devicetypes | awk -v wanted="$DEVICE_TYPE" '$0 ~ wanted { gsub(/[()]/, "", $NF); print $NF }' | head -n 1
-)"
-if [[ -z "$DEVICE_TYPE_ID" ]]; then
-	DEVICE_TYPE_ID="$(
-		xcrun simctl list devicetypes | awk '/iPad/ { gsub(/[()]/, "", $NF); print $NF }' | head -n 1
-	)"
-fi
-if [[ -z "$DEVICE_TYPE_ID" ]]; then
-	echo "Simulator iPad device type not found." >&2
-	exit 1
-fi
-
-UDID="$(
-	xcrun simctl list devices available | awk -v wanted="$DEVICE_NAME" '$0 ~ wanted { gsub(/[()]/, "", $(NF-1)); print $(NF-1) }' | head -n 1
-)"
-
-if [[ -z "$UDID" ]]; then
-	UDID="$(xcrun simctl create "$DEVICE_NAME" "$DEVICE_TYPE_ID" "$RUNTIME_ID")"
-fi
-
-echo "[4/8] Booting simulator ($UDID)"
-xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
-open -a Simulator --args -CurrentDeviceUDID "$UDID" >/dev/null 2>&1 || true
+(
+	# Run outside server/ so dotenv cannot discover server/.env files. Every
+	# value used by this loopback-only process is declared below.
+	cd "$OUTPUT_DIR"
+	export PORT="$API_PORT"
+	export DATABASE_URL='postgresql://resonance:resonance@127.0.0.1:5432/resonance'
+	export AUTH_MODE='dev'
+	export JWT_SECRET='walkthrough-only-loopback-jwt-secret-000000000000'
+	export JWT_REFRESH_SECRET='walkthrough-only-loopback-refresh-secret-00000000'
+	export DEV_UNIVERSITY_NAME='Mock University Conservatory'
+	export DEV_LOGIN_CALLBACK_URL='resonance://auth-callback'
+	export S3_ENDPOINT='http://127.0.0.1:9000'
+	export S3_REGION='us-east-1'
+	export S3_BUCKET='resonance-dev'
+	export S3_ACCESS_KEY='minioadmin'
+	export S3_SECRET_KEY='minioadmin'
+	export S3_FORCE_PATH_STYLE='true'
+	export CORS_ORIGINS='http://127.0.0.1'
+	exec "$SERVER_DIR/node_modules/.bin/tsx" "$SERVER_DIR/src/index.ts"
+) >"$OUTPUT_DIR/api.log" 2>&1 &
+SERVER_PID=$!
 for _ in {1..60}; do
-	if xcrun simctl list devices | grep -q "$UDID.*(Booted)"; then
-		break
-	fi
+	curl -fsS "$API_BASE/ready" >/dev/null 2>&1 && break
 	sleep 1
 done
-if ! xcrun simctl list devices | grep -q "$UDID.*(Booted)"; then
-	echo "Simulator failed to reach Booted state: $UDID" >&2
+if ! curl -fsS "$API_BASE/ready" >/dev/null 2>&1; then
+	cat "$OUTPUT_DIR/api.log" >&2
 	exit 1
 fi
-xcrun simctl ui "$UDID" appearance dark || true
-xcrun simctl ui "$UDID" content_size large || true
 
-echo "[5/8] Building iOS app"
+echo "[2/7] Creating dedicated student and teacher Simulators"
+RUNTIME_ID="$(xcrun simctl list runtimes available -j | jq -r '[.runtimes[] | select(.platform == "iOS" and .isAvailable)] | sort_by(.version) | last.identifier // empty')"
+[[ -n "$RUNTIME_ID" ]] || { echo "No available iOS Simulator runtime." >&2; exit 1; }
+
+resolve_device_type() {
+	local prefix="$1"
+	xcrun simctl list devicetypes -j | jq -r --arg prefix "$prefix" '[.devicetypes[] | select(.name | startswith($prefix))] | last.identifier // empty'
+}
+
+ensure_device() {
+	local name="$1" type_id="$2" result_var="$3" created_var="$4" booted_var="$5"
+	local udid state
+	udid="$(xcrun simctl list devices available -j | jq -r --arg name "$name" '[.devices[][] | select(.name == $name)] | first.udid // empty')"
+	if [[ -z "$udid" ]]; then
+		udid="$(xcrun simctl create "$name" "$type_id" "$RUNTIME_ID")"
+		printf -v "$created_var" '%s' 1
+	fi
+	state="$(xcrun simctl list devices -j | jq -r --arg udid "$udid" '.devices[][] | select(.udid == $udid) | .state')"
+	if [[ "$state" != "Booted" ]]; then
+		xcrun simctl boot "$udid"
+		printf -v "$booted_var" '%s' 1
+	fi
+	xcrun simctl bootstatus "$udid" -b
+	printf -v "$result_var" '%s' "$udid"
+}
+
+IPHONE_TYPE="$(resolve_device_type 'iPhone 16')"
+IPAD_TYPE="$(resolve_device_type 'iPad Pro 11-inch')"
+if [[ -z "$IPHONE_TYPE" ]]; then IPHONE_TYPE="$(resolve_device_type 'iPhone')"; fi
+if [[ -z "$IPAD_TYPE" ]]; then IPAD_TYPE="$(resolve_device_type 'iPad')"; fi
+[[ -n "$IPHONE_TYPE" && -n "$IPAD_TYPE" ]] || { echo "Required iPhone/iPad device types are unavailable." >&2; exit 1; }
+ensure_device 'Resonance Walkthrough Student' "$IPHONE_TYPE" STUDENT_UDID STUDENT_CREATED STUDENT_BOOTED_BY_SCRIPT
+ensure_device 'Resonance Walkthrough Teacher' "$IPAD_TYPE" TEACHER_UDID TEACHER_CREATED TEACHER_BOOTED_BY_SCRIPT
+
+SIMULATOR_APP="$(xcode-select -p)/Applications/Simulator.app"
+open "$SIMULATOR_APP" >/dev/null 2>&1 || true
+
+xcrun simctl ui "$STUDENT_UDID" appearance light
+xcrun simctl ui "$STUDENT_UDID" content_size medium
+xcrun simctl ui "$TEACHER_UDID" appearance dark
+xcrun simctl ui "$TEACHER_UDID" content_size medium
+
+echo "[3/7] Building and installing the debug app"
 rm -rf "$DERIVED_DATA_DIR"
-cd "$IOS_DIR"
-xcodebuild \
-	-scheme ResonanceApp \
-	-configuration Debug \
-	-destination "id=$UDID" \
-	-derivedDataPath "$DERIVED_DATA_DIR" \
-	build >/tmp/resonance-ios-build.log
-
-APP_PATH="$(find "$DERIVED_DATA_DIR/Build/Products" -maxdepth 2 -name 'ResonanceApp.app' | head -n 1)"
-if [[ -z "$APP_PATH" ]]; then
-	PRODUCTS_DIR="$DERIVED_DATA_DIR/Build/Products/Debug-iphonesimulator"
-	BIN_PATH="$PRODUCTS_DIR/ResonanceApp"
-	RESOURCE_JSON="$PRODUCTS_DIR/ResonanceApp_ResonanceApp.bundle/mock-university.json"
-	APP_PATH="$PRODUCTS_DIR/ResonanceApp.app"
-
-	if [[ ! -f "$BIN_PATH" ]]; then
-		echo "Could not find built app bundle or binary in $DERIVED_DATA_DIR/Build/Products" >&2
-		exit 1
-	fi
-
-	echo "No .app bundle produced by SwiftPM; creating wrapper app bundle."
-	rm -rf "$APP_PATH"
-	mkdir -p "$APP_PATH"
-	cp "$BIN_PATH" "$APP_PATH/ResonanceApp"
-	chmod +x "$APP_PATH/ResonanceApp"
-	if [[ -f "$RESOURCE_JSON" ]]; then
-		cp "$RESOURCE_JSON" "$APP_PATH/mock-university.json"
-	fi
-
-	cat >"$APP_PATH/Info.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleExecutable</key><string>ResonanceApp</string>
-  <key>CFBundleIdentifier</key><string>edu.university.resonance</string>
-  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>ResonanceApp</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
-  <key>LSRequiresIPhoneOS</key><true/>
-  <key>UIRequiresFullScreen</key><true/>
-  <key>UISupportedInterfaceOrientations</key>
-  <array>
-    <string>UIInterfaceOrientationPortrait</string>
-    <string>UIInterfaceOrientationPortraitUpsideDown</string>
-  </array>
-  <key>UISupportedInterfaceOrientations~ipad</key>
-  <array>
-    <string>UIInterfaceOrientationPortrait</string>
-    <string>UIInterfaceOrientationPortraitUpsideDown</string>
-  </array>
-</dict>
-</plist>
-PLIST
-
-	codesign --force --sign - "$APP_PATH" >/dev/null 2>&1 || true
-fi
-
-# Enforce deterministic fullscreen + portrait captures.
-PLIST_PATH="$APP_PATH/Info.plist"
-if [[ -f "$PLIST_PATH" ]]; then
-	/usr/libexec/PlistBuddy -c "Set :UIRequiresFullScreen true" "$PLIST_PATH" >/dev/null 2>&1 ||
-		/usr/libexec/PlistBuddy -c "Add :UIRequiresFullScreen bool true" "$PLIST_PATH"
-
-	/usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations" "$PLIST_PATH" >/dev/null 2>&1 || true
-	/usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations array" "$PLIST_PATH"
-	/usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" "$PLIST_PATH"
-	/usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations:1 string UIInterfaceOrientationPortraitUpsideDown" "$PLIST_PATH"
-
-	/usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations~ipad" "$PLIST_PATH" >/dev/null 2>&1 || true
-	/usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations~ipad array" "$PLIST_PATH"
-	/usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations~ipad:0 string UIInterfaceOrientationPortrait" "$PLIST_PATH"
-	/usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations~ipad:1 string UIInterfaceOrientationPortraitUpsideDown" "$PLIST_PATH"
-
-	codesign --force --sign - "$APP_PATH" >/dev/null 2>&1 || true
-fi
-
+xcodebuild -project "$IOS_DIR/ResonanceApp.xcodeproj" -scheme ResonanceApp -configuration Debug \
+	-destination "id=$STUDENT_UDID" -derivedDataPath "$DERIVED_DATA_DIR" \
+	ENABLE_USER_SCRIPT_SANDBOXING=NO OTHER_SWIFT_FLAGS='-Xfrontend -disable-sandbox' \
+	SWIFT_ACTIVE_COMPILATION_CONDITIONS=RESONANCE_SCREENSHOTS \
+	build >"$OUTPUT_DIR/xcodebuild.log"
+APP_PATH="$(find "$DERIVED_DATA_DIR/Build/Products" -maxdepth 2 -name 'ResonanceApp.app' -print -quit)"
+[[ -d "$APP_PATH" ]] || { echo "Built app bundle was not found." >&2; exit 1; }
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")"
-
-echo "[6/8] Installing app ($BUNDLE_ID)"
-xcrun simctl uninstall "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
-xcrun simctl install "$UDID" "$APP_PATH"
+for udid in "$STUDENT_UDID" "$TEACHER_UDID"; do
+	xcrun simctl uninstall "$udid" "$BUNDLE_ID" >/dev/null 2>&1 || true
+	xcrun simctl install "$udid" "$APP_PATH"
+done
 
 capture() {
-	local persona="$1"
-	local screen="$2"
-	local index="$3"
-	local wait_seconds="$4"
-	local target="$OUTPUT_DIR/pilot-${CAPTURE_VERSION}-${persona}-${screen}-${index}.png"
-
-	echo " - Capturing $persona / $screen -> $(basename "$target")"
-
+	local index="$1" persona="$2" screen="$3" title="$4" udid="$5" appearance="$6" device="$7"
+	local file_slug="${8:-$screen}" filename
+	filename="$(printf '%02d' "$index")-${persona}-${file_slug}.png"
+	local target="$OUTPUT_DIR/$filename"
+	echo "  Capturing $filename"
 	SIMCTL_CHILD_RESONANCE_SCREENSHOT_MODE=1 \
 		SIMCTL_CHILD_RESONANCE_SCREENSHOT_ROLE="$persona" \
 		SIMCTL_CHILD_RESONANCE_SCREENSHOT_SCREEN="$screen" \
 		SIMCTL_CHILD_RESONANCE_API_BASE="$API_BASE" \
-		SIMCTL_CHILD_RESONANCE_DEMO_UNIVERSITY_NAME="$DEMO_UNIVERSITY_NAME" \
-		xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE_ID" >/dev/null
-
-	sleep "$wait_seconds"
-	xcrun simctl io "$UDID" screenshot "$target" >/dev/null
+		SIMCTL_CHILD_RESONANCE_DEMO_UNIVERSITY_NAME='Mock University Conservatory' \
+		xcrun simctl launch --terminate-running-process "$udid" "$BUNDLE_ID" >/dev/null
+	sleep 4
+	xcrun simctl io "$udid" screenshot "$target" >/dev/null
+	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$index" "$filename" "$persona" "$screen" "$title" "$device" "$appearance" >>"$CAPTURE_ROWS"
 }
 
-echo "[7/8] Capturing production-pilot validation screenshots"
-capture "student" "login" "01" "2"
-capture "student" "courses" "01" "4"
-capture "student" "entry-list" "01" "4"
-capture "student" "entry-detail" "01" "4"
-capture "student" "export" "01" "4"
-capture "student" "settings" "01" "4"
-capture "student" "queue" "01" "4"
-capture "teacher" "courses" "01" "4"
-capture "teacher" "teacher-review-queue" "01" "6"
-capture "teacher" "feedback-editor" "01" "4"
+echo "[4/7] Capturing the 12-step walkthrough"
+capture 1 student login 'Student sign-in' "$STUDENT_UDID" light 'iPhone portrait'
+capture 2 student courses 'Student course selection' "$STUDENT_UDID" light 'iPhone portrait'
+capture 3 student entry-list 'Draft, submitted, and reviewed entries' "$STUDENT_UDID" light 'iPhone portrait'
+capture 4 student new-entry 'Prefilled new-entry form' "$STUDENT_UDID" light 'iPhone portrait'
+capture 5 student entry-detail 'Draft capture and submission controls' "$STUDENT_UDID" light 'iPhone portrait'
+capture 6 student queue 'Pending and failed sync work' "$STUDENT_UDID" light 'iPhone portrait'
+capture 7 teacher courses 'Teacher course selection' "$TEACHER_UDID" dark 'iPad portrait'
+capture 8 teacher teacher-review-queue 'Teacher review queue' "$TEACHER_UDID" dark 'iPad portrait' review-queue
+capture 9 teacher submission-detail 'Submission media and feedback composer' "$TEACHER_UDID" dark 'iPad portrait'
+capture 10 teacher feedback-editor 'Timestamped feedback draft' "$TEACHER_UDID" dark 'iPad portrait'
+capture 11 teacher feedback-queued 'Feedback queued state' "$TEACHER_UDID" dark 'iPad portrait'
+capture 12 student reviewed-feedback 'Reviewed entry feedback and markers' "$STUDENT_UDID" light 'iPhone portrait'
 
-echo "[8/8] Done"
-echo "Screenshots written to: $OUTPUT_DIR"
-for screenshot in "$OUTPUT_DIR"/*; do
-	[[ -e "$screenshot" ]] || break
-	printf ' - %s\n' "$(basename "$screenshot")"
-done
+echo "[5/7] Validating capture set and generating manifest"
+SOURCE_COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+SOURCE_DIRTY=false
+git -C "$ROOT_DIR" diff --quiet --ignore-submodules HEAD -- || SOURCE_DIRTY=true
+RUNTIME_NAME="$(xcrun simctl list runtimes available -j | jq -r --arg id "$RUNTIME_ID" '.runtimes[] | select(.identifier == $id) | .name')"
+node --input-type=module - "$OUTPUT_DIR" "$CAPTURE_ROWS" "$SOURCE_COMMIT" "$SOURCE_DIRTY" "$RUNTIME_NAME" <<'NODE'
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const [outputDir, rowsPath, sourceCommit, sourceDirty, runtimeName] = process.argv.slice(2);
+const rows = readFileSync(rowsPath, 'utf8').trim().split('\n').filter(Boolean);
+if (rows.length !== 12) throw new Error(`Expected 12 capture rows, found ${rows.length}`);
+const hashes = new Set();
+const captures = rows.map((row) => {
+  const [index, file, persona, screen, title, device, appearance] = row.split('\t');
+  const data = readFileSync(join(outputDir, file));
+  if (data.length < 10_000 || data.toString('hex', 0, 8) !== '89504e470d0a1a0a') {
+    throw new Error(`${file} is blank, truncated, or not a PNG`);
+  }
+  const width = data.readUInt32BE(16);
+  const height = data.readUInt32BE(20);
+  if (height <= width) throw new Error(`${file} is not portrait (${width}x${height})`);
+  const sha256 = createHash('sha256').update(data).digest('hex');
+  if (hashes.has(sha256)) throw new Error(`${file} duplicates another screenshot`);
+  hashes.add(sha256);
+  return {
+    index: Number(index), file, persona, screen, title, evidenceKind: 'visual-ui-evidence',
+    device, os: runtimeName, orientation: 'portrait', appearance, textSize: 'medium',
+    width, height, sha256, verified: { png: true, portrait: true, unique: true },
+  };
+});
+const manifest = {
+  schemaVersion: 1,
+  generatedAt: new Date().toISOString(),
+  source: { commit: sourceCommit, dirty: sourceDirty === 'true' },
+  proofModel: {
+    measured: 'server/tests/e2e/service.e2e.test.ts',
+    visual: 'Deterministic debug-only Simulator scenarios; screenshots do not prove networking or interaction.',
+  },
+  verification: {
+    fixtureValidator: 'passed', apiReadiness: 'passed', iosDebugBuild: 'passed',
+    screenshotCount: 12, screenshotSet: 'passed', humanVisualInspection: 'pending',
+    serviceE2E: 'not run by capture harness; a separate passing service gate is required before measured claims are accepted',
+  },
+  captures,
+};
+writeFileSync(join(outputDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+NODE
+
+echo "[6/7] Writing walkthrough"
+node --input-type=module - "$OUTPUT_DIR" <<'NODE'
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const dir = process.argv[2];
+const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8'));
+const measured = new Map([
+  [1, 'Measured E2E coverage target: dev authentication and token exchange. Requires the separate service gate to pass.'],
+  [2, 'Measured E2E coverage target: authenticated student and teacher course membership. Requires the separate service gate to pass.'],
+  [3, 'Measured E2E coverage target: draft creation, submission, review transition, and reviewed retrieval. Requires the separate service gate to pass.'],
+  [5, 'Measured E2E coverage target: artifact creation, object upload, confirmation, and submission. Requires the separate service gate to pass.'],
+  [7, 'Measured E2E coverage target: same-course teacher authorization. Requires the separate service gate to pass.'],
+  [8, 'Measured E2E coverage target: submitted entries appear in the teacher review queue. Requires the separate service gate to pass.'],
+  [9, 'Measured E2E coverage target: teacher receives an authorized download URL and retrieves exact uploaded bytes. Requires the separate service gate to pass.'],
+  [10, 'Measured E2E coverage target: feedback comments and timestamped markers are persisted. Requires the separate service gate to pass.'],
+  [12, 'Measured E2E coverage target: student retrieves teacher comments, marker time/text, and reviewed state. Requires the separate service gate to pass.'],
+]);
+const visualOnly = new Map([
+  [4, 'Visual only: deterministic form composition; no save interaction is claimed.'],
+  [6, 'Visual only: deterministic pending/failed queue and recovery copy.'],
+  [11, 'Visual only: deterministic local Feedback queued indicator.'],
+]);
+const sections = manifest.captures.map((capture) => `## ${capture.index}. ${capture.title}\n\n![${capture.title}](./${capture.file})\n\n${measured.get(capture.index) ?? visualOnly.get(capture.index)}\n`);
+const markdown = `# Resonance hybrid E2E walkthrough\n\nThis local evidence bundle deliberately separates measured service behavior from deterministic Simulator UI evidence. Screenshots narrate the workflow; they do not independently prove taps, networking, upload, authorization, or persistence. The process-level E2E is the intended proof source, and its claims are accepted only after that separate gate passes.\n\n${sections.join('\n')}\n## Verification boundary\n\nSee \`manifest.json\` for device/OS/appearance/text-size metadata, dimensions, SHA-256 checksums, source state, and capture validation. Human visual inspection and repository gates are recorded in the final handoff after capture.\n`;
+writeFileSync(join(dir, 'WALKTHROUGH.md'), markdown);
+NODE
+
+rm -f "$CAPTURE_ROWS"
+echo "[7/7] Walkthrough bundle ready at $OUTPUT_DIR"

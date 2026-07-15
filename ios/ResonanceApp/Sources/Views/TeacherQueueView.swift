@@ -6,13 +6,25 @@ extension ArtifactResponse: Identifiable {}
 
 struct TeacherQueueView: View {
     let courseId: String
+    private let screenshotQueue: [ReviewQueueEntry]?
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var authManager: AuthManager
     @State private var queue: [ReviewQueueEntry] = []
     @State private var selected: ReviewQueueEntry?
     @State private var isLoading = false
     @State private var errorMessage: String?
-    @State private var queuedFeedback = Set<String>()
+    @State private var queuedFeedback: Set<String>
+
+    init(
+        courseId: String,
+        screenshotQueue: [ReviewQueueEntry]? = nil,
+        initiallyQueuedFeedback: Set<String> = []
+    ) {
+        self.courseId = courseId
+        self.screenshotQueue = screenshotQueue
+        _queue = State(initialValue: screenshotQueue ?? [])
+        _queuedFeedback = State(initialValue: initiallyQueuedFeedback)
+    }
 
     var body: some View {
         Group {
@@ -66,7 +78,11 @@ struct TeacherQueueView: View {
             Button("Refresh", systemImage: "arrow.clockwise") { Task { await refreshQueue() } }
                 .disabled(isLoading)
         }
-        .task { await refreshQueue() }
+        .task {
+            if screenshotQueue == nil {
+                await refreshQueue()
+            }
+        }
         .sheet(item: $selected) { entry in
             SubmissionDetailView(entry: entry) {
                 queuedFeedback.insert(entry.id)
@@ -104,9 +120,10 @@ struct TeacherQueueView: View {
     }
 }
 
-private struct SubmissionDetailView: View {
+struct SubmissionDetailView: View {
     let entry: ReviewQueueEntry
     let onFeedbackQueued: () -> Void
+    var loadsRemoteMedia = true
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var authManager: AuthManager
     @State private var selectedArtifactId: String?
@@ -128,10 +145,10 @@ private struct SubmissionDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 selectedArtifactId = entry.artifacts.first?.id
-                await loadSelectedArtifact()
+                if loadsRemoteMedia { await loadSelectedArtifact() }
             }
             .onChange(of: selectedArtifactId) { _, _ in
-                Task { await loadSelectedArtifact() }
+                if loadsRemoteMedia { Task { await loadSelectedArtifact() } }
             }
         }
     }
@@ -152,6 +169,11 @@ private struct SubmissionDetailView: View {
                     .frame(minHeight: 240)
                     .accessibilityLabel("Submitted evidence player")
                 if isLoadingMedia { ProgressView("Preparing secure playback…") }
+                if !loadsRemoteMedia {
+                    Label("Authorized course media ready", systemImage: "lock.shield")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
                 if let playbackError {
                     ContentUnavailableView {
                         Label("Playback unavailable", systemImage: "exclamationmark.triangle")

@@ -57,10 +57,17 @@ describe('auth', () => {
     expect(res.body.error?.code).toBe('MISSING_AUTH');
   });
 
-  it('rotates refresh tokens and revokes the old token', async () => {
+  it('contains refresh-token replay to its lineage without revoking another session', async () => {
     const issue = await request(app.server).post('/dev/issue').send({ role: 'student' });
     const session = await request(app.server).post('/auth/session').send({
       code: issue.body.code,
+      redirectUri: 'resonance://auth-callback',
+    });
+    const independentIssue = await request(app.server)
+      .post('/dev/issue')
+      .send({ role: 'student', userId: session.body.user.id });
+    const independentSession = await request(app.server).post('/auth/session').send({
+      code: independentIssue.body.code,
       redirectUri: 'resonance://auth-callback',
     });
 
@@ -74,6 +81,17 @@ describe('auth', () => {
     const reuse = await request(app.server).post('/auth/refresh').send({ refreshToken });
     expect(reuse.status).toBe(401);
     expect(reuse.body.error?.code).toBe('REFRESH_ALREADY_USED');
+
+    const stolenReplacement = await request(app.server)
+      .post('/auth/refresh')
+      .send({ refreshToken: refreshed.body.refreshToken });
+    expect(stolenReplacement.status).toBe(401);
+    expect(stolenReplacement.body.error?.code).toBe('REFRESH_ALREADY_USED');
+
+    const independentRefresh = await request(app.server)
+      .post('/auth/refresh')
+      .send({ refreshToken: independentSession.body.refreshToken });
+    expect(independentRefresh.status).toBe(200);
   });
 
   it('rejects invalid refresh tokens', async () => {
@@ -115,5 +133,27 @@ describe('auth', () => {
       .post('/auth/refresh')
       .send({ refreshToken: session2.body.refreshToken });
     expect(reuseSecondToken.status).toBe(401);
+  });
+
+  it('leaves no live replacement token when logout races refresh rotation', async () => {
+    const issue = await request(app.server).post('/dev/issue').send({ role: 'student' });
+    const session = await request(app.server).post('/auth/session').send({
+      code: issue.body.code,
+      redirectUri: 'resonance://auth-callback',
+    });
+    const refreshToken = session.body.refreshToken as string;
+
+    const [refresh, logout] = await Promise.all([
+      request(app.server).post('/auth/refresh').send({ refreshToken }),
+      request(app.server).post('/auth/logout').send({ refreshToken }),
+    ]);
+
+    expect([200, 401]).toContain(refresh.status);
+    expect(logout.status).toBe(200);
+    await expect(
+      prisma.refreshToken.count({
+        where: { userId: session.body.user.id, revokedAt: null },
+      })
+    ).resolves.toBe(0);
   });
 });

@@ -133,6 +133,7 @@ enum SyncErrorMessageMapper {
         "ARTIFACTS_NOT_UPLOADED": "Audio files have not finished uploading.",
         "UPLOAD_INVALID": "Upload failed. Try re-recording the audio.",
         "MISSING_STORAGE_KEY": "Upload failed. Try re-recording the audio.",
+        "STORAGE_UNAVAILABLE": "Media storage is unavailable. Try again later.",
         "INVALID_TARGET": "Invalid target for this operation.",
         "VALIDATION_ERROR": "Server rejected this data. Check the entry fields.",
         "ID_CONFLICT": "This item already exists on the server.",
@@ -148,6 +149,9 @@ enum SyncErrorMessageMapper {
     }
 
     private static func serverErrorCode(in raw: String) -> String? {
+        if messagesByCode[raw] != nil {
+            return raw
+        }
         guard let data = raw.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let error = json["error"] as? [String: Any] else {
@@ -161,7 +165,7 @@ enum SyncErrorMessageMapper {
         if ["urlerror", "network", "timed out", "not connected"].contains(where: lowered.contains) {
             return "Network connection failed. Check your internet."
         }
-        if ["localfilenotfound", "no such file"].contains(where: lowered.contains) {
+        if ["localfilenotfound", "local file not found", "no such file"].contains(where: lowered.contains) {
             return "Recording file was lost. Re-record the audio."
         }
         return raw

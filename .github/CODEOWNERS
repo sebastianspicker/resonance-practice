@@ -15,6 +15,12 @@ infra/                      @sebastianspicker
 SECURITY.md                 @sebastianspicker
 docs/SECURITY.md            @sebastianspicker
 
+# Public alpha release notes and approved public screenshots
+CHANGELOG.md                @sebastianspicker
+docs/RELEASE*.md            @sebastianspicker
+docs/release-notes/         @sebastianspicker
+docs/assets/screenshots/approved/ @sebastianspicker
+
 # Dependency manifests — supply chain vector
 server/package.json         @sebastianspicker
 server/package-lock.json    @sebastianspicker

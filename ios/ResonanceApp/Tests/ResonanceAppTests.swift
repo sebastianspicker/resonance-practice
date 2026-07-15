@@ -3,6 +3,49 @@ import SwiftData
 @testable import ResonanceApp
 
 final class ResonanceAppTests: XCTestCase {
+    func testWalkthroughScreenshotScenariosAreDebugOnlyAndDeterministic() throws {
+        XCTAssertNil(ScreenshotScenario.from(environment: [:]))
+        XCTAssertNil(ScreenshotScenario.from(environment: [
+            "RESONANCE_SCREENSHOT_MODE": "1",
+            "RESONANCE_SCREENSHOT_ROLE": "student",
+            "RESONANCE_SCREENSHOT_SCREEN": "unknown",
+        ]))
+
+        let newEntry = try XCTUnwrap(ScreenshotScenario.from(environment: [
+            "RESONANCE_SCREENSHOT_MODE": "1",
+            "RESONANCE_SCREENSHOT_ROLE": "student",
+            "RESONANCE_SCREENSHOT_SCREEN": "new-entry",
+        ]))
+        XCTAssertEqual(newEntry.formContent, .walkthrough)
+        XCTAssertEqual(newEntry.roleInCourse, "student")
+
+        let reviewed = try XCTUnwrap(ScreenshotScenario.from(environment: [
+            "RESONANCE_SCREENSHOT_MODE": "1",
+            "RESONANCE_SCREENSHOT_ROLE": "student",
+            "RESONANCE_SCREENSHOT_SCREEN": "reviewed-feedback",
+        ]))
+        XCTAssertEqual(reviewed.selectedEntryID, "demo_entry_lea_reviewed_1")
+        XCTAssertTrue(reviewed.startsAtFeedback)
+    }
+
+    func testTeacherWalkthroughScenarioSuppliesFeedbackAndQueuedState() throws {
+        let draft = try XCTUnwrap(ScreenshotScenario.from(environment: [
+            "RESONANCE_SCREENSHOT_MODE": "1",
+            "RESONANCE_SCREENSHOT_ROLE": "teacher",
+            "RESONANCE_SCREENSHOT_SCREEN": "feedback-editor",
+        ]))
+        XCTAssertEqual(draft.feedbackContent, .walkthrough)
+        XCTAssertEqual(draft.selectedEntryID, "demo_entry_lea_submitted_1")
+
+        let queued = try XCTUnwrap(ScreenshotScenario.from(environment: [
+            "RESONANCE_SCREENSHOT_MODE": "1",
+            "RESONANCE_SCREENSHOT_ROLE": "teacher",
+            "RESONANCE_SCREENSHOT_SCREEN": "feedback-queued",
+        ]))
+        XCTAssertEqual(queued.roleInCourse, "teacher")
+        XCTAssertEqual(queued.queuedFeedbackEntryIDs, ["demo_entry_lea_submitted_1"])
+    }
+
     @MainActor
     func testTagsRoundTripWithCommas() {
         let entry = LocalPracticeEntry(

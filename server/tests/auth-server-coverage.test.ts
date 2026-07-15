@@ -1,5 +1,4 @@
 import jwt from 'jsonwebtoken';
-import request from 'supertest';
 import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { config } from '../src/config.js';
 import { app, setupApp, teardownApp, resetDb, seedBasic, prisma } from './testUtils.js';
@@ -29,12 +28,15 @@ describe('auth routes & server branch coverage', () => {
 
   describe('POST /auth/session — invalid code', () => {
     it('returns 401 INVALID_CODE for a fabricated code', async () => {
-      const res = await request(app.server)
-        .post('/auth/session')
-        .send({ code: 'dev_FAKE_CODE_12345678', redirectUri: 'resonance://auth-callback' });
-      expect(res.status).toBe(401);
-      expect(res.body.error.code).toBe('INVALID_CODE');
-      expect(res.body.error.message).toBe('Invalid or expired auth code');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/session',
+        payload: { code: 'dev_FAKE_CODE_12345678', redirectUri: 'resonance://auth-callback' },
+      });
+      const body = res.json();
+      expect(res.statusCode).toBe(401);
+      expect(body.error.code).toBe('INVALID_CODE');
+      expect(body.error.message).toBe('Invalid or expired auth code');
     });
   });
 
@@ -45,11 +47,13 @@ describe('auth routes & server branch coverage', () => {
   describe('POST /auth/session — user deleted after code issued', () => {
     it('returns 401 USER_NOT_FOUND when user was deleted between code issue and session', async () => {
       // Issue a code for student-1
-      const issue = await request(app.server)
-        .post('/dev/issue')
-        .send({ userId: 'student-1', role: 'student' });
-      expect(issue.status).toBe(200);
-      const code = issue.body.code;
+      const issue = await app.inject({
+        method: 'POST',
+        url: '/dev/issue',
+        payload: { userId: 'student-1', role: 'student' },
+      });
+      expect(issue.statusCode).toBe(200);
+      const code = issue.json().code;
 
       // Delete the user before redeeming the code
       await prisma.membership.deleteMany({ where: { userId: 'student-1' } });
@@ -57,12 +61,15 @@ describe('auth routes & server branch coverage', () => {
       await prisma.user.delete({ where: { id: 'student-1' } });
 
       // Now try to exchange the code for tokens
-      const res = await request(app.server)
-        .post('/auth/session')
-        .send({ code, redirectUri: 'resonance://auth-callback' });
-      expect(res.status).toBe(401);
-      expect(res.body.error.code).toBe('USER_NOT_FOUND');
-      expect(res.body.error.message).toBe('User not found');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/session',
+        payload: { code, redirectUri: 'resonance://auth-callback' },
+      });
+      const body = res.json();
+      expect(res.statusCode).toBe(401);
+      expect(body.error.code).toBe('USER_NOT_FOUND');
+      expect(body.error.message).toBe('User not found');
     });
   });
 
@@ -72,15 +79,15 @@ describe('auth routes & server branch coverage', () => {
 
   describe('GET /dev/authorize — invalid role', () => {
     it('returns 400 INVALID_ROLE for role=admin', async () => {
-      const res = await request(app.server).get('/dev/authorize?role=admin');
-      expect(res.status).toBe(400);
-      expect(res.body.error.code).toBe('INVALID_ROLE');
+      const res = await app.inject({ method: 'GET', url: '/dev/authorize?role=admin' });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.code).toBe('INVALID_ROLE');
     });
 
     it('returns 400 INVALID_ROLE when role is missing', async () => {
-      const res = await request(app.server).get('/dev/authorize');
-      expect(res.status).toBe(400);
-      expect(res.body.error.code).toBe('INVALID_ROLE');
+      const res = await app.inject({ method: 'GET', url: '/dev/authorize' });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.code).toBe('INVALID_ROLE');
     });
   });
 
@@ -90,11 +97,13 @@ describe('auth routes & server branch coverage', () => {
 
   describe('POST /dev/issue — user not found', () => {
     it('returns 404 USER_NOT_FOUND when userId does not exist', async () => {
-      const res = await request(app.server)
-        .post('/dev/issue')
-        .send({ userId: 'nonexistent-user-id', role: 'student' });
-      expect(res.status).toBe(404);
-      expect(res.body.error.code).toBe('USER_NOT_FOUND');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/dev/issue',
+        payload: { userId: 'nonexistent-user-id', role: 'student' },
+      });
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error.code).toBe('USER_NOT_FOUND');
     });
   });
 
@@ -112,10 +121,15 @@ describe('auth routes & server branch coverage', () => {
         algorithm: 'HS256',
       });
 
-      const res = await request(app.server).get('/courses').set('Authorization', `Bearer ${token}`);
-      expect(res.status).toBe(401);
-      expect(res.body.error.code).toBe('INVALID_TOKEN');
-      expect(res.body.error.message).toBe('Invalid token payload');
+      const res = await app.inject({
+        method: 'GET',
+        url: '/courses',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      const body = res.json();
+      expect(res.statusCode).toBe(401);
+      expect(body.error.code).toBe('INVALID_TOKEN');
+      expect(body.error.message).toBe('Invalid token payload');
     });
 
     it('returns 401 INVALID_TOKEN when JWT has no role field', async () => {
@@ -127,10 +141,15 @@ describe('auth routes & server branch coverage', () => {
         algorithm: 'HS256',
       });
 
-      const res = await request(app.server).get('/courses').set('Authorization', `Bearer ${token}`);
-      expect(res.status).toBe(401);
-      expect(res.body.error.code).toBe('INVALID_TOKEN');
-      expect(res.body.error.message).toBe('Invalid token payload');
+      const res = await app.inject({
+        method: 'GET',
+        url: '/courses',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      const body = res.json();
+      expect(res.statusCode).toBe(401);
+      expect(body.error.code).toBe('INVALID_TOKEN');
+      expect(body.error.message).toBe('Invalid token payload');
     });
   });
 });
@@ -186,19 +205,24 @@ describe('production auth mode — session and refresh reject invalid input', ()
   });
 
   it('POST /auth/session rejects a mismatched redirectUri in prod mode', async () => {
-    const res = await request(prodApp.server)
-      .post('/auth/session')
-      .send({ code: 'some-code', redirectUri: 'https://example.com' });
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
-    expect(res.body.error.message).toBe('Invalid redirectUri');
+    const res = await prodApp.inject({
+      method: 'POST',
+      url: '/auth/session',
+      payload: { code: 'some-code', redirectUri: 'https://example.com' },
+    });
+    const body = res.json();
+    expect(res.statusCode).toBe(400);
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toBe('Invalid redirectUri');
   });
 
   it('POST /auth/refresh rejects an unknown refresh token in prod mode', async () => {
-    const res = await request(prodApp.server)
-      .post('/auth/refresh')
-      .send({ refreshToken: 'some-token-value-that-is-long-enough' });
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe('INVALID_REFRESH');
+    const res = await prodApp.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      payload: { refreshToken: 'some-token-value-that-is-long-enough' },
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.code).toBe('INVALID_REFRESH');
   });
 });

@@ -132,6 +132,16 @@ describe('GET /courses/:courseId/review-queue pagination', () => {
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 
+  it('rejects fractional limits', async () => {
+    const token = await login('teacher');
+    const res = await request(app.server)
+      .get('/courses/COURSE_TEST/review-queue?limit=1.5')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('rejects limit=0', async () => {
     const token = await login('teacher');
     const res = await request(app.server)

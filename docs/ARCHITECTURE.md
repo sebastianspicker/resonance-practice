@@ -71,7 +71,9 @@ The iOS app starts in `ResonanceApp.swift`, opens the shared SwiftData `ModelCon
 server/src/
   routes/          # Fastify route handlers (auth, courses, entries, artifacts, feedback)
   services/        # Business logic extracted from routes
-    entryCascade.ts  # Artifact + storage cleanup on entry delete
+    deadline.ts      # Bounded dependency and shutdown waits
+    entryCascade.ts  # Hard delete + durable object-storage cleanup outbox
+    entryTransaction.ts # Entry row/identity serialization
   auth.ts          # JWT sign/verify, token issuance, refresh rotation
   config.ts        # Env-var parsing and startup validation
   errors.ts        # ApiError class, withPrismaErrors wrapper
@@ -86,7 +88,7 @@ The sync subsystem is split into four focused components:
 
 - **`SyncManager`** — thin coordinator: auth-refresh gating, network check, queue state machine (fetching ready items, applying retry decisions, updating status). Does not contain business logic.
 - **`QueueStore`** — all SwiftData I/O: enqueue, fetchReady, fetchFailed, counts, status mutations, artifact state helpers.
-- **`TaskExecutor`** — executes a single queue item against the API: one `switch` over `SyncTaskType`, handles idempotency (409 = success for creates, 404 = success for deletes).
+- **`TaskExecutor`** — executes a single queue item against the API: one `switch` over `SyncTaskType`, accepts create retries only when remote identity and metadata match, and treats already-deleted resources as successful deletes.
 - **`RetryPolicy`** — stateless: exponential backoff calculation, terminal-error classification (validation errors, local-not-found, permission errors are immediately terminal; transient network errors are retried).
 - **`EntryDeletionCoordinator`** — coordinates offline-safe entry deletion: cancels in-flight queue items for the entry's artifacts, deletes local files, enqueues a remote delete only when the entry was already synced to the server.
 - **`CalendarSubscriptionStore`** — persists the iCal subscription URL in Keychain (migrates legacy UserDefaults value on first access).
@@ -101,10 +103,11 @@ ILIAS/LTI or another course-system deep link may be added later. No LTI launch, 
 2. App exchanges internal code via `POST /auth/session` → receives JWT access token + refresh token.
 3. App syncs course/membership list into SwiftData.
 4. Student creates entry offline → stored locally → queued for sync.
-5. Sync worker sends media metadata to server → requests pre-signed PUT URL → uploads media → confirms upload.
+5. Sync worker sends media metadata and exact byte count to server → requests a size-bound pre-signed PUT URL → uploads media → confirms upload by exact HEAD size.
 6. Practice audio uploads through the normal queue. Teaching-lesson video remains local until the student confirms the private course-review consent scope and starts submission; capture profiles and manual markers provide context for later review without automatic analysis.
 7. Student submits entry (`draft → submitted`); teacher fetches review queue.
 8. Teacher posts feedback → parent entry transitions to `reviewed` → student sees feedback on next sync.
+9. Entry deletion hard-deletes relational content, retains a minimal ID tombstone, and commits object keys to a durable asynchronous deletion queue before returning.
 
 ## Offline Strategy
 
@@ -133,13 +136,16 @@ sign-out reports pending and failed work, offers sync, and requires confirmation
 before deleting courses, entries, media files, feedback, calendar data, exports,
 and queue state.
 
-## Teacher Media Playback
+## Remote Media Playback
 
-Teachers request `GET /artifacts/:artifactId/download`. The server applies entry
+The iOS entry detail uses an existing protected local file when one is available.
+Otherwise, student owners and same-course teachers request
+`GET /artifacts/:artifactId/download`. The server applies entry
 membership/ownership authorization and signs an S3 `GetObject` request for 15
-minutes. The iOS submission detail streams it through `AVPlayer` and does not
-persist a teacher copy. Expiry, offline access, and authorization failures are
-implemented as contextual retryable playback states. Device and poor-network behavior still requires pilot validation.
+minutes. The client streams the response through `AVPlayer` without persisting a
+remote copy. Expiry, offline access, and authorization failures are implemented
+as contextual retryable playback states. Device and poor-network behavior still
+requires pilot validation.
 
 ## Pagination
 
@@ -173,4 +179,4 @@ The checked-in server test suite contains coverage for:
 - Security headers, CORS, rate limiting, and content-type enforcement
 - Error handling (structured errors, Prisma error mapping, stack trace suppression)
 
-The latest server tests were not executed in the current local checkout because `server/node_modules` is absent. The iOS XCTest target passed 125 tests locally on 2026-07-11.
+Release-specific commands, counts, and measured results are recorded in the immutable [alpha release notes](./release-notes/v0.1.0-alpha.1.md). The complete local gate is `./scripts/ci-local.sh --with-docker`; subset runs must not be presented as evidence for database-backed behavior.

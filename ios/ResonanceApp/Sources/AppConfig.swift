@@ -1,8 +1,26 @@
 import Foundation
 
 enum AppConfig {
-    static let apiBaseURL = URL(string: ProcessInfo.processInfo.environment["RESONANCE_API_BASE"] ?? "http://localhost:4000")!
+    private static let defaultAPIBaseURL = URL(string: "http://localhost:4000")!
+    static let apiBaseURL = resolveAPIBaseURL(
+        ProcessInfo.processInfo.environment["RESONANCE_API_BASE"]
+    )
     static let authLoginURL = apiBaseURL.appendingPathComponent("auth/login")
+
+    static func resolveAPIBaseURL(_ value: String?) -> URL {
+        guard let value, !value.isEmpty,
+              let url = URL(string: value),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host != nil,
+              url.user == nil,
+              url.password == nil,
+              url.query == nil,
+              url.fragment == nil else {
+            return defaultAPIBaseURL
+        }
+        return url
+    }
 
     // MARK: - Demo / screenshot-only defaults
     // These IDs are used exclusively for local development, UI previews,

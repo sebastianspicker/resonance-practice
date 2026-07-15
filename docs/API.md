@@ -12,6 +12,11 @@ Every response includes:
 
 - `x-request-id` — a unique identifier for the request, useful for tracing and debugging. Clients should log this value and include it in bug reports to help correlate issues with server-side logs.
 
+## Service Probes
+
+- `GET /health` is a process-liveness probe and returns `{ "status": "ok" }` without querying dependencies.
+- `GET /ready` checks PostgreSQL and the configured object-storage bucket within the validated dependency deadline. It returns `{ "status": "ready" }` with `200`, or `{ "status": "unavailable" }` with `503`.
+
 ## Status Codes
 
 In addition to the error codes listed below, the API uses:
@@ -238,7 +243,7 @@ Teaching-lesson entry:
 }
 ```
 
-- `id` (required) — client-generated ID, 1-128 alphanumeric/hyphen/underscore characters. Conflicts return `409 ID_CONFLICT`.
+- `id` (required) — client-generated ID, 1-128 alphanumeric/hyphen/underscore characters. An exact repeat returns the existing entry with `200`; reusing the ID with different create data returns `409 ID_CONFLICT`.
 - `kind` (optional, default `"practice"`) — `"practice"` or `"teaching_lesson"`.
 - `practiceDate` (required) — ISO 8601 date (`YYYY-MM-DD`) or datetime with timezone (`YYYY-MM-DDTHH:mm:ssZ`).
 - `goalText` (required) — string, max 10000 characters.
@@ -261,7 +266,7 @@ Restriction: if the entry status is not `draft`, updating any of these fields re
 
 ### DELETE /entries/:entryId
 
-Hard-delete entry and associated artifacts/feedback. Storage objects are deleted from S3. Only the owning student can delete.
+Hard-delete the entry content, relationships, artifacts, markers, and feedback. A minimal tombstone containing only the client-generated entry ID and deletion time prevents stale offline work from reusing the identifier. Object-storage keys are committed to a durable deletion queue in the same transaction and removed asynchronously with retry. Only the owning student can delete.
 
 Response: `204 No Content` (empty body).
 
@@ -292,13 +297,15 @@ Request:
 {
   "id": "client-generated-id",
   "type": "audio",
-  "durationSeconds": 120
+  "durationSeconds": 120,
+  "sizeBytes": 1048576
 }
 ```
 
-- `id` (required) — client-generated ID, 1-128 alphanumeric/hyphen/underscore characters. Conflicts return `409 ID_CONFLICT`.
+- `id` (required) — client-generated ID, 1-128 alphanumeric/hyphen/underscore characters. An exact repeat returns the existing artifact with `200`; reusing the ID with different entry, type, duration, or size returns `409 ID_CONFLICT`.
 - `type` (required) — `"audio"` or `"video"`.
 - `durationSeconds` (required) — number, 0-28800 (8 hours).
+- `sizeBytes` (required) — integer, 1-104857600 (100 MiB). The declared size is bound to the signed upload request and verified at confirmation.
 
 ### POST /artifacts/:artifactId/presign
 
@@ -312,26 +319,35 @@ Response includes required request headers for upload:
   "uploadUrl": "...",
   "storageKey": "...",
   "expiresInSeconds": 900,
-  "requiredHeaders": { "Content-Type": "audio/m4a" }
+  "requiredHeaders": {
+    "Content-Type": "audio/m4a",
+    "Content-Length": "1048576"
+  }
 }
 ```
 
-Content-Type is `audio/m4a` for audio artifacts and `video/mp4` for video artifacts.
+Clients must send every returned header unchanged. Content-Type is `audio/m4a`
+for audio artifacts and `video/mp4` for video artifacts. A retry reuses an
+unexpired upload slot; expired attempts receive a new storage key and the old
+object is queued for cleanup.
 
 Errors:
 
-- `409 UPLOAD_INVALID` — artifact is already uploaded.
+- `409 UPLOAD_INVALID` — artifact is already uploaded, lacks a declared size, or confirmation is in progress.
+- `409 ENTRY_LOCKED` — the parent entry is no longer a draft.
 
 ### POST /artifacts/:artifactId/confirm
 
-Confirm upload (server performs HEAD to verify the object exists and is non-empty).
+Confirm upload. The server performs HEAD and requires the stored object size to
+exactly match the size declared when the artifact record was created.
 
 Authorization: only the owning student of the artifact's entry can call this endpoint.
 
 Errors:
 
 - `400 MISSING_STORAGE_KEY` — presign was not called first.
-- `409 UPLOAD_INVALID` — object not found in storage or is empty.
+- `409 UPLOAD_INVALID` — object is missing, the slot expired or changed, or the object size differs from the declaration.
+- `503 STORAGE_UNAVAILABLE` — storage rejected the check or could not be reached.
 
 ### GET /artifacts/:artifactId/download
 
@@ -460,7 +476,7 @@ Request:
   "status": "ok|needs_revision|next_goal",
   "commentsText": "Great progress on your scales.",
   "markers": [
-    { "timeSeconds": 45.2, "text": "Intonation slipped here" }
+    { "timeSeconds": 45, "text": "Intonation slipped here" }
   ]
 }
 ```
@@ -471,7 +487,7 @@ Request:
 - `status` (required) — `"ok"`, `"needs_revision"`, or `"next_goal"`.
 - `commentsText` (required) — trimmed non-empty string, max 10000 characters.
 - `markers` (optional, default `[]`) — array of time-stamped annotations, max 50 markers.
-  - `timeSeconds` (required) — number, 0-28800.
+  - `timeSeconds` (required) — integer, 0-28800.
   - `text` (required) — string, max 1000 characters.
 
 Preconditions:
@@ -500,7 +516,7 @@ Response (array):
     "status": "ok|needs_revision|next_goal",
     "commentsText": "...",
     "markers": [
-      { "id": "...", "timeSeconds": 45.2, "text": "..." }
+      { "id": "...", "timeSeconds": 45, "text": "..." }
     ]
   }
 ]
@@ -522,7 +538,7 @@ All errors use:
 | `INVALID_REFRESH` | Refresh token is invalid or expired |
 | `REFRESH_REVOKED` | Refresh token has been revoked |
 | `REFRESH_MISMATCH` | Refresh token does not match stored hash |
-| `REFRESH_ALREADY_USED` | Refresh token was already consumed (replay) |
+| `REFRESH_ALREADY_USED` | Refresh token was already consumed; its active rotation lineage is revoked |
 | `INVALID_CODE` | Authorization code is invalid or expired |
 | `USER_NOT_FOUND` | User does not exist |
 | `DEV_AUTH_LOCAL_ONLY` | Dev auth routes only available from localhost |
@@ -542,8 +558,9 @@ All errors use:
 | `ENTRY_NOT_SUBMITTED` | Entry must be submitted before this action |
 | `ARTIFACTS_NOT_UPLOADED` | All artifacts must be uploaded before submitting |
 | `CONSENT_REQUIRED` | Teaching lesson entry requires confirmed consent before submitting |
-| `UPLOAD_INVALID` | Upload not found or empty in storage |
+| `UPLOAD_INVALID` | Upload missing, expired, changed, or different from its declared size |
 | `MISSING_STORAGE_KEY` | Presign not called before confirm |
+| `STORAGE_UNAVAILABLE` | Object storage is temporarily unavailable |
 | `INVALID_TARGET` | Invalid feedback target type |
 | `VALIDATION_ERROR` | Request validation failed |
 | `ID_CONFLICT` | Client-generated ID already exists (409) |
@@ -555,6 +572,7 @@ All errors use:
 | Limit | Value |
 |-------|-------|
 | Max duration (entry/artifact) | 28800 seconds (8 hours) |
+| Max artifact upload size | 104857600 bytes (100 MiB) |
 | Max tags per entry | 30 |
 | Max tag length | 100 characters |
 | Max feedback/capture markers per request | 50 |

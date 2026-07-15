@@ -9,7 +9,7 @@
  */
 import request from 'supertest';
 import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { app, setupApp, teardownApp, resetDb, seedBasic } from './testUtils.js';
+import { app, setupApp, teardownApp, resetDb, seedBasic, prisma } from './testUtils.js';
 import {
   issueProdAuthCode,
   consumeProdAuthCode,
@@ -32,39 +32,52 @@ afterAll(async () => {
 // ── Unit: oidc module functions ──────────────────────────────────────────────
 
 describe('oidc module — prod auth codes', () => {
-  it('issues and consumes a prod auth code', () => {
-    const code = issueProdAuthCode('user-123');
+  beforeEach(async () => {
+    await resetDb();
+    await seedBasic();
+  });
+
+  it('issues and consumes a prod auth code', async () => {
+    const code = await issueProdAuthCode(prisma, 'user-123');
     expect(code).toMatch(/^prod_/);
-    expect(consumeProdAuthCode(code)).toBe('user-123');
+    await expect(consumeProdAuthCode(prisma, code)).resolves.toBe('user-123');
   });
 
-  it('consumes a code only once (single-use)', () => {
-    const code = issueProdAuthCode('user-123');
-    expect(consumeProdAuthCode(code)).toBe('user-123');
-    expect(consumeProdAuthCode(code)).toBeNull();
+  it('consumes a code only once (single-use)', async () => {
+    const code = await issueProdAuthCode(prisma, 'user-123');
+    const results = await Promise.all([
+      consumeProdAuthCode(prisma, code),
+      consumeProdAuthCode(prisma, code),
+    ]);
+    expect(results.sort()).toEqual([null, 'user-123']);
   });
 
-  it('returns null for an unknown code', () => {
-    expect(consumeProdAuthCode('prod_doesnotexist')).toBeNull();
+  it('returns null for an unknown code', async () => {
+    await expect(consumeProdAuthCode(prisma, 'prod_doesnotexist')).resolves.toBeNull();
   });
 });
 
 describe('oidc module — OIDC state (CSRF)', () => {
-  it('issues and validates a state token', () => {
-    const state = issueOidcState();
+  beforeEach(async () => {
+    await resetDb();
+    await seedBasic();
+  });
+
+  it('issues and validates a state token', async () => {
+    const state = await issueOidcState(prisma);
     expect(typeof state).toBe('string');
     expect(state.length).toBeGreaterThanOrEqual(16);
-    expect(consumeOidcState(state)).toBe(true);
+    await expect(consumeOidcState(prisma, state)).resolves.toBe(true);
   });
 
-  it('consumes a state only once', () => {
-    const state = issueOidcState();
-    expect(consumeOidcState(state)).toBe(true);
-    expect(consumeOidcState(state)).toBe(false);
+  it('consumes a state only once', async () => {
+    const state = await issueOidcState(prisma);
+    await expect(consumeOidcState(prisma, state)).resolves.toBe(true);
+    await expect(consumeOidcState(prisma, state)).resolves.toBe(false);
   });
 
-  it('rejects an unknown state', () => {
-    expect(consumeOidcState('unknown-state-xyz')).toBe(false);
+  it('rejects an unknown state', async () => {
+    await expect(consumeOidcState(prisma, 'unknown-state-xyz')).resolves.toBe(false);
   });
 });
 
@@ -150,7 +163,7 @@ describe('auth session/refresh — dev mode (existing behaviour)', () => {
 
   it('POST /auth/session rejects a prod code in dev mode', async () => {
     // Prod codes are not consumed in dev mode — ensures mode isolation.
-    const prodCode = issueProdAuthCode('some-user');
+    const prodCode = await issueProdAuthCode(prisma, 'some-user');
     const res = await request(app.server).post('/auth/session').send({ code: prodCode });
     expect(res.status).toBe(401);
     expect(res.body.error?.code).toBe('INVALID_CODE');

@@ -249,7 +249,7 @@ describe('edge cases', () => {
         const res = await request(app.server)
           .post('/entries/entry-dup-art/artifacts')
           .set('Authorization', `Bearer ${token}`)
-          .send({ id: 'duplicate-artifact', type: 'audio', durationSeconds: 120 });
+          .send({ id: 'duplicate-artifact', type: 'audio', durationSeconds: 120, sizeBytes: 1 });
         expect(res.status).toBe(409);
         expect(res.body.error?.code).toBe('ID_CONFLICT');
       });

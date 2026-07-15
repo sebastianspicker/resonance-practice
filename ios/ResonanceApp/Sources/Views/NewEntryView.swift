@@ -22,10 +22,33 @@ struct NewEntryView: View {
     @FocusState private var focusedField: Field?
 
     private enum Field { case goal, duration, tags, notes }
+    private let wrapsInNavigationStack: Bool
+
+    init(
+        courseId: String,
+        initialContent: ScreenshotFormContent? = nil,
+        wrapsInNavigationStack: Bool = true
+    ) {
+        self.courseId = courseId
+        self.wrapsInNavigationStack = wrapsInNavigationStack
+        _goalText = State(initialValue: initialContent?.goalText ?? "")
+        _durationMinutes = State(initialValue: initialContent?.durationMinutes ?? "")
+        _tags = State(initialValue: initialContent?.tags ?? "")
+        _notes = State(initialValue: initialContent?.notes ?? "")
+    }
 
     var body: some View {
-        NavigationStack {
-            Form {
+        Group {
+            if wrapsInNavigationStack {
+                NavigationStack { formContent }
+            } else {
+                formContent
+            }
+        }
+    }
+
+    private var formContent: some View {
+        Form {
                 Section("Entry") {
                     Picker("Type", selection: $entryKind) {
                         Text("Practice").tag(EntryKind.practice)
@@ -87,10 +110,9 @@ struct NewEntryView: View {
                     Button("Save draft") { saveEntry() }
                 }
             }
-            .confirmationDialog("Discard this draft?", isPresented: $confirmDiscard) {
-                Button("Discard draft", role: .destructive) { dismiss() }
-                Button("Keep editing", role: .cancel) {}
-            }
+        .confirmationDialog("Discard this draft?", isPresented: $confirmDiscard) {
+            Button("Discard draft", role: .destructive) { dismiss() }
+            Button("Keep editing", role: .cancel) {}
         }
     }
 

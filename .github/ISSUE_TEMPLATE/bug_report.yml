@@ -1,16 +1,68 @@
-name: Bug report
-description: Report a reproducible bug
+name: Alpha bug report
+description: Report a reproducible issue in the 0.1.0-alpha.1 source-only public alpha
 title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
-      value: "Thanks for reporting a bug. Please include as much detail as possible."
+      value: "Thanks for helping test the 0.1.0-alpha.1 source-only public alpha. Do not include passwords, tokens, private recordings, personal data, or unredacted logs."
+  - type: input
+    id: alpha_version
+    attributes:
+      label: Alpha version or source revision
+      description: Confirm the alpha version and, if built from source, the commit or branch.
+      placeholder: "0.1.0-alpha.1 (commit abc1234)"
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - iOS or iPadOS app
+        - Server API or local services
+        - Both iOS and server
+        - Documentation or source-only setup
+    validations:
+      required: true
+  - type: dropdown
+    id: reporter_role
+    attributes:
+      label: Reporter role
+      options:
+        - Student
+        - Teacher
+        - Administrator or support staff
+        - Developer or self-hosting evaluator
+        - Other evaluator
+    validations:
+      required: true
   - type: textarea
     id: summary
     attributes:
       label: Summary
-      description: What happened vs. what you expected.
+      description: Briefly describe the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: device_toolchain
+    attributes:
+      label: Device and toolchain
+      description: For iOS, include device/simulator, OS, and Xcode. For server, include OS, Node, Docker, and database/storage setup.
+      placeholder: "iPhone 15 simulator, iOS 18.0, Xcode 16.0; or macOS 15, Node 20.x, Docker Desktop 4.x"
+    validations:
+      required: true
+  - type: dropdown
+    id: connectivity
+    attributes:
+      label: Connectivity when the issue occurred
+      options:
+        - Offline
+        - Intermittent or recovering connection
+        - Wi-Fi
+        - Cellular
+        - Local development network
+        - Not applicable
     validations:
       required: true
   - type: textarea
@@ -25,18 +77,22 @@ body:
     validations:
       required: true
   - type: textarea
-    id: logs
+    id: expected
     attributes:
-      label: Logs/Errors
-      description: Paste relevant logs or error messages (redact secrets).
-      render: shell
+      label: Expected behavior
     validations:
-      required: false
+      required: true
   - type: textarea
-    id: environment
+    id: actual
     attributes:
-      label: Environment
-      description: OS, Node version, Docker version, etc.
-      placeholder: "macOS 14, Node 20.x, Docker Desktop 4.x"
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Paste relevant error messages, logs, screenshots, or request IDs only after removing secrets, tokens, personal data, and private media.
+      render: shell
     validations:
       required: false

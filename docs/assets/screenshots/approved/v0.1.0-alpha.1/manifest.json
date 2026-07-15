@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "release": "v0.1.0-alpha.1",
+  "generatedAt": "2026-07-15T14:31:20.940Z",
+  "source": {
+    "commit": "aee02be08161d96c32b645d0d506abd4b6cdc597",
+    "dirty": false
+  },
+  "proofModel": {
+    "kind": "visual-ui-evidence",
+    "description": "Deterministic debug-only Simulator scenarios; screenshots do not prove interaction, networking, authorization, persistence, accessibility, localization, signing, or deployment."
+  },
+  "verification": {
+    "fixtureValidator": "passed",
+    "apiReadiness": "passed",
+    "iosDebugBuild": "passed",
+    "screenshotCount": 12,
+    "screenshotSet": "passed",
+    "humanVisualInspection": "passed",
+    "serviceE2E": "passed separately on capture source commit aee02be08161d96c32b645d0d506abd4b6cdc597; the final release commit must pass again",
+    "captureLogsPublished": false
+  },
+  "notes": [
+    "All people, courses, and content shown are deterministic mock data.",
+    "The bottom-right handle in iPad captures is iPadOS 26 system window chrome."
+  ],
+  "captures": [
+    {
+      "index": 1,
+      "file": "01-student-login.png",
+      "persona": "student",
+      "screen": "login",
+      "device": "iPhone portrait",
+      "os": "iOS 26.2",
+      "appearance": "light",
+      "textSize": "medium",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "380084a361d6705a1c947101326a96a091b6c08268e4320dcd43373d1593c895"
+    },
+    {
+      "index": 2,
+      "file": "02-student-courses.png",
+      "persona": "student",
+      "screen": "courses",
+      "device": "iPhone portrait",
+      "os": "iOS 26.2",
+      "appearance": "light",
+      "textSize": "medium",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "294fd556723ddd7315f462377ca7c329ea28449209192421f7e4c6c31138accd"
+    },
+    {
+      "index": 3,
+      "file": "03-student-entry-list.png",
+      "persona": "student",
+      "screen": "entry-list",
+      "device": "iPhone portrait",
+      "os": "iOS 26.2",
+      "appearance": "light",
+      "textSize": "medium",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "3106e786fe8fd0b35dff1fc2b65f0dd2a9cd25df154ebf7191206f0af74b187e"
+    },
+    {
+      "index": 4,
+      "file": "04-student-new-entry.png",
+      "persona": "student",
+      "screen": "new-entry",
+      "device": "iPhone portrait",
+      "os": "iOS 26.2",
+      "appearance": "light",
+      "textSize": "medium",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "9529bea84f7be996a9b00e1bbaa590796282ee39a6bbf23fd27afc4aef2a2d72"
+    },
+    {
+      "index": 5,
+      "file": "05-student-entry-detail.png",
+      "persona": "student",
+      "screen": "entry-detail",
+      "device": "iPhone portrait",
+      "os": "iOS 26.2",
+      "appearance": "light",
+      "textSize": "medium",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "9f857b1f2b2ac4f7b97520d4b5fedd0a079be8afdec1d1b19915daafcbb5fbc8"
+    },
+    {
+      "index": 6,
+      "file": "06-student-queue.png",
+      "persona": "student",
+      "screen": "queue",
+      "device": "iPhone portrait",
+      "os": "iOS 26.2",
+      "appearance": "light",
+      "textSize": "medium",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "c84c38f2cf1f061ebf17a622b804cffff37acbe808d656362ba01d660b85941b"
+    },
+    {
+      "index": 7,
+      "file": "07-teacher-courses.png",
+      "persona": "teacher",
+      "screen": "courses",
+      "device": "iPad portrait",
+      "os": "iOS 26.2",
+      "appearance": "dark",
+      "textSize": "medium",
+      "width": 1668,
+      "height": 2420,
+      "sha256": "fdd35c4f4f47ee0947b7eb03e65073c0420b23b35d1d1e273cca1038a3310510"
+    },
+    {
+      "index": 8,
+      "file": "08-teacher-review-queue.png",
+      "persona": "teacher",
+      "screen": "teacher-review-queue",
+      "device": "iPad portrait",
+      "os": "iOS 26.2",
+      "appearance": "dark",
+      "textSize": "medium",
+      "width": 1668,
+      "height": 2420,
+      "sha256": "17ffcbf7e5507c20cf2f44149db2a02b07a62a389545eee040647f46fab6e5aa"
+    },
+    {
+      "index": 9,
+      "file": "09-teacher-submission-detail.png",
+      "persona": "teacher",
+      "screen": "submission-detail",
+      "device": "iPad portrait",
+      "os": "iOS 26.2",
+      "appearance": "dark",
+      "textSize": "medium",
+      "width": 1668,
+      "height": 2420,
+      "sha256": "54f1ee6dbe6e152dd3bb19cea6d6a5451fbd269effc57ab06edaa08f930ad37e"
+    },
+    {
+      "index": 10,
+      "file": "10-teacher-feedback-editor.png",
+      "persona": "teacher",
+      "screen": "feedback-editor",
+      "device": "iPad portrait",
+      "os": "iOS 26.2",
+      "appearance": "dark",
+      "textSize": "medium",
+      "width": 1668,
+      "height": 2420,
+      "sha256": "7a4ab0b39844bb94f1a036242571cac6f45ac192c7e3d25382ea1e40e384906b"
+    },
+    {
+      "index": 11,
+      "file": "11-teacher-feedback-queued.png",
+      "persona": "teacher",
+      "screen": "feedback-queued",
+      "device": "iPad portrait",
+      "os": "iOS 26.2",
+      "appearance": "dark",
+      "textSize": "medium",
+      "width": 1668,
+      "height": 2420,
+      "sha256": "5bef8795ea5b30024fd91d2824d90e309499caadc08c8a42da5fe8061d362ca3"
+    },
+    {
+      "index": 12,
+      "file": "12-student-reviewed-feedback.png",
+      "persona": "student",
+      "screen": "reviewed-feedback",
+      "device": "iPhone portrait",
+      "os": "iOS 26.2",
+      "appearance": "light",
+      "textSize": "medium",
+      "width": 1290,
+      "height": 2796,
+      "sha256": "cfe73d351b531eaf8e77cc48c629ab5a6a208c634bf4d5f6726102534271ce8e"
+    }
+  ]
+}

@@ -79,6 +79,7 @@ describe('rotateRefreshToken branch coverage', () => {
     const token = signRefreshToken(user, tokenId);
 
     const mockTx = {
+      $queryRaw: vi.fn().mockResolvedValue([user]),
       refreshToken: {
         findUnique: vi.fn().mockResolvedValue({
           id: tokenId,
@@ -117,6 +118,7 @@ describe('rotateRefreshToken branch coverage', () => {
     const token = signRefreshToken(user, tokenId);
 
     const mockTx = {
+      $queryRaw: vi.fn().mockResolvedValue([user]),
       refreshToken: {
         findUnique: vi.fn().mockResolvedValue(null),
       },
@@ -144,6 +146,7 @@ describe('rotateRefreshToken branch coverage', () => {
     const token = signRefreshToken(user, tokenId);
 
     const mockTx = {
+      $queryRaw: vi.fn().mockResolvedValue([user]),
       refreshToken: {
         findUnique: vi.fn().mockResolvedValue({
           id: tokenId,
@@ -178,6 +181,7 @@ describe('rotateRefreshToken branch coverage', () => {
     const token = signRefreshToken(user, tokenId);
 
     const mockTx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
       refreshToken: {
         findUnique: vi.fn().mockResolvedValue({
           id: tokenId,
@@ -211,16 +215,19 @@ describe('rotateRefreshToken branch coverage', () => {
   });
 
   // ── Race condition: token already used (updateMany returns 0) ──
-  it('throws REFRESH_ALREADY_USED when updateMany returns count 0', async () => {
+  it('commits lineage revocation before reporting a reused refresh token', async () => {
     const user = makeUser();
     const tokenId = 'rt_already-used';
+    const familyId = 'rt_family-1';
     const token = signRefreshToken(user, tokenId);
 
     const mockTx = {
+      $queryRaw: vi.fn().mockResolvedValue([user]),
       refreshToken: {
         findUnique: vi.fn().mockResolvedValue({
           id: tokenId,
           userId: user.id,
+          familyId,
           tokenHash: hashToken(token),
           expiresAt: new Date(Date.now() + 86400000),
           revokedAt: null,
@@ -229,8 +236,13 @@ describe('rotateRefreshToken branch coverage', () => {
       },
     };
 
+    let transactionCommitted = false;
     const mockPrisma = {
-      $transaction: vi.fn(async (fn: (tx: any) => any) => fn(mockTx)),
+      $transaction: vi.fn(async (fn: (tx: any) => any) => {
+        const result = await fn(mockTx);
+        transactionCommitted = true;
+        return result;
+      }),
     } as any;
 
     try {
@@ -242,5 +254,49 @@ describe('rotateRefreshToken branch coverage', () => {
       expect(err.statusCode).toBe(401);
       expect(err.code).toBe('REFRESH_ALREADY_USED');
     }
+    expect(transactionCommitted).toBe(true);
+    expect(mockTx.refreshToken.updateMany).toHaveBeenNthCalledWith(2, {
+      where: { userId: user.id, familyId, revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+  });
+
+  it('keeps a rotated refresh token in the same replay-containment family', async () => {
+    const user = makeUser();
+    const tokenId = 'rt_current';
+    const familyId = 'rt_original-family';
+    const token = signRefreshToken(user, tokenId);
+    const create = vi.fn().mockResolvedValue({});
+
+    const mockTx = {
+      $queryRaw: vi.fn().mockResolvedValue([user]),
+      refreshToken: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: tokenId,
+          userId: user.id,
+          familyId,
+          tokenHash: hashToken(token),
+          expiresAt: new Date(Date.now() + 86400000),
+          revokedAt: null,
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        create,
+      },
+    };
+
+    const mockPrisma = {
+      $transaction: vi.fn(async (fn: (tx: any) => any) => fn(mockTx)),
+    } as any;
+
+    const result = await rotateRefreshToken(mockPrisma, token);
+
+    expect(result.accessToken).toEqual(expect.any(String));
+    expect(result.refreshToken).toEqual(expect.any(String));
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: user.id,
+        familyId,
+      }),
+    });
   });
 });

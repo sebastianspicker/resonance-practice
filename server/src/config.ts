@@ -10,6 +10,14 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function booleanEnv(name: string, fallback: boolean): boolean {
+  const value = process.env[name];
+  if (value === undefined) return fallback;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(`${name} must be "true" or "false".`);
+}
+
 type OidcEnv = {
   discoveryUrl: string | undefined;
   clientId: string | undefined;
@@ -85,13 +93,14 @@ export const config = {
   jwtSecret: requireEnv('JWT_SECRET'),
   accessTokenTtlMinutes: Number(process.env.ACCESS_TOKEN_TTL_MINUTES ?? 15),
   refreshTokenTtlDays: Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 7),
+  dependencyTimeoutMs: Number(process.env.DEPENDENCY_TIMEOUT_MS ?? 10_000),
   s3: {
     endpoint: requireEnv('S3_ENDPOINT'),
     region: process.env.S3_REGION ?? 'us-east-1',
     bucket: requireEnv('S3_BUCKET'),
     accessKey: requireEnv('S3_ACCESS_KEY'),
     secretKey: requireEnv('S3_SECRET_KEY'),
-    forcePathStyle: (process.env.S3_FORCE_PATH_STYLE ?? 'true') === 'true',
+    forcePathStyle: booleanEnv('S3_FORCE_PATH_STYLE', true),
     presignTtlSeconds: Number(process.env.S3_PRESIGN_TTL_SECONDS ?? 900),
   },
   corsOrigins: (process.env.CORS_ORIGINS ?? '')
@@ -109,20 +118,47 @@ if (config.jwtSecret.length < 32) {
   throw new Error('JWT_SECRET must be at least 32 characters long for security.');
 }
 
-if (Number.isNaN(config.port)) {
-  throw new Error('PORT must be a valid number.');
+if (
+  !Number.isFinite(config.port) ||
+  !Number.isInteger(config.port) ||
+  config.port < 1 ||
+  config.port > 65535
+) {
+  throw new Error('PORT must be an integer between 1 and 65535.');
 }
 
-if (Number.isNaN(config.accessTokenTtlMinutes) || config.accessTokenTtlMinutes <= 0) {
-  throw new Error('ACCESS_TOKEN_TTL_MINUTES must be a positive number.');
+if (
+  !Number.isFinite(config.accessTokenTtlMinutes) ||
+  !Number.isInteger(config.accessTokenTtlMinutes) ||
+  config.accessTokenTtlMinutes <= 0
+) {
+  throw new Error('ACCESS_TOKEN_TTL_MINUTES must be a positive integer.');
 }
 
-if (Number.isNaN(config.refreshTokenTtlDays) || config.refreshTokenTtlDays <= 0) {
-  throw new Error('REFRESH_TOKEN_TTL_DAYS must be a positive number.');
+if (
+  !Number.isFinite(config.refreshTokenTtlDays) ||
+  !Number.isInteger(config.refreshTokenTtlDays) ||
+  config.refreshTokenTtlDays <= 0
+) {
+  throw new Error('REFRESH_TOKEN_TTL_DAYS must be a positive integer.');
 }
 
-if (Number.isNaN(config.s3.presignTtlSeconds) || config.s3.presignTtlSeconds <= 0) {
-  throw new Error('S3_PRESIGN_TTL_SECONDS must be positive');
+if (
+  !Number.isFinite(config.dependencyTimeoutMs) ||
+  !Number.isInteger(config.dependencyTimeoutMs) ||
+  config.dependencyTimeoutMs < 100 ||
+  config.dependencyTimeoutMs > 300_000
+) {
+  throw new Error('DEPENDENCY_TIMEOUT_MS must be an integer between 100 and 300000.');
+}
+
+if (
+  !Number.isFinite(config.s3.presignTtlSeconds) ||
+  !Number.isInteger(config.s3.presignTtlSeconds) ||
+  config.s3.presignTtlSeconds < 1 ||
+  config.s3.presignTtlSeconds > 604_800
+) {
+  throw new Error('S3_PRESIGN_TTL_SECONDS must be an integer between 1 and 604800.');
 }
 
 if (config.jwtRefreshSecret.length < 32) {

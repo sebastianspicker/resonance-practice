@@ -1,10 +1,10 @@
-import type { S3Client } from '@aws-sdk/client-s3';
 import type { PracticeEntry, PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { limits } from '../config.js';
 import { ErrorCodes } from '../errorCodes.js';
-import { ApiError, withPrismaErrors } from '../errors.js';
-import { cascadeDeleteEntry, cleanupS3Objects } from '../services/entryCascade.js';
+import { ApiError, isPrismaError, withPrismaErrors } from '../errors.js';
+import { cascadeDeleteEntry } from '../services/entryCascade.js';
+import { lockEntryIdentity, withLockedEntry } from '../services/entryTransaction.js';
 import {
   requireBoolean,
   requireClientId,
@@ -13,6 +13,7 @@ import {
   requireEnum,
   requireField,
   requireNumber,
+  requireRecord,
   requireString,
   requireStringArray,
   requireStudentOwner,
@@ -172,6 +173,29 @@ function parseEntryCreateBody(body: Record<string, unknown>) {
   };
 }
 
+function isExactEntryCreateRetry(
+  existing: PracticeEntry,
+  entryData: ReturnType<typeof parseEntryCreateBody>,
+  courseId: string,
+  studentId: string
+) {
+  return [
+    existing.deletedAt === null,
+    existing.courseId === courseId,
+    existing.studentId === studentId,
+    existing.kind === entryData.kind,
+    existing.practiceDate.getTime() === entryData.practiceDate.getTime(),
+    existing.goalText === entryData.goalText,
+    existing.durationSeconds === entryData.durationSeconds,
+    existing.tags.length === entryData.tags.length,
+    existing.tags.every((tag, index) => tag === entryData.tags[index]),
+    existing.notes === entryData.notes,
+    (existing.consentConfirmedAt !== null) === (entryData.consentConfirmedAt !== null),
+    existing.consentScope === entryData.consentScope,
+    existing.captureProfile === entryData.captureProfile,
+  ].every(Boolean);
+}
+
 function hasRestrictedEntryPatchField(body: Record<string, unknown>) {
   return RESTRICTED_ENTRY_PATCH_FIELDS.some((field) => field in body);
 }
@@ -222,7 +246,12 @@ function resolvePatchMetadata(body: Record<string, unknown>, entry: EntryPatchBa
 
   if ('consentConfirmed' in body) {
     const consentConfirmed = requireBoolean(body.consentConfirmed, 'consentConfirmed');
-    metadata.consentConfirmedAt = consentConfirmed ? new Date() : null;
+    // Re-sending an already-confirmed value is idempotent. In particular, the
+    // iOS client includes this boolean in ordinary draft updates, which must
+    // not rewrite the original consent audit timestamp.
+    metadata.consentConfirmedAt = consentConfirmed
+      ? (entry.consentConfirmedAt ?? new Date())
+      : null;
     if (!consentConfirmed) {
       metadata.consentScope = null;
     }
@@ -261,10 +290,15 @@ function parseEntryPatchBody(body: Record<string, unknown>, entry: EntryPatchBas
   return updateData;
 }
 
+function requireActiveEntry(entry: { deletedAt: Date | null }) {
+  if (entry.deletedAt) {
+    throw new ApiError(410, ErrorCodes.ENTRY_DELETED, 'Entry has been deleted');
+  }
+}
+
 export function registerEntryRoutes(
   app: FastifyInstance,
   prisma: PrismaClient,
-  s3: S3Client,
   requireAuth: (request: FastifyRequest) => Promise<void>
 ) {
   app.post('/courses/:courseId/entries', { preHandler: requireAuth }, async (request, reply) => {
@@ -274,11 +308,27 @@ export function registerEntryRoutes(
     if (role !== 'student') {
       throw new ApiError(403, ErrorCodes.STUDENT_ONLY, 'Only students can create entries');
     }
-    const body = request.body as Record<string, unknown>;
+    const body = requireRecord(request.body, 'body');
     const entryData = parseEntryCreateBody(body);
-    const created = await withPrismaErrors(
-      () =>
-        prisma.practiceEntry.create({
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        await lockEntryIdentity(tx, entryData.id);
+        const tombstone = await tx.deletedEntryTombstone.findUnique({
+          where: { id: entryData.id },
+        });
+        if (tombstone) {
+          throw new ApiError(410, ErrorCodes.ENTRY_DELETED, 'Entry ID has been deleted');
+        }
+
+        const existing = await tx.practiceEntry.findUnique({ where: { id: entryData.id } });
+        if (existing) {
+          if (isExactEntryCreateRetry(existing, entryData, courseId, user.id)) {
+            return { entry: existing, created: false };
+          }
+          throw new ApiError(409, ErrorCodes.ID_CONFLICT, 'An entry with this ID already exists');
+        }
+
+        const created = await tx.practiceEntry.create({
           data: {
             id: entryData.id,
             courseId,
@@ -294,10 +344,16 @@ export function registerEntryRoutes(
             consentScope: entryData.consentScope,
             captureProfile: entryData.captureProfile,
           },
-        }),
-      { conflictMessage: 'An entry with this ID already exists' }
-    );
-    return reply.status(201).send(created);
+        });
+        return { entry: created, created: true };
+      });
+      return reply.status(result.created ? 201 : 200).send(result.entry);
+    } catch (error) {
+      if (isPrismaError(error, 'P2002')) {
+        throw new ApiError(409, ErrorCodes.ID_CONFLICT, 'An entry with this ID already exists');
+      }
+      throw error;
+    }
   });
 
   app.get('/entries/:entryId', { preHandler: requireAuth }, async (request) => {
@@ -321,25 +377,27 @@ export function registerEntryRoutes(
     const entry = await requireEntryAccess(prisma, user, entryId);
     await requireStudentOwner(prisma, user.id, entry, 'edit entries', entry.roleInCourse);
 
-    const body = request.body as Record<string, unknown>;
+    const body = requireRecord(request.body, 'body');
 
-    if (entry.status !== 'draft' && hasRestrictedEntryPatchField(body)) {
-      throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Only draft entries can be edited');
-    }
-
-    const updateData = parseEntryPatchBody(body, entry);
-    const updated = await withPrismaErrors(
-      () =>
-        prisma.practiceEntry.update({
-          where: { id: entryId },
-          data: updateData,
-        }),
-      {
-        notFoundCode: ErrorCodes.ENTRY_NOT_FOUND,
-        notFoundMessage: 'Entry not found',
+    return withLockedEntry(prisma, entryId, async (tx, lockedEntry) => {
+      requireActiveEntry(lockedEntry);
+      if (lockedEntry.status !== 'draft' && hasRestrictedEntryPatchField(body)) {
+        throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Only draft entries can be edited');
       }
-    );
-    return updated;
+
+      const updateData = parseEntryPatchBody(body, lockedEntry);
+      return withPrismaErrors(
+        () =>
+          tx.practiceEntry.update({
+            where: { id: entryId },
+            data: updateData,
+          }),
+        {
+          notFoundCode: ErrorCodes.ENTRY_NOT_FOUND,
+          notFoundMessage: 'Entry not found',
+        }
+      );
+    });
   });
 
   app.put('/entries/:entryId/capture-markers', { preHandler: requireAuth }, async (request) => {
@@ -348,18 +406,7 @@ export function registerEntryRoutes(
     const entry = await requireEntryAccess(prisma, user, entryId);
     await requireStudentOwner(prisma, user.id, entry, 'sync capture markers', entry.roleInCourse);
 
-    if (entry.kind !== 'teaching_lesson') {
-      throw new ApiError(
-        400,
-        ErrorCodes.VALIDATION_ERROR,
-        'Capture markers are only valid for teaching lesson entries'
-      );
-    }
-    if (entry.status === 'reviewed') {
-      throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Reviewed entries cannot be edited');
-    }
-
-    const body = request.body as Record<string, unknown>;
+    const body = requireRecord(request.body, 'body');
     const rawMarkers = requireField(body?.markers, 'markers');
     if (!Array.isArray(rawMarkers)) {
       throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid array: markers');
@@ -411,48 +458,62 @@ export function registerEntryRoutes(
     }
 
     const artifactIds = Array.from(new Set(markers.map((marker) => marker.artifactId)));
-    const artifacts =
-      artifactIds.length === 0
-        ? []
-        : await prisma.artifact.findMany({
-            where: { id: { in: artifactIds }, entryId: entry.id },
-            select: { id: true, type: true },
-          });
-    const videoArtifactIds = new Set(
-      artifacts.filter((artifact) => artifact.type === 'video').map((artifact) => artifact.id)
-    );
-    if (artifactIds.some((artifactId) => !videoArtifactIds.has(artifactId))) {
-      throw new ApiError(
-        404,
-        ErrorCodes.ARTIFACT_NOT_FOUND,
-        'Capture marker artifact not found for this entry'
-      );
-    }
+    return withLockedEntry(prisma, entryId, async (tx, lockedEntry) => {
+      requireActiveEntry(lockedEntry);
+      if (lockedEntry.kind !== 'teaching_lesson') {
+        throw new ApiError(
+          400,
+          ErrorCodes.VALIDATION_ERROR,
+          'Capture markers are only valid for teaching lesson entries'
+        );
+      }
+      if (lockedEntry.status === 'reviewed') {
+        throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Reviewed entries cannot be edited');
+      }
 
-    const existingMarkers =
-      markerIds.length === 0
-        ? []
-        : await prisma.captureMarker.findMany({
-            where: { id: { in: markerIds } },
-            select: { id: true, entryId: true, studentId: true },
-          });
-    if (
-      existingMarkers.some((marker) => marker.entryId !== entry.id || marker.studentId !== user.id)
-    ) {
-      throw new ApiError(
-        409,
-        ErrorCodes.ID_CONFLICT,
-        'A capture marker with this ID belongs to another entry'
+      const artifacts =
+        artifactIds.length === 0
+          ? []
+          : await tx.artifact.findMany({
+              where: { id: { in: artifactIds }, entryId: lockedEntry.id },
+              select: { id: true, type: true },
+            });
+      const videoArtifactIds = new Set(
+        artifacts.filter((artifact) => artifact.type === 'video').map((artifact) => artifact.id)
       );
-    }
+      if (artifactIds.some((artifactId) => !videoArtifactIds.has(artifactId))) {
+        throw new ApiError(
+          404,
+          ErrorCodes.ARTIFACT_NOT_FOUND,
+          'Capture marker artifact not found for this entry'
+        );
+      }
 
-    return prisma.$transaction(async (tx) => {
+      const existingMarkers =
+        markerIds.length === 0
+          ? []
+          : await tx.captureMarker.findMany({
+              where: { id: { in: markerIds } },
+              select: { id: true, entryId: true, studentId: true },
+            });
+      if (
+        existingMarkers.some(
+          (marker) => marker.entryId !== lockedEntry.id || marker.studentId !== user.id
+        )
+      ) {
+        throw new ApiError(
+          409,
+          ErrorCodes.ID_CONFLICT,
+          'A capture marker with this ID belongs to another entry'
+        );
+      }
+
       for (const marker of markers) {
         await tx.captureMarker.upsert({
           where: { id: marker.id },
           create: {
             id: marker.id,
-            entryId: entry.id,
+            entryId: lockedEntry.id,
             artifactId: marker.artifactId,
             studentId: user.id,
             timeSeconds: marker.timeSeconds,
@@ -469,13 +530,13 @@ export function registerEntryRoutes(
       }
       await tx.captureMarker.deleteMany({
         where: {
-          entryId: entry.id,
+          entryId: lockedEntry.id,
           studentId: user.id,
           ...(markerIds.length > 0 ? { id: { notIn: markerIds } } : {}),
         },
       });
       return tx.captureMarker.findMany({
-        where: { entryId: entry.id },
+        where: { entryId: lockedEntry.id },
         orderBy: [{ timeSeconds: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       });
     });
@@ -487,8 +548,7 @@ export function registerEntryRoutes(
     const entry = await requireEntryAccess(prisma, user, entryId);
     await requireStudentOwner(prisma, user.id, entry, 'delete', entry.roleInCourse);
 
-    const storageKeys = await cascadeDeleteEntry(prisma, entryId);
-    await cleanupS3Objects(s3, storageKeys, request.log);
+    await cascadeDeleteEntry(prisma, entryId);
 
     reply.status(204).send();
   });
@@ -498,49 +558,44 @@ export function registerEntryRoutes(
     const entryId = (request.params as { entryId: string }).entryId;
     const entry = await requireEntryAccess(prisma, user, entryId);
     await requireStudentOwner(prisma, user.id, entry, 'submit', entry.roleInCourse);
-    if (entry.status !== 'draft') {
-      throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Only draft entries can be submitted');
-    }
-    if (
-      entry.kind === 'teaching_lesson' &&
-      (entry.consentConfirmedAt === null || entry.consentScope === null)
-    ) {
-      throw new ApiError(
-        409,
-        ErrorCodes.CONSENT_REQUIRED,
-        'Teaching lesson entries require confirmed consent before submission'
-      );
-    }
-    const artifacts = await prisma.artifact.findMany({ where: { entryId } });
-    if (artifacts.length === 0 || artifacts.some((a) => a.uploadState !== 'uploaded')) {
-      throw new ApiError(
-        409,
-        ErrorCodes.ARTIFACTS_NOT_UPLOADED,
-        'Upload artifacts before submitting'
-      );
-    }
-    if (
-      entry.kind === 'teaching_lesson' &&
-      !artifacts.some((artifact) => artifact.type === 'video')
-    ) {
-      throw new ApiError(
-        409,
-        ErrorCodes.ARTIFACTS_NOT_UPLOADED,
-        'Teaching lesson entries require an uploaded video artifact'
-      );
-    }
-    const updated = await withPrismaErrors(
-      () =>
-        prisma.practiceEntry.update({
-          where: { id: entryId },
-          data: { status: 'submitted' },
-        }),
-      {
-        notFoundCode: ErrorCodes.ENTRY_NOT_FOUND,
-        notFoundMessage: 'Entry not found',
+    return withLockedEntry(prisma, entryId, async (tx, lockedEntry) => {
+      requireActiveEntry(lockedEntry);
+      if (lockedEntry.status !== 'draft') {
+        throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Only draft entries can be submitted');
       }
-    );
-    return updated;
+      if (
+        lockedEntry.kind === 'teaching_lesson' &&
+        (lockedEntry.consentConfirmedAt === null || lockedEntry.consentScope === null)
+      ) {
+        throw new ApiError(
+          409,
+          ErrorCodes.CONSENT_REQUIRED,
+          'Teaching lesson entries require confirmed consent before submission'
+        );
+      }
+      const artifacts = await tx.artifact.findMany({ where: { entryId } });
+      if (artifacts.length === 0 || artifacts.some((a) => a.uploadState !== 'uploaded')) {
+        throw new ApiError(
+          409,
+          ErrorCodes.ARTIFACTS_NOT_UPLOADED,
+          'Upload artifacts before submitting'
+        );
+      }
+      if (
+        lockedEntry.kind === 'teaching_lesson' &&
+        !artifacts.some((artifact) => artifact.type === 'video')
+      ) {
+        throw new ApiError(
+          409,
+          ErrorCodes.ARTIFACTS_NOT_UPLOADED,
+          'Teaching lesson entries require an uploaded video artifact'
+        );
+      }
+      return tx.practiceEntry.update({
+        where: { id: entryId },
+        data: { status: 'submitted' },
+      });
+    });
   });
 
   app.get('/entries/:entryId/feedback', { preHandler: requireAuth }, async (request) => {

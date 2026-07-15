@@ -5,11 +5,17 @@
 
 ## Testing
 
-- [ ] Server build/typecheck: `cd server && npm run build`
-- [ ] Server tests: `cd server && npm test`
-- [ ] Server lint/format where relevant: `cd server && npm run lint && npm run format:check`
-- [ ] iOS simulator XCTest where relevant: `./scripts/verify-ios.sh`
-- [ ] Docs/GitHub-only change: no runtime verification needed
+- [ ] Full local CI: `./scripts/ci-local.sh --with-docker`
+- [ ] If full local CI cannot run, I recorded the exact skipped gate and reason below.
+- [ ] Docs and release notes are accurate for the source-only public alpha (`0.1.0-alpha.1`).
+- [ ] Documentation links and commands touched by this PR were checked locally.
+- [ ] iOS screenshots, when changed, are current, reviewed, redacted, and stored only in `docs/assets/screenshots/approved/`.
+- [ ] Publication-boundary guard: `./scripts/check-no-build-artifacts.sh`
+
+## Verification Notes
+
+- Commands run and results:
+- Skipped checks and reason:
 
 ## Risk
 
@@ -21,6 +27,7 @@
 
 - [ ] No secrets/PII in logs or commits
 - [ ] Docs updated (README/RUNBOOK/SECURITY as needed)
+- [ ] `CHANGELOG.md` and applicable release notes are updated
 - [ ] Superseded public docs are updated, removed, or intentionally retained with current context
 - [ ] Local-only status, ledger, and generated analysis files are not tracked
-- [ ] No generated, private, internal, editor, or analyzer-state files are included
+- [ ] No generated, private, internal, editor, analyzer-state, binary, or unapproved screenshot files are included

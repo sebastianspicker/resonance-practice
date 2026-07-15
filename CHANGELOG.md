@@ -2,7 +2,12 @@
 
 All notable public changes to this project are documented here.
 
-## [Unreleased]
+## [0.1.0-alpha.1] - 2026-07-15
+
+Source-only public alpha for developers and contributors. No signed app,
+TestFlight build, hosted service, or production deployment is included. See the
+[release notes](docs/release-notes/v0.1.0-alpha.1.md) for immutable verification
+evidence, limitations, setup, migration expectations, and screenshots.
 
 ### Security and Quality
 
@@ -10,6 +15,8 @@ All notable public changes to this project are documented here.
 - Removed generated Codacy/Serena state, superseded planning packets, and obsolete UI captures from the public tree.
 - Added account-owner locking and explicit destructive local-profile replacement.
 - Added authorized short-lived artifact downloads for owners and same-course teachers.
+- Added bounded dependency operations, durable storage-deletion jobs, refresh-token replay containment, and destructive-database safety guards.
+- Preserved transaction-scoped entry mutation locking while returning a Prisma-deserializable advisory-lock scalar, with database regression coverage for the former `P2010` path.
 
 ### Repository and Verification
 
@@ -19,14 +26,15 @@ All notable public changes to this project are documented here.
 - Expanded workspace cleanup and publication-boundary checks for local analyzer, editor, index, build, and report artifacts.
 - Replaced the retired glass interface foundation with semantic system-adaptive SwiftUI surfaces.
 - Added entry hydration/reconciliation, queue task deduplication, dependency-aware submission, and teacher media playback.
-- Current iOS XCTest result: 125 tests passed locally on 2026-07-11.
+- Added a reviewed 12-screen alpha walkthrough from a clean source commit, with sanitized checksums and explicit visual-evidence boundaries.
+- Replaced candidate, scientific-audit, and remediation-ledger framing with stable public alpha documentation.
 
 ### Migration History
 
 - SQLFluff formatting rewrote migration files in `20260203120000_init`, `20260321120000_add_entry_course_deleted_index`, `20260324120000_add_feedback_entry_id`, `20260429120000_add_teaching_lesson_entries`, and `20260429130000_add_capture_guidance` without changing the resulting PostgreSQL schema.
 - Existing databases that recorded the previous migration checksums must be rebuilt and replayed from the tracked migration chain; `_prisma_migrations` must not be edited manually.
 
-## [0.1.0-rc.1] – 2026-04-20
+## [0.1.0-rc.1] - 2026-04-20 (historical internal snapshot; not published)
 
 ### Security Hardening
 

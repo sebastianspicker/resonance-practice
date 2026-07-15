@@ -78,9 +78,14 @@ jobs:
           cache: "npm"
           cache-dependency-path: server/package-lock.json
 
-      - name: Validate demo fixture (non-blocking)
-        continue-on-error: true
+      - name: Validate demo fixture
         run: node ./scripts/demo/validate-fixture.mjs
+
+      - name: Validate public documentation and screenshots
+        run: node ./scripts/validate-public-docs.mjs
+
+      - name: Validate destructive test database target
+        run: node ./scripts/assert-test-database-url.mjs
 
       - name: Install dependencies
         working-directory: server
@@ -139,9 +144,34 @@ jobs:
           docker logs resonance-minio
           exit 1
 
-      - name: Runtime health probe
+      - name: Runtime readiness probe
         working-directory: server
-        run: npm run start >/tmp/resonance-server.log 2>&1 & SERVER_PID=$!; trap 'kill "$SERVER_PID"' EXIT; for _ in {1..30}; do if curl -fsS http://127.0.0.1:4000/health >/dev/null; then exit 0; fi; sleep 1; done; cat /tmp/resonance-server.log; exit 1
+        run: |
+          node dist/index.js >/tmp/resonance-server.log 2>&1 &
+          server_pid=$!
+          # shellcheck disable=SC2317 # Invoked indirectly by the EXIT trap.
+          cleanup() {
+            kill "$server_pid" >/dev/null 2>&1 || true
+            # The server has three independent five-second shutdown budgets.
+            for _ in {1..200}; do
+              if ! kill -0 "$server_pid" >/dev/null 2>&1; then
+                wait "$server_pid" 2>/dev/null || true
+                return
+              fi
+              sleep 0.1
+            done
+            kill -KILL "$server_pid" >/dev/null 2>&1 || true
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          for _ in {1..30}; do
+            if curl -fsS http://127.0.0.1:4000/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/resonance-server.log
+          exit 1
 
       - name: Test with coverage
         working-directory: server

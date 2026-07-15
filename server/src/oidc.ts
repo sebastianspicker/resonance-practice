@@ -5,60 +5,88 @@
  * It uses OpenID Connect discovery (RFC 8414) to load the IdP metadata from
  * the configured `OIDC_DISCOVERY_URL`.
  *
- * Prod auth codes (issued by /auth/oidc/callback, consumed by /auth/session)
- * are short-lived single-use tokens stored in-memory — mirroring the dev auth
- * code mechanism but kept separate for clarity.
+ * Production OIDC state and app auth codes are stored as short-lived hashes in
+ * PostgreSQL so login remains correct across multiple API replicas.
  */
+import crypto from 'node:crypto';
+import type { AuthFlowTokenKind, PrismaClient } from '@prisma/client';
 import { Issuer, type Client } from 'openid-client';
 import { nanoid } from 'nanoid';
 import { oidcConfig } from './config.js';
 
 // ── Prod auth code store ─────────────────────────────────────────────────────
 
-const prodAuthCodes = new Map<string, { userId: string; expiresAt: number }>();
-
 const PROD_CODE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-export function issueProdAuthCode(userId: string): string {
-  // Evict expired entries before issuing a new code.
-  const now = Date.now();
-  for (const [k, v] of prodAuthCodes) {
-    if (v.expiresAt < now) prodAuthCodes.delete(k);
-  }
+export async function issueProdAuthCode(prisma: PrismaClient, userId: string): Promise<string> {
   const code = `prod_${nanoid(24)}`;
-  prodAuthCodes.set(code, { userId, expiresAt: now + PROD_CODE_TTL_MS });
+  await createAuthFlowToken(prisma, 'prod_code', code, PROD_CODE_TTL_MS, userId);
   return code;
 }
 
-export function consumeProdAuthCode(code: string): string | null {
-  const record = prodAuthCodes.get(code);
-  if (!record) return null;
-  prodAuthCodes.delete(code);
-  if (record.expiresAt < Date.now()) return null;
-  return record.userId;
+export async function consumeProdAuthCode(
+  prisma: PrismaClient,
+  code: string
+): Promise<string | null> {
+  const record = await consumeAuthFlowToken(prisma, 'prod_code', code);
+  return record?.userId ?? null;
 }
 
 // ── OIDC state store (CSRF protection) ──────────────────────────────────────
 
-const oidcStates = new Map<string, { expiresAt: number }>();
-
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
-export function issueOidcState(): string {
-  const now = Date.now();
-  for (const [k, v] of oidcStates) {
-    if (v.expiresAt < now) oidcStates.delete(k);
-  }
+export async function issueOidcState(prisma: PrismaClient): Promise<string> {
   const state = nanoid(32);
-  oidcStates.set(state, { expiresAt: now + STATE_TTL_MS });
+  await createAuthFlowToken(prisma, 'oidc_state', state, STATE_TTL_MS);
   return state;
 }
 
-export function consumeOidcState(state: string): boolean {
-  const record = oidcStates.get(state);
-  if (!record) return false;
-  oidcStates.delete(state);
-  return record.expiresAt >= Date.now();
+export async function consumeOidcState(prisma: PrismaClient, state: string): Promise<boolean> {
+  return (await consumeAuthFlowToken(prisma, 'oidc_state', state)) !== null;
+}
+
+function hashAuthFlowToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+async function createAuthFlowToken(
+  prisma: PrismaClient,
+  kind: AuthFlowTokenKind,
+  token: string,
+  ttlMs: number,
+  userId?: string
+) {
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    await tx.authFlowToken.deleteMany({ where: { expiresAt: { lt: now } } });
+    await tx.authFlowToken.create({
+      data: {
+        tokenHash: hashAuthFlowToken(token),
+        kind,
+        ...(userId ? { userId } : {}),
+        expiresAt: new Date(now.getTime() + ttlMs),
+      },
+    });
+  });
+}
+
+async function consumeAuthFlowToken(prisma: PrismaClient, kind: AuthFlowTokenKind, token: string) {
+  const tokenHash = hashAuthFlowToken(token);
+  const now = new Date();
+  return prisma.$transaction(async (tx) => {
+    const record = await tx.authFlowToken.findUnique({ where: { tokenHash } });
+    if (!record || record.kind !== kind || record.expiresAt < now) {
+      if (record) {
+        await tx.authFlowToken.deleteMany({ where: { tokenHash } });
+      }
+      return null;
+    }
+    const consumed = await tx.authFlowToken.deleteMany({
+      where: { tokenHash, kind, expiresAt: { gte: now } },
+    });
+    return consumed.count === 1 ? record : null;
+  });
 }
 
 // ── OIDC client (lazy) ───────────────────────────────────────────────────────
