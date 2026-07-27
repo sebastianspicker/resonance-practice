@@ -1,6 +1,8 @@
 import Foundation
 import SwiftData
 
+// Defines the SwiftData-backed domain records and enums used by views, sync, and persistence.
+
 enum EntryStatus: String, Codable {
     case draft
     case submitted
@@ -89,7 +91,7 @@ enum ArtifactSyncPhase: String, Codable {
 }
 
 enum FeedbackStatus: String, Codable {
-    case ok
+    case accepted = "ok"
     case needsRevision = "needs_revision"
     case nextGoal = "next_goal"
 }
@@ -146,6 +148,8 @@ final class LocalPracticeEntry {
     var captureProfileRaw: String?
     var updatedAt: Date
     var remoteUpdatedAt: Date?
+    /// Optimistic-concurrency version returned by the command API.
+    var serverVersion: Int?
     var deletedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \LocalArtifact.entry) var artifacts: [LocalArtifact]
@@ -175,6 +179,7 @@ final class LocalPracticeEntry {
         self.captureProfileRaw = captureContext.captureProfile?.rawValue
         self.updatedAt = Date()
         self.remoteUpdatedAt = nil
+        self.serverVersion = nil
         self.deletedAt = nil
         self.artifacts = []
         self.feedback = []
@@ -299,7 +304,7 @@ final class LocalFeedback {
     }
 
     var status: FeedbackStatus {
-        get { FeedbackStatus(rawValue: statusRaw) ?? .ok }
+        get { FeedbackStatus(rawValue: statusRaw) ?? .accepted }
         set { statusRaw = newValue.rawValue }
     }
 }
@@ -363,8 +368,11 @@ final class SyncQueueItem {
     var lastError: String?
     var createdAt: Date
     var nextAttemptAt: Date?
+    /// The authenticated account that created this work item. Existing rows
+    /// migrate to the empty value and are deliberately never eligible to sync.
+    var ownerId: String
 
-    init(id: String, type: String, payloadJSON: String) {
+    init(id: String, type: String, payloadJSON: String, ownerId: String = "") {
         self.id = id
         self.type = type
         self.payloadJSON = payloadJSON
@@ -372,6 +380,16 @@ final class SyncQueueItem {
         self.retryCount = 0
         self.createdAt = Date()
         self.nextAttemptAt = nil
+        self.ownerId = ownerId
+    }
+
+    var taskType: SyncTaskType? {
+        SyncTaskType(rawValue: type)
+    }
+
+    var queueStatus: SyncStatus {
+        get { SyncStatus(rawValue: status) ?? .pending }
+        set { status = newValue.rawValue }
     }
 }
 

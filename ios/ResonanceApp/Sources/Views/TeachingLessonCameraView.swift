@@ -1,20 +1,8 @@
-import AVFoundation
 import SwiftUI
 
-struct CaptureMarkerDraft: Identifiable {
-    let id: String
-    let timeSeconds: Int
-    let kind: CaptureMarkerKind
-    let note: String?
-}
+// Runs consent-gated teaching-lesson capture and returns its video, profile, markers, and duration.
 
-struct TeachingLessonCaptureResult {
-    let videoURL: URL
-    let captureProfile: CaptureProfile
-    let markers: [CaptureMarkerDraft]
-    let durationSeconds: Int
-}
-
+/// Requires an explicit consent-and-placement check before enabling lesson recording.
 struct TeachingLessonCameraView: View {
     let entryId: String
     let onComplete: (TeachingLessonCaptureResult) -> Void
@@ -41,7 +29,7 @@ struct TeachingLessonCameraView: View {
         .momentMusicalModel,
         .momentStudentResponse,
         .momentTransition,
-        .privacyNote,
+        .privacyNote
     ]
 
     init(
@@ -82,7 +70,7 @@ struct TeachingLessonCameraView: View {
                     Spacer()
                     bottomControls
                 }
-                .padding()
+                .padding(AppTheme.Spacing.standard)
             }
             .navigationTitle("Film Lesson")
             .navigationBarTitleDisplayMode(.inline)
@@ -109,48 +97,111 @@ struct TeachingLessonCameraView: View {
         }
     }
 
+    // MARK: - Top chrome (Atelier)
+
     private var topControls: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Picker("Camera profile", selection: $selectedProfile) {
-                ForEach(CaptureProfile.allCases) { profile in
-                    Text(profile.label).tag(profile)
-                }
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.small) {
+            HStack(spacing: AppTheme.Spacing.small) {
+                Spacer(minLength: 0)
+                consentChip
+                Spacer(minLength: 0)
+                profileMenuChip
+                recordingTimerChip
             }
-            .pickerStyle(.menu)
-            .tint(.white)
 
-            Toggle("Consent, landscape placement, and no-consent zone checked", isOn: $consentAndPlacementChecked)
-                .toggleStyle(.switch)
-                .tint(AppTheme.accentVibrant)
-
-            HStack(spacing: 10) {
+            HStack(spacing: AppTheme.Spacing.small) {
                 overlayToggle("Safe", isOn: $showSafeFrame)
                 overlayToggle("Path", isOn: $showMovementCorridor)
                 overlayToggle("Zones", isOn: $showSubjectZones)
                 overlayToggle("Privacy", isOn: $showNoConsentZone)
                 overlayToggle("Contours", isOn: $showStaticContours)
+                Spacer(minLength: 0)
+                AudioLevelMeter(level: camera.audioLevel)
+                    .frame(width: 72, height: 8)
+                    .accessibilityLabel("Audio level")
             }
         }
         .font(.caption)
-        .padding(12)
-        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+        .padding(AppTheme.Spacing.medium)
+        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: AppTheme.Radius.control, style: .continuous))
         .foregroundStyle(.white)
     }
 
-    private var bottomControls: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Label(formatTime(camera.elapsedSeconds), systemImage: camera.isRecording ? "record.circle" : "video")
-                    .font(.headline.monospacedDigit())
-                    .foregroundStyle(camera.isRecording ? .red : .white)
-                Spacer()
-                AudioLevelMeter(level: camera.audioLevel)
-                    .frame(width: 96, height: 10)
-                    .accessibilityLabel("Audio level")
+    /// Filled accent chip when consent is checked; outline chip toggles consent when unchecked.
+    private var consentChip: some View {
+        Button {
+            consentAndPlacementChecked.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(consentAndPlacementChecked ? Color.white : AppTheme.accent)
+                    .frame(width: 6, height: 6)
+                Text("Private course review")
+                    .font(.caption.weight(.semibold))
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background {
+                if consentAndPlacementChecked {
+                    Capsule(style: .continuous)
+                        .fill(AppTheme.accent.opacity(0.92))
+                } else {
+                    Capsule(style: .continuous)
+                        .strokeBorder(AppTheme.accent.opacity(0.75), lineWidth: 1)
+                }
+            }
+            .foregroundStyle(consentAndPlacementChecked ? Color.white : AppTheme.accent)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Private course review consent")
+        .accessibilityValue(consentAndPlacementChecked ? "Checked" : "Not checked")
+        .accessibilityHint("Confirms consent, landscape placement, and no-consent zone before recording")
+    }
 
+    private var profileMenuChip: some View {
+        Menu {
+            Picker("Camera profile", selection: $selectedProfile) {
+                ForEach(CaptureProfile.allCases) { profile in
+                    Text(profile.label).tag(profile)
+                }
+            }
+        } label: {
+            Text("Profile · \(selectedProfile.label)")
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(.white.opacity(0.14), in: Capsule(style: .continuous))
+                .foregroundStyle(.white)
+        }
+        .accessibilityLabel("Camera profile")
+        .accessibilityValue(selectedProfile.label)
+    }
+
+    private var recordingTimerChip: some View {
+        HStack(spacing: 6) {
+            if camera.isRecording {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 7, height: 7)
+            }
+            Text(formatTime(camera.elapsedSeconds))
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(camera.isRecording ? Color.red : Color.white.opacity(0.85))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.black.opacity(0.35), in: Capsule(style: .continuous))
+        .accessibilityLabel(camera.isRecording ? "Recording time" : "Elapsed time")
+        .accessibilityValue(formatTime(camera.elapsedSeconds))
+    }
+
+    // MARK: - Bottom chrome
+
+    private var bottomControls: some View {
+        VStack(spacing: AppTheme.Spacing.medium) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: AppTheme.Spacing.small) {
                     ForEach(quickMarkerKinds) { kind in
                         Button(kind.label) {
                             addMarker(kind)
@@ -163,7 +214,7 @@ struct TeachingLessonCameraView: View {
                 }
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: AppTheme.Spacing.medium) {
                 Button {
                     if camera.isRecording {
                         camera.stopRecording()
@@ -178,7 +229,7 @@ struct TeachingLessonCameraView: View {
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(camera.isRecording ? .red : AppTheme.accentVibrant)
+                .tint(camera.isRecording ? .red : AppTheme.accent)
                 .disabled(!camera.isSessionReady || !consentAndPlacementChecked)
 
                 Button("Use Video") {
@@ -198,12 +249,12 @@ struct TeachingLessonCameraView: View {
                 .disabled(camera.lastRecordingURL == nil || camera.isRecording)
             }
         }
-        .padding(12)
-        .background(.black.opacity(0.62), in: RoundedRectangle(cornerRadius: 8))
+        .padding(AppTheme.Spacing.medium)
+        .background(.black.opacity(0.62), in: RoundedRectangle(cornerRadius: AppTheme.Radius.control, style: .continuous))
     }
 
     private var cameraUnavailableView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: AppTheme.Spacing.medium) {
             Image(systemName: "video.slash")
                 .font(.largeTitle)
             Text(camera.errorMessage ?? "Camera unavailable")
@@ -215,7 +266,7 @@ struct TeachingLessonCameraView: View {
         .multilineTextAlignment(.center)
         .foregroundStyle(.white)
         .padding()
-        .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 8))
+        .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: AppTheme.Radius.control, style: .continuous))
         .padding()
     }
 
@@ -245,394 +296,4 @@ struct TeachingLessonCameraView: View {
     private func formatTime(_ seconds: Int) -> String {
         String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
-}
-
-private struct CameraPreview: UIViewRepresentable {
-    let session: AVCaptureSession
-
-    func makeUIView(context: Context) -> PreviewView {
-        let view = PreviewView()
-        view.videoPreviewLayer.session = session
-        view.videoPreviewLayer.videoGravity = .resizeAspectFill
-        return view
-    }
-
-    func updateUIView(_ uiView: PreviewView, context: Context) {
-        uiView.videoPreviewLayer.session = session
-    }
-}
-
-private final class PreviewView: UIView {
-    override class var layerClass: AnyClass {
-        AVCaptureVideoPreviewLayer.self
-    }
-
-    var videoPreviewLayer: AVCaptureVideoPreviewLayer {
-        guard let previewLayer = layer as? AVCaptureVideoPreviewLayer else {
-            preconditionFailure("PreviewView must use AVCaptureVideoPreviewLayer")
-        }
-        return previewLayer
-    }
-}
-
-private struct AudioLevelMeter: View {
-    let level: Double
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule().fill(.white.opacity(0.2))
-                Capsule()
-                    .fill(level > 0.85 ? Color.red : AppTheme.accentVibrant)
-                    .frame(width: max(4, proxy.size.width * min(max(level, 0), 1)))
-            }
-        }
-    }
-}
-
-private struct CaptureOverlayView: View {
-    let profile: CaptureProfile
-    let showSafeFrame: Bool
-    let showMovementCorridor: Bool
-    let showSubjectZones: Bool
-    let showNoConsentZone: Bool
-    let showStaticContours: Bool
-
-    var body: some View {
-        GeometryReader { proxy in
-            let size = proxy.size
-            ZStack {
-                horizon(in: size)
-
-                if showSafeFrame {
-                    safeFrame(in: size)
-                }
-                if showMovementCorridor {
-                    movementCorridor(in: size)
-                }
-                if showSubjectZones {
-                    subjectZones(in: size)
-                }
-                if showNoConsentZone {
-                    noConsentZone(in: size)
-                }
-                if showStaticContours {
-                    staticContours(in: size)
-                }
-            }
-        }
-    }
-
-    private func horizon(in size: CGSize) -> some View {
-        Path { path in
-            path.move(to: CGPoint(x: 0, y: size.height * 0.5))
-            path.addLine(to: CGPoint(x: size.width, y: size.height * 0.5))
-        }
-        .stroke(.white.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [8, 8]))
-    }
-
-    private func safeFrame(in size: CGSize) -> some View {
-        RoundedRectangle(cornerRadius: 6)
-            .stroke(.white.opacity(0.55), style: StrokeStyle(lineWidth: 1.5, dash: [10, 7]))
-            .frame(width: size.width * 0.86, height: size.height * 0.72)
-    }
-
-    private func movementCorridor(in size: CGSize) -> some View {
-        RoundedRectangle(cornerRadius: 4)
-            .stroke(AppTheme.accentVibrant.opacity(0.75), lineWidth: 2)
-            .background(AppTheme.accentVibrant.opacity(0.08))
-            .frame(width: size.width * 0.22, height: size.height * 0.62)
-            .position(x: size.width * 0.28, y: size.height * 0.56)
-    }
-
-    private func subjectZones(in size: CGSize) -> some View {
-        ZStack {
-            switch profile {
-            case .roomOverview:
-                zone(rect: CGRect(x: size.width * 0.16, y: size.height * 0.22, width: size.width * 0.68, height: size.height * 0.48), color: .cyan)
-            case .teacherLearner:
-                zone(rect: CGRect(x: size.width * 0.18, y: size.height * 0.26, width: size.width * 0.22, height: size.height * 0.5), color: .cyan)
-                zone(rect: CGRect(x: size.width * 0.48, y: size.height * 0.28, width: size.width * 0.36, height: size.height * 0.42), color: .yellow)
-            case .instrumentCloseup:
-                zone(rect: CGRect(x: size.width * 0.28, y: size.height * 0.34, width: size.width * 0.44, height: size.height * 0.32), color: .orange)
-            case .ensembleGroup:
-                zone(rect: CGRect(x: size.width * 0.14, y: size.height * 0.36, width: size.width * 0.22, height: size.height * 0.32), color: .cyan)
-                zone(rect: CGRect(x: size.width * 0.39, y: size.height * 0.30, width: size.width * 0.22, height: size.height * 0.38), color: .yellow)
-                zone(rect: CGRect(x: size.width * 0.64, y: size.height * 0.36, width: size.width * 0.22, height: size.height * 0.32), color: .green)
-            case .groupWork:
-                zone(rect: CGRect(x: size.width * 0.12, y: size.height * 0.25, width: size.width * 0.32, height: size.height * 0.24), color: .cyan)
-                zone(rect: CGRect(x: size.width * 0.56, y: size.height * 0.25, width: size.width * 0.32, height: size.height * 0.24), color: .yellow)
-                zone(rect: CGRect(x: size.width * 0.12, y: size.height * 0.58, width: size.width * 0.32, height: size.height * 0.24), color: .green)
-                zone(rect: CGRect(x: size.width * 0.56, y: size.height * 0.58, width: size.width * 0.32, height: size.height * 0.24), color: .orange)
-            }
-        }
-    }
-
-    private func noConsentZone(in size: CGSize) -> some View {
-        ZStack {
-            Rectangle()
-                .fill(.red.opacity(0.12))
-            Rectangle()
-                .stroke(.red.opacity(0.85), style: StrokeStyle(lineWidth: 2, dash: [8, 5]))
-            Path { path in
-                path.move(to: .zero)
-                path.addLine(to: CGPoint(x: size.width * 0.24, y: size.height * 0.22))
-            }
-            .stroke(.red.opacity(0.8), lineWidth: 2)
-        }
-        .frame(width: size.width * 0.24, height: size.height * 0.22)
-        .position(x: size.width * 0.14, y: size.height * 0.16)
-    }
-
-    private func staticContours(in size: CGSize) -> some View {
-        ZStack {
-            personContour()
-                .frame(width: size.width * 0.12, height: size.height * 0.28)
-                .position(x: size.width * 0.28, y: size.height * 0.45)
-
-            instrumentContour()
-                .frame(width: size.width * 0.22, height: size.height * 0.16)
-                .position(x: size.width * 0.62, y: size.height * 0.55)
-        }
-        .foregroundStyle(.white.opacity(0.7))
-    }
-
-    private func zone(rect: CGRect, color: Color) -> some View {
-        RoundedRectangle(cornerRadius: 6)
-            .stroke(color.opacity(0.82), lineWidth: 2)
-            .background(color.opacity(0.07))
-            .frame(width: rect.width, height: rect.height)
-            .position(x: rect.midX, y: rect.midY)
-    }
-
-    private func personContour() -> some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let height = proxy.size.height
-            ZStack {
-                Circle()
-                    .stroke(lineWidth: 2)
-                    .frame(width: width * 0.32, height: width * 0.32)
-                    .position(x: width * 0.5, y: height * 0.15)
-                RoundedRectangle(cornerRadius: width * 0.18)
-                    .stroke(lineWidth: 2)
-                    .frame(width: width * 0.48, height: height * 0.5)
-                    .position(x: width * 0.5, y: height * 0.48)
-                Path { path in
-                    path.move(to: CGPoint(x: width * 0.5, y: height * 0.72))
-                    path.addLine(to: CGPoint(x: width * 0.25, y: height * 0.98))
-                    path.move(to: CGPoint(x: width * 0.5, y: height * 0.72))
-                    path.addLine(to: CGPoint(x: width * 0.75, y: height * 0.98))
-                }
-                .stroke(lineWidth: 2)
-            }
-        }
-    }
-
-    private func instrumentContour() -> some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let height = proxy.size.height
-            Path { path in
-                path.addRoundedRect(
-                    in: CGRect(x: width * 0.05, y: height * 0.32, width: width * 0.55, height: height * 0.36),
-                    cornerSize: CGSize(width: 16, height: 16)
-                )
-                path.move(to: CGPoint(x: width * 0.58, y: height * 0.5))
-                path.addLine(to: CGPoint(x: width * 0.96, y: height * 0.34))
-                path.move(to: CGPoint(x: width * 0.58, y: height * 0.5))
-                path.addLine(to: CGPoint(x: width * 0.96, y: height * 0.66))
-            }
-            .stroke(lineWidth: 2)
-        }
-    }
-}
-
-private final class LessonCameraController: NSObject, ObservableObject {
-    let session = AVCaptureSession()
-
-    @Published var isSessionReady = false
-    @Published var isRecording = false
-    @Published var elapsedSeconds = 0
-    @Published var audioLevel = 0.0
-    @Published var errorMessage: String?
-    @Published var lastRecordingURL: URL?
-    @Published var lastRecordingDurationSeconds = 0
-
-    private let sessionQueue = DispatchQueue(label: "resonance.lesson-camera.session")
-    private let audioQueue = DispatchQueue(label: "resonance.lesson-camera.audio")
-    private let movieOutput = AVCaptureMovieFileOutput()
-    private var audioOutput: AVCaptureAudioDataOutput?
-    private var startedAt: Date?
-    private var timer: Timer?
-
-    func prepare() async {
-        let hasVideo = await requestAccess(for: .video)
-        let hasAudio = await requestAccess(for: .audio)
-        guard hasVideo else {
-            await MainActor.run {
-                errorMessage = "Camera permission is required to film a teaching lesson."
-            }
-            return
-        }
-        configureSession(includeAudio: hasAudio)
-    }
-
-    func startRecording(to url: URL) {
-        guard isSessionReady, !movieOutput.isRecording else { return }
-        lastRecordingURL = nil
-        lastRecordingDurationSeconds = 0
-        elapsedSeconds = 0
-        startedAt = Date()
-        if let connection = movieOutput.connection(with: .video), connection.isVideoRotationAngleSupported(90) {
-            connection.videoRotationAngle = 90
-        }
-        movieOutput.startRecording(to: url, recordingDelegate: self)
-        isRecording = true
-        startTimer()
-    }
-
-    func stopRecording() {
-        if movieOutput.isRecording {
-            movieOutput.stopRecording()
-        }
-        stopTimer()
-        isRecording = false
-    }
-
-    func stopSession() {
-        stopTimer()
-        sessionQueue.async { [session] in
-            if session.isRunning {
-                session.stopRunning()
-            }
-        }
-    }
-
-    private func requestAccess(for mediaType: AVMediaType) async -> Bool {
-        switch AVCaptureDevice.authorizationStatus(for: mediaType) {
-        case .authorized:
-            return true
-        case .notDetermined:
-            return await AVCaptureDevice.requestAccess(for: mediaType)
-        case .denied, .restricted:
-            return false
-        @unknown default:
-            return false
-        }
-    }
-
-    private func configureSession(includeAudio: Bool) {
-        sessionQueue.async { [weak self] in
-            guard let self else { return }
-
-            self.session.beginConfiguration()
-            self.session.sessionPreset = .high
-
-            do {
-                guard
-                    let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
-                        ?? AVCaptureDevice.default(for: .video)
-                else {
-                    throw LessonCameraError.cameraUnavailable
-                }
-                let videoInput = try AVCaptureDeviceInput(device: videoDevice)
-                guard self.session.canAddInput(videoInput) else {
-                    throw LessonCameraError.cameraUnavailable
-                }
-                self.session.addInput(videoInput)
-
-                if includeAudio,
-                   let audioDevice = AVCaptureDevice.default(for: .audio),
-                   let audioInput = try? AVCaptureDeviceInput(device: audioDevice),
-                   self.session.canAddInput(audioInput) {
-                    self.session.addInput(audioInput)
-                }
-
-                guard self.session.canAddOutput(self.movieOutput) else {
-                    throw LessonCameraError.cameraUnavailable
-                }
-                self.session.addOutput(self.movieOutput)
-
-                if includeAudio {
-                    let audioOutput = AVCaptureAudioDataOutput()
-                    audioOutput.setSampleBufferDelegate(self, queue: self.audioQueue)
-                    if self.session.canAddOutput(audioOutput) {
-                        self.session.addOutput(audioOutput)
-                        self.audioOutput = audioOutput
-                    }
-                }
-
-                self.session.commitConfiguration()
-                self.session.startRunning()
-                DispatchQueue.main.async {
-                    self.isSessionReady = true
-                    self.errorMessage = nil
-                }
-            } catch {
-                self.session.commitConfiguration()
-                DispatchQueue.main.async {
-                    self.errorMessage = "Camera is unavailable on this device."
-                    self.isSessionReady = false
-                }
-            }
-        }
-    }
-
-    private func startTimer() {
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self, let startedAt = self.startedAt else { return }
-            self.elapsedSeconds = max(0, Int(Date().timeIntervalSince(startedAt).rounded(.down)))
-        }
-    }
-
-    private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
-        audioLevel = 0
-    }
-}
-
-extension LessonCameraController: AVCaptureFileOutputRecordingDelegate {
-    func fileOutput(
-        _ output: AVCaptureFileOutput,
-        didFinishRecordingTo outputFileURL: URL,
-        from connections: [AVCaptureConnection],
-        error: Error?
-    ) {
-        DispatchQueue.main.async {
-            self.stopTimer()
-            self.isRecording = false
-            if let error {
-                self.errorMessage = error.localizedDescription
-                FileStore.deleteFileIfExists(atPath: outputFileURL.path)
-                return
-            }
-            FileStore.setFileProtection(url: outputFileURL)
-            self.lastRecordingURL = outputFileURL
-            self.lastRecordingDurationSeconds = max(
-                self.elapsedSeconds,
-                Int(CMTimeGetSeconds(output.recordedDuration).rounded())
-            )
-        }
-    }
-}
-
-extension LessonCameraController: AVCaptureAudioDataOutputSampleBufferDelegate {
-    func captureOutput(
-        _ output: AVCaptureOutput,
-        didOutput sampleBuffer: CMSampleBuffer,
-        from connection: AVCaptureConnection
-    ) {
-        guard let channel = connection.audioChannels.first else { return }
-        let normalized = pow(10.0, Double(channel.averagePowerLevel) / 20.0)
-        DispatchQueue.main.async {
-            self.audioLevel = min(max(normalized * 4.0, 0.02), 1.0)
-        }
-    }
-}
-
-private enum LessonCameraError: Error {
-    case cameraUnavailable
 }

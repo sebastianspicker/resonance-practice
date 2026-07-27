@@ -1,15 +1,24 @@
 /**
  * OIDC auth tests.
  *
- * Coverage:
+ * Verifies:
  * - oidc.ts module functions (unit: codes, state, role/name extraction)
  * - /auth/oidc/login and /auth/oidc/callback return 501 when OIDC is not configured
- * - /auth/session and /auth/refresh remain functional after removing prod gates
+ * - /auth/session and /auth/refresh remain functional in development mode
  * - Prod auth code isolation from dev auth codes
  */
 import request from 'supertest';
 import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { app, setupApp, teardownApp, resetDb, seedBasic, prisma } from './testUtils.js';
+import {
+  app,
+  expectDevSessionIssued,
+  issueDevSession,
+  prisma,
+  resetDb,
+  seedBasic,
+  setupApp,
+  teardownApp,
+} from './support/testUtils.js';
 import {
   issueProdAuthCode,
   consumeProdAuthCode,
@@ -31,7 +40,7 @@ afterAll(async () => {
 
 // ── Unit: oidc module functions ──────────────────────────────────────────────
 
-describe('oidc module — prod auth codes', () => {
+describe('oidc module: prod auth codes', () => {
   beforeEach(async () => {
     await resetDb();
     await seedBasic();
@@ -57,7 +66,7 @@ describe('oidc module — prod auth codes', () => {
   });
 });
 
-describe('oidc module — OIDC state (CSRF)', () => {
+describe('oidc module: OIDC state (CSRF)', () => {
   beforeEach(async () => {
     await resetDb();
     await seedBasic();
@@ -81,7 +90,7 @@ describe('oidc module — OIDC state (CSRF)', () => {
   });
 });
 
-describe('oidc module — helpers', () => {
+describe('oidc module: helpers', () => {
   it('ssoUserId prefixes with sso:', () => {
     expect(ssoUserId('abc123')).toBe('sso:abc123');
   });
@@ -118,7 +127,7 @@ describe('oidc module — helpers', () => {
 
 // ── Integration: OIDC routes return 501 when not configured ──────────────────
 
-describe('OIDC routes — not configured (test env)', () => {
+describe('OIDC routes: not configured (test env)', () => {
   it('GET /auth/oidc/login returns 501 AUTH_NOT_CONFIGURED', async () => {
     const res = await request(app.server).get('/auth/oidc/login');
     expect(res.status).toBe(501);
@@ -134,26 +143,19 @@ describe('OIDC routes — not configured (test env)', () => {
 
 // ── Integration: session/refresh still work in dev mode ─────────────────────
 
-describe('auth session/refresh — dev mode (existing behaviour)', () => {
+describe('auth session/refresh: dev mode (existing behaviour)', () => {
   beforeEach(async () => {
     await resetDb();
     await seedBasic();
   });
 
   it('POST /auth/session still exchanges a dev code for tokens', async () => {
-    const issue = await request(app.server).post('/dev/issue').send({ role: 'student' });
-    expect(issue.status).toBe(200);
-
-    const session = await request(app.server)
-      .post('/auth/session')
-      .send({ code: issue.body.code, redirectUri: 'resonance://auth-callback' });
-    expect(session.status).toBe(201);
-    expect(typeof session.body.accessToken).toBe('string');
+    const { issue, session } = await issueDevSession('student');
+    expectDevSessionIssued(issue, session);
   });
 
   it('POST /auth/refresh works with a valid refresh token', async () => {
-    const issue = await request(app.server).post('/dev/issue').send({ role: 'student' });
-    const session = await request(app.server).post('/auth/session').send({ code: issue.body.code });
+    const { session } = await issueDevSession('student', { includeRedirectUri: false });
     const { refreshToken } = session.body as { refreshToken: string };
 
     const refreshed = await request(app.server).post('/auth/refresh').send({ refreshToken });
@@ -162,7 +164,7 @@ describe('auth session/refresh — dev mode (existing behaviour)', () => {
   });
 
   it('POST /auth/session rejects a prod code in dev mode', async () => {
-    // Prod codes are not consumed in dev mode — ensures mode isolation.
+    // Production codes are not consumed in development mode, which preserves mode isolation.
     const prodCode = await issueProdAuthCode(prisma, 'some-user');
     const res = await request(app.server).post('/auth/session').send({ code: prodCode });
     expect(res.status).toBe(401);

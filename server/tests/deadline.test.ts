@@ -1,3 +1,4 @@
+// Verifies bounded dependency and shutdown deadlines without waiting on real services.
 import { describe, expect, it } from 'vitest';
 import { settlesWithin, withDeadline } from '../src/services/deadline.js';
 

@@ -1,6 +1,7 @@
+# Provides loopback-only disposable PostgreSQL and object storage for development and CI.
 services:
   postgres:
-    image: postgres:16
+    image: postgres:18.4@sha256:c2d42a104eb6b37b286a2d9c5cf83f349de4d6516d513d00a2bd9610e2c2e5e4
     container_name: resonance-postgres
     environment:
       # Local development defaults only. Replace for any shared environment.
@@ -10,7 +11,9 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # PostgreSQL 18 uses a major-version-aware data layout below this path.
+      # The alpha upgrade intentionally requires a disposable database reset.
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U resonance"]
       interval: 5s
@@ -19,6 +22,9 @@ services:
       start_period: 10s
 
   minio:
+    # The public MinIO image is archived and retained only for loopback-bound
+    # development and ephemeral CI compatibility. Production must use a
+    # supported, patched S3-compatible service.
     image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: resonance-minio
     environment:

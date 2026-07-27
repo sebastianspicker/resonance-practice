@@ -1,6 +1,8 @@
 import SwiftUI
 import SwiftData
 
+// Presents account and local-data controls, including explicit destructive sign-out choices.
+
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var authManager: AuthManager
@@ -64,6 +66,8 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(AppTheme.workspaceBackground)
             .navigationTitle("Settings")
             .confirmationDialog(
                 "Sign out and delete local data?",
@@ -76,11 +80,14 @@ struct SettingsView: View {
                     }
                 }
                 Button("Sign out and delete local data", role: .destructive) {
-                    appState.signOutAndDeleteLocalData()
+                    Task { await appState.signOutAndDeleteLocalData() }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("\(syncManager.pendingQueueCount) pending and \(syncManager.failedQueueCount) failed changes will be deleted from this device.")
+                Text(
+                    "\(syncManager.pendingQueueCount) pending and \(syncManager.failedQueueCount) failed " +
+                        "changes will be deleted from this device."
+                )
             }
             .alert("Demo Data", isPresented: $showDemoStatusAlert) {
                 Button("OK") { demoStatusMessage = nil }

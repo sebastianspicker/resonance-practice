@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Reset only guarded local demo data through the Prisma demo-reset command.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

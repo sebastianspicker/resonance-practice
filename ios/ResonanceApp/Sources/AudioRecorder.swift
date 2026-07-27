@@ -2,6 +2,8 @@ import Foundation
 import AVFoundation
 import os
 
+// Wraps AVAudioRecorder for short local practice-entry recordings.
+
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "resonance", category: "AudioRecorder")
 
 @MainActor
@@ -19,6 +21,8 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     @Published var isRecording: Bool = false
     @Published var duration: TimeInterval = 0
+    /// Normalized 0…1 average input level for live waveform feedback (not stored as analysis).
+    @Published private(set) var averageLevel: Double = 0
 
     private var recorder: AVAudioRecorder?
     private(set) var lastURL: URL?
@@ -38,6 +42,7 @@ final class AudioRecorder: NSObject, ObservableObject {
 
         do {
             recorder = try AVAudioRecorder(url: url, settings: settings)
+            recorder?.isMeteringEnabled = true
         } catch {
             try? session.setActive(false, options: .notifyOthersOnDeactivation)
             throw error
@@ -46,6 +51,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         guard recorder?.record() == true else {
             recorder = nil
             lastURL = nil
+            averageLevel = 0
             try? session.setActive(false, options: .notifyOthersOnDeactivation)
             throw RecorderError.failedToStart
         }
@@ -59,6 +65,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         recorder?.stop()
         recorder = nil
         isRecording = false
+        averageLevel = 0
         stopTimer()
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -72,11 +79,17 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     private func startTimer() {
         duration = 0
+        averageLevel = 0
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.duration = self.recorder?.currentTime ?? 0
+                guard let self, let recorder = self.recorder else { return }
+                self.duration = recorder.currentTime
+                recorder.updateMeters()
+                let power = recorder.averagePower(forChannel: 0)
+                // Map typical speech/instrument range (~-50…0 dB) into 0…1.
+                let normalized = Double((power + 50) / 50)
+                self.averageLevel = min(max(normalized, 0.02), 1)
             }
         }
     }

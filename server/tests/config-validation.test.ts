@@ -1,3 +1,4 @@
+// Covers fail-closed parsing and validation of security-sensitive configuration values.
 import { describe, expect, it } from 'vitest';
 import { validateDevCallbackUrl } from '../src/config.js';
 
@@ -7,7 +8,7 @@ import { validateDevCallbackUrl } from '../src/config.js';
  *
  * The top-level config validations (JWT_SECRET length, PORT, TTL values)
  * run at import time and are tested via a separate subprocess-based test
- * (config-subprocess.test.ts) since ESM module caching prevents re-import
+ * (config-env.test.ts) since ESM module caching prevents re-import
  * with different env vars within the same process.
  */
 

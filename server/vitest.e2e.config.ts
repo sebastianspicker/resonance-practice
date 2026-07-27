@@ -1,3 +1,4 @@
+/** Dedicated Vitest configuration for service E2E tests with longer deadlines. */
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({

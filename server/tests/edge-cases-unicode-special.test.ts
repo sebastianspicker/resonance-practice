@@ -1,34 +1,17 @@
-import request from 'supertest';
-import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
+// Verifies Unicode content is preserved while control characters and malformed input are rejected.
 import {
   app,
-  setupApp,
-  teardownApp,
-  resetDb,
-  seedBasic,
-  getAccessToken,
+  describe,
+  expect,
+  it,
+  login,
   prisma,
-  s3Mock,
-} from './testUtils.js';
+  request,
+  installEdgeCaseSuite,
+} from './support/edgeCaseTestHarness.js';
 
-function login(role: 'student' | 'teacher') {
-  const userId = role === 'student' ? 'student-1' : 'teacher-1';
-  return getAccessToken(role, { userId });
-}
+installEdgeCaseSuite();
 describe('edge cases', () => {
-  beforeAll(async () => {
-    await setupApp();
-  });
-
-  afterAll(async () => {
-    await teardownApp();
-  });
-
-  beforeEach(async () => {
-    s3Mock.reset();
-    await resetDb();
-    await seedBasic();
-  });
   // ═══════════════════════════════════════════════════════════════════
   // Category 3: Unicode and Special Characters
   // ═══════════════════════════════════════════════════════════════════

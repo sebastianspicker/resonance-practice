@@ -1,3 +1,4 @@
+// Canonical PostgreSQL data model for the Resonance API and Prisma client.
 generator client {
   provider = "prisma-client-js"
 }
@@ -101,14 +102,16 @@ enum AuthFlowTokenKind {
 // ────────────────────────────────────────────────────────────────────
 
 model User {
-  id             String          @id
+  id             String                  @id
   displayName    String
   globalRole     GlobalRole
   memberships    Membership[]
-  entries        PracticeEntry[] @relation("StudentEntries")
+  entries        PracticeEntry[]         @relation("StudentEntries")
   feedback       Feedback[]
   captureMarkers CaptureMarker[]
   refreshTokens  RefreshToken[]
+  syncReceipts   SyncReceipt[]
+  uploadSessions ArtifactUploadSession[]
 }
 
 model Course {
@@ -147,6 +150,9 @@ model PracticeEntry {
   captureProfile     CaptureProfile?
   updatedAt          DateTime        @updatedAt
   deletedAt          DateTime?
+  /// Monotonic optimistic-concurrency token. Starts at one for client-created
+  /// rows and advances for every successful sync mutation.
+  version            Int             @default(1)
 
   course         Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
   student        User            @relation("StudentEntries", fields: [studentId], references: [id], onDelete: Cascade)
@@ -182,11 +188,83 @@ model Artifact {
   expectedSizeBytes Int?
   uploadExpiresAt   DateTime?
   confirmationToken String?
+  failedAt          DateTime?
 
-  entry          PracticeEntry   @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  entry          PracticeEntry           @relation(fields: [entryId], references: [id], onDelete: Cascade)
   captureMarkers CaptureMarker[]
+  uploadSessions ArtifactUploadSession[]
 
   @@index([entryId])
+  @@index([uploadState, failedAt])
+}
+
+/// A durable per-user receipt for a sync command. The request hash prevents a
+/// retried operation ID from being silently reused for different work.
+model SyncReceipt {
+  id          String   @id @default(cuid())
+  userId      String
+  operationId String
+  kind        String
+  payloadHash String
+  resultJson  Json
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, operationId])
+  @@index([createdAt])
+}
+
+/// The v1 artifact contract owns creation, upload credentials, and completion
+/// under one durable session instead of exposing an uncorrelated trio of
+/// artifact endpoints.
+model ArtifactUploadSession {
+  id                   String    @id @default(cuid())
+  userId               String
+  operationId          String
+  payloadHash          String
+  artifactId           String
+  storageKey           String
+  expiresAt            DateTime
+  credentialExpiresAt  DateTime?
+  completedAt          DateTime?
+  completionClaimToken String?
+  completionFinalKey   String?
+  completionClaimedAt  DateTime?
+  createdAt            DateTime  @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  artifact Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, operationId])
+  @@unique([userId, artifactId])
+  @@index([artifactId])
+  @@index([expiresAt])
+  @@index([completionClaimedAt])
+}
+
+model StorageDeletionJob {
+  id            String   @id @default(cuid())
+  entryId       String
+  storageKey    String   @unique
+  attemptCount  Int      @default(0)
+  lastError     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  nextAttemptAt DateTime @default(now())
+
+  @@index([nextAttemptAt, createdAt])
+  @@index([entryId])
+}
+
+model AuthFlowToken {
+  tokenHash String            @id
+  kind      AuthFlowTokenKind
+  userId    String?
+  expiresAt DateTime
+  createdAt DateTime          @default(now())
+
+  @@index([kind, expiresAt])
 }
 
 model StorageDeletionJob {

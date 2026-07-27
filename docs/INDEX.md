@@ -1,38 +1,64 @@
-# Documentation Index
+# Documentation
 
-This is the canonical entry point for public Resonance documentation. `v0.1.0-alpha.1` is a source-only public alpha; product-target documents may describe work required for a later production pilot.
+The repository documents the current source-only alpha and a separate set of
+post-alpha requirements. A requirement is not evidence that a device,
+accessibility, identity, storage, signing, or deployment check has passed.
 
-## Start here
+## Build, run, and operate
 
-- [Project README](../README.md) — purpose, implemented alpha scope, limitations, setup, and gallery.
-- [Alpha walkthrough](./ALPHA_WALKTHROUGH.md) — all 12 approved screenshots and their evidence boundaries.
-- [Alpha release notes](./release-notes/v0.1.0-alpha.1.md) — versioned candidate capabilities, limitations, verification, and migration notes; they become immutable when the pre-release is published.
-- [Local demo](./LOCAL_DEMO.md) — deterministic mock data and local capture workflow.
-- [Runbook](./RUNBOOK.md) — development, verification, migration, and unvalidated deployment requirements.
+- [Project overview](../README.md): purpose, capabilities, limitations,
+  requirements, setup, configuration, and common commands.
+- [Development and operations](./RUNBOOK.md): local services, backend and iOS
+  workflows, verification, probes, production application contract, and
+  troubleshooting.
+- [Local demo](./LOCAL_DEMO.md): deterministic fixture setup, in-app loading,
+  reset behavior, and local screenshot capture.
+- [API reference](./API.md): routes, request and response contracts, limits,
+  authorization, and error codes.
+- [Architecture](./ARCHITECTURE.md): runtime components, data flow,
+  synchronization, persistence, and test seams.
 
-## Product and design
+## Security and identity
 
-- [Product contract](../PRODUCT.md)
-- [Design contract](../DESIGN.md)
-- [Production-pilot requirements](./PRD.md)
-- [UI behavior and accessibility targets](./UI.md)
-- [Teaching-lesson evidence basis](./TEACHING_LESSON_EVIDENCE.md)
+- [Security policy](../SECURITY.md): supported versions and private
+  vulnerability reporting.
+- [Security model](./SECURITY.md): trust boundaries, implemented controls,
+  privacy behavior, threats, and deployment obligations.
+- [OIDC configuration](./SSO_BRIDGE.md): production authentication flow,
+  required settings, role mapping, and failure cases.
 
-## Engineering and operations
+## Product and interface
 
-- [Architecture](./ARCHITECTURE.md)
-- [API](./API.md)
-- [Security and GDPR](./SECURITY.md)
-- [SSO bridge](./SSO_BRIDGE.md)
-- [Screenshot evidence](./SCREENSHOTS.md)
-- [Alpha release checklist](./RELEASE_CHECKLIST.md)
+- [Product scope](../PRODUCT.md): users, purpose, product language, and
+  accessibility targets.
+- [Design system](../DESIGN.md): visual tokens, native components, layout, and
+  motion.
+- [Native UI behavior](./UI.md): routes, role-based actions, capture behavior,
+  and validation targets.
+- [Post-alpha pilot requirements](./PRD.md): remaining acceptance work and
+  non-goals.
+- [Teaching-lesson evidence basis](./TEACHING_LESSON_EVIDENCE.md): sources and
+  product boundaries for video evidence.
 
-## Repository guides
+## Release material
+
+- [Release procedure](./RELEASING.md): source freeze, verification, screenshot
+  review, pull request, and publication.
+- [Alpha release checklist](./RELEASE_CHECKLIST.md): candidate gates and
+  unresolved release work.
+- [Alpha release notes](./release-notes/v0.1.0-alpha.1.md): candidate contents,
+  limitations, and evidence status.
+- [Screenshot policy](./SCREENSHOTS.md): capture provenance, review, promotion,
+  and evidence boundaries.
+- [Screenshot walkthrough](./ALPHA_WALKTHROUGH.md): the required 12-scenario
+  capture set.
+
+## Repository participation
 
 - [Contributing](../CONTRIBUTING.md)
-- [Security policy](../SECURITY.md)
+- [Support](../SUPPORT.md)
 - [Changelog](../CHANGELOG.md)
 
-Only current public documentation belongs in this directory. Local audits, ledgers, status snapshots, generated reports, capture logs, and superseded planning are excluded from version control. Product or engineering changes must update the relevant canonical docs in the same change.
-
-A documented requirement is not evidence that device, interaction, accessibility, signing, deployment, or external-service validation passed. The alpha release notes and checklist identify the evidence actually collected and the work that remains open.
+Only current technical and product references belong in the active
+documentation tree. Update the relevant document when code, configuration,
+commands, data contracts, or operating requirements change.

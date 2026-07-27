@@ -1,34 +1,46 @@
-import request from 'supertest';
-import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
+// Covers invalid lifecycle transitions and idempotent repeats across entries and artifacts.
 import {
   app,
-  setupApp,
-  teardownApp,
-  resetDb,
-  seedBasic,
-  getAccessToken,
+  describe,
+  expect,
+  it,
+  login,
   prisma,
-  s3Mock,
-} from './testUtils.js';
+  request,
+  installEdgeCaseSuite,
+} from './support/edgeCaseTestHarness.js';
 
-function login(role: 'student' | 'teacher') {
-  const userId = role === 'student' ? 'student-1' : 'teacher-1';
-  return getAccessToken(role, { userId });
+installEdgeCaseSuite();
+
+async function createEntry(id: string, goalText: string, status: 'submitted' | 'reviewed') {
+  await prisma.practiceEntry.create({
+    data: {
+      id,
+      courseId: 'COURSE_TEST',
+      studentId: 'student-1',
+      practiceDate: new Date(),
+      goalText,
+      tags: [],
+      status,
+    },
+  });
 }
+
+async function submitEntry(token: string, entryId: string) {
+  return request(app.server)
+    .post(`/entries/${entryId}/submit`)
+    .set('Authorization', `Bearer ${token}`)
+    .send();
+}
+
+async function patchGoal(token: string, entryId: string, payload: Record<string, unknown>) {
+  return request(app.server)
+    .patch(`/entries/${entryId}`)
+    .set('Authorization', `Bearer ${token}`)
+    .send(payload);
+}
+
 describe('edge cases', () => {
-  beforeAll(async () => {
-    await setupApp();
-  });
-
-  afterAll(async () => {
-    await teardownApp();
-  });
-
-  beforeEach(async () => {
-    s3Mock.reset();
-    await resetDb();
-    await seedBasic();
-  });
   // ═══════════════════════════════════════════════════════════════════
   // Category 5: State Transitions
   // ═══════════════════════════════════════════════════════════════════
@@ -37,42 +49,16 @@ describe('edge cases', () => {
     describe('POST /entries/:entryId/submit', () => {
       it('should reject re-submitting an already submitted entry', async () => {
         const token = await login('student');
-        await prisma.practiceEntry.create({
-          data: {
-            id: 'entry-already-submitted',
-            courseId: 'COURSE_TEST',
-            studentId: 'student-1',
-            practiceDate: new Date(),
-            goalText: 'Already submitted',
-            tags: [],
-            status: 'submitted',
-          },
-        });
-        const res = await request(app.server)
-          .post('/entries/entry-already-submitted/submit')
-          .set('Authorization', `Bearer ${token}`)
-          .send();
+        await createEntry('entry-already-submitted', 'Already submitted', 'submitted');
+        const res = await submitEntry(token, 'entry-already-submitted');
         expect(res.status).toBe(409);
         expect(res.body.error?.code).toBe('ENTRY_LOCKED');
       });
 
       it('should reject submitting an already reviewed entry', async () => {
         const token = await login('student');
-        await prisma.practiceEntry.create({
-          data: {
-            id: 'entry-already-reviewed',
-            courseId: 'COURSE_TEST',
-            studentId: 'student-1',
-            practiceDate: new Date(),
-            goalText: 'Already reviewed',
-            tags: [],
-            status: 'reviewed',
-          },
-        });
-        const res = await request(app.server)
-          .post('/entries/entry-already-reviewed/submit')
-          .set('Authorization', `Bearer ${token}`)
-          .send();
+        await createEntry('entry-already-reviewed', 'Already reviewed', 'reviewed');
+        const res = await submitEntry(token, 'entry-already-reviewed');
         expect(res.status).toBe(409);
         expect(res.body.error?.code).toBe('ENTRY_LOCKED');
       });
@@ -81,42 +67,16 @@ describe('edge cases', () => {
     describe('PATCH /entries/:entryId (submitted/reviewed)', () => {
       it('should reject editing a submitted entry', async () => {
         const token = await login('student');
-        await prisma.practiceEntry.create({
-          data: {
-            id: 'entry-edit-submitted',
-            courseId: 'COURSE_TEST',
-            studentId: 'student-1',
-            practiceDate: new Date(),
-            goalText: 'Submitted',
-            tags: [],
-            status: 'submitted',
-          },
-        });
-        const res = await request(app.server)
-          .patch('/entries/entry-edit-submitted')
-          .set('Authorization', `Bearer ${token}`)
-          .send({ goalText: 'Changed' });
+        await createEntry('entry-edit-submitted', 'Submitted', 'submitted');
+        const res = await patchGoal(token, 'entry-edit-submitted', { goalText: 'Changed' });
         expect(res.status).toBe(409);
         expect(res.body.error?.code).toBe('ENTRY_LOCKED');
       });
 
       it('should reject editing a reviewed entry', async () => {
         const token = await login('student');
-        await prisma.practiceEntry.create({
-          data: {
-            id: 'entry-edit-reviewed',
-            courseId: 'COURSE_TEST',
-            studentId: 'student-1',
-            practiceDate: new Date(),
-            goalText: 'Reviewed',
-            tags: [],
-            status: 'reviewed',
-          },
-        });
-        const res = await request(app.server)
-          .patch('/entries/entry-edit-reviewed')
-          .set('Authorization', `Bearer ${token}`)
-          .send({ goalText: 'Changed' });
+        await createEntry('entry-edit-reviewed', 'Reviewed', 'reviewed');
+        const res = await patchGoal(token, 'entry-edit-reviewed', { goalText: 'Changed' });
         expect(res.status).toBe(409);
         expect(res.body.error?.code).toBe('ENTRY_LOCKED');
       });
@@ -247,9 +207,17 @@ describe('edge cases', () => {
           },
         });
         const res = await request(app.server)
-          .post('/entries/entry-dup-art/artifacts')
+          .post('/api/v1/artifact-sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ id: 'duplicate-artifact', type: 'audio', durationSeconds: 120, sizeBytes: 1 });
+          .send({
+            operationId: 'duplicate-artifact-operation',
+            entryId: 'entry-dup-art',
+            artifactId: 'duplicate-artifact',
+            type: 'audio',
+            durationSeconds: 120,
+            sizeBytes: 1,
+            baseVersion: 1,
+          });
         expect(res.status).toBe(409);
         expect(res.body.error?.code).toBe('ID_CONFLICT');
       });

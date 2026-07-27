@@ -1,4 +1,5 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.2
+// Defines the iOS executable target, bundled fixtures, and its test target.
 import PackageDescription
 
 let package = Package(
@@ -19,5 +20,6 @@ let package = Package(
       dependencies: ["ResonanceApp"],
       path: "Tests"
     )
-  ]
+  ],
+  swiftLanguageModes: [.v6]
 )

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
+# Scan tracked and untracked publication candidates for credential-shaped content.
 set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
 
 key_block_begin='-----BEGIN'
 patterns=(
@@ -16,24 +20,66 @@ patterns=(
 )
 
 found=0
-exclude_paths=(
-  "scripts/secret-scan.sh"
-)
-exclude_args=()
-for path in "${exclude_paths[@]}"; do
-  exclude_args+=(":!${path}")
-done
-for pattern in "${patterns[@]}"; do
-  if git grep -nE -e "$pattern" -- . "${exclude_args[@]}" >/dev/null; then
-    echo "Potential secret pattern matched: $pattern" >&2
-    git grep -nE -e "$pattern" -- . "${exclude_args[@]}" >&2 || true
-    found=1
+scan_failed=0
+candidate_files=()
+while IFS= read -r -d '' path; do
+  case "$path" in
+  .env | .env.* | */.env | */.env.* | scripts/secret-scan.sh)
+    continue
+    ;;
+  esac
+  if [[ -L "$path" ]]; then
+    echo "Secret scan requires manual review of publication-candidate symlink: $path" >&2
+    scan_failed=1
+    continue
   fi
+  if [[ ! -e "$path" ]]; then
+    continue
+  fi
+  if [[ ! -r "$path" ]]; then
+    echo "Secret scan cannot read publication candidate: $path" >&2
+    scan_failed=1
+    continue
+  fi
+  candidate_files+=("$path")
+done < <(git ls-files --cached --others --exclude-standard -z -- .)
+
+if [[ "${#candidate_files[@]}" -eq 0 ]]; then
+  echo "Secret scan found no publication candidates." >&2
+  exit 2
+fi
+
+for pattern in "${patterns[@]}"; do
+  set +e
+  matches="$(rg --files-with-matches --regexp "$pattern" -- "${candidate_files[@]}" 2>&1)"
+  status=$?
+  set -e
+  case "$status" in
+  0)
+    echo "Potential secret pattern matched: $pattern" >&2
+    while IFS= read -r path; do
+      [[ -n "$path" ]] && echo "  $path" >&2
+    done <<< "$matches"
+    found=1
+    ;;
+  1)
+    ;;
+  *)
+    echo "Secret scan could not inspect all publication candidates for pattern: $pattern" >&2
+    [[ -n "$matches" ]] && echo "$matches" >&2
+    scan_failed=1
+    ;;
+  esac
 done
 
+if [ "$scan_failed" -ne 0 ]; then
+  echo "Secret scan incomplete." >&2
+  exit 2
+fi
 if [ "$found" -ne 0 ]; then
   echo "Secret scan failed." >&2
   exit 1
 fi
 
+echo "Environment files were excluded from content inspection and require manual review."
 echo "Secret scan passed."

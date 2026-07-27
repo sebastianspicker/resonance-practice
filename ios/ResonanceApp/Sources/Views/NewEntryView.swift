@@ -1,6 +1,8 @@
 import SwiftData
 import SwiftUI
 
+// Collects and validates a new practice entry before it is saved for synchronization.
+
 struct NewEntryView: View {
     let courseId: String
     @Environment(\.dismiss) private var dismiss
@@ -86,20 +88,16 @@ struct NewEntryView: View {
                 }
 
                 if entryKind == .teachingLesson {
-                    Section("Private course review") {
-                        Toggle("Consent is confirmed", isOn: $consentConfirmed)
-                        Text("You can save a draft without consent. Recording, importing, and submitting video remain unavailable until consent for private course review is confirmed.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                        Picker("Capture profile", selection: $captureProfile) {
-                            ForEach(CaptureProfile.allCases) { profile in
-                                Text(profile.label).tag(profile)
-                            }
-                        }
-                    }
+                    TeachingLessonConsentFormSection(
+                        consentConfirmed: $consentConfirmed,
+                        captureProfile: $captureProfile
+                    )
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(AppTheme.workspaceBackground)
             .navigationTitle("New entry")
+            .navigationBarBackButtonHidden(!wrapsInNavigationStack)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -118,6 +116,7 @@ struct NewEntryView: View {
 
     private var hasUnsavedChanges: Bool {
         !goalText.isEmpty || !durationMinutes.isEmpty || !tags.isEmpty || !notes.isEmpty
+            || entryKind != .practice || consentConfirmed || captureProfile != .teacherLearner
     }
 
     private func saveEntry() {
@@ -204,6 +203,70 @@ struct NewEntryView: View {
             dismiss()
         } catch {
             appState.reportError(error)
+        }
+    }
+}
+
+// MARK: - Teaching-lesson consent
+
+/// Confirms private course review and capture profile for a new teaching-lesson draft.
+private struct TeachingLessonConsentFormSection: View {
+    @Binding var consentConfirmed: Bool
+    @Binding var captureProfile: CaptureProfile
+
+    var body: some View {
+        Section("Private course review") {
+            Button {
+                consentConfirmed.toggle()
+            } label: {
+                HStack(spacing: 8) {
+                    if consentConfirmed {
+                        Text("● Private course review")
+                            .font(.subheadline.weight(.semibold))
+                    } else {
+                        Text("Private course review · not confirmed")
+                            .font(.subheadline.weight(.medium))
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    if consentConfirmed {
+                        Capsule(style: .continuous)
+                            .fill(AppTheme.selection)
+                            .overlay(
+                                Capsule(style: .continuous)
+                                    .strokeBorder(AppTheme.accent.opacity(0.55), lineWidth: 1)
+                            )
+                    } else {
+                        Capsule(style: .continuous)
+                            .strokeBorder(AppTheme.workspaceBorderStrong, lineWidth: 1)
+                    }
+                }
+                .foregroundStyle(consentConfirmed ? AppTheme.accent : AppTheme.workspaceInkSoft)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Private course review")
+            .accessibilityValue(consentConfirmed ? "Confirmed" : "Not confirmed")
+            .accessibilityHint("Confirms that lesson video stays private to teachers in this course")
+
+            Text("Video stays private to teachers in this course. It is not shared publicly.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            Picker("Capture profile", selection: $captureProfile) {
+                ForEach(CaptureProfile.allCases) { profile in
+                    Text(profile.label).tag(profile)
+                }
+            }
+
+            Text(
+                "You can save a draft without consent. Film lesson, import video, and submit stay unavailable until private course review is confirmed."
+            )
+            .font(.footnote)
+            .foregroundStyle(.secondary)
         }
     }
 }

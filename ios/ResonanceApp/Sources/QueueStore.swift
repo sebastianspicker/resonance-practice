@@ -2,6 +2,8 @@ import Foundation
 import os
 import SwiftData
 
+// Encapsulates SwiftData queue reads, ownership filtering, retries, and cleanup mutations.
+
 /// Owns all SwiftData read/write operations for the sync queue, local entries,
 /// and local artifacts.
 ///
@@ -28,10 +30,15 @@ final class QueueStore {
     ///
     /// If the payload cannot be serialised to JSON, the item is **not** silently
     /// dropped. An error is logged so developers can diagnose the issue.
-    func enqueue(type: SyncTaskType, payload: [String: Any]) {
+    @discardableResult
+    func enqueue(type: SyncTaskType, payload: [String: Any], ownerId: String) -> Bool {
+        guard !ownerId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            Self.logger.error("Refusing to enqueue sync work without a verified owner")
+            return false
+        }
         guard JSONSerialization.isValidJSONObject(payload) else {
             Self.logger.error("Failed to serialize sync payload for \(type.rawValue): payload is not valid JSON")
-            return
+            return false
         }
 
         let data: Data
@@ -39,39 +46,47 @@ final class QueueStore {
             data = try JSONSerialization.data(withJSONObject: payload, options: [])
         } catch {
             Self.logger.error("Failed to serialize sync payload for \(type.rawValue): \(error.localizedDescription)")
-            return
+            return false
         }
         guard let json = String(data: data, encoding: .utf8) else {
             Self.logger.error("Failed to encode sync payload as UTF-8 for \(type.rawValue)")
-            return
+            return false
         }
         if let identity = taskIdentity(type: type, payload: payload),
-           let existing = existingTask(type: type, identity: identity) {
+           let existing = existingTask(type: type, identity: identity, ownerId: ownerId) {
             existing.payloadJSON = json
             existing.status = SyncStatus.pending.rawValue
             existing.retryCount = 0
             existing.lastError = nil
             existing.nextAttemptAt = nil
             save()
-            return
+            return true
         }
-        let item = SyncQueueItem(id: UUID().uuidString, type: type.rawValue, payloadJSON: json)
+        let item = SyncQueueItem(
+            id: UUID().uuidString,
+            type: type.rawValue,
+            payloadJSON: json,
+            ownerId: ownerId
+        )
         modelContext.insert(item)
         save()
+        return true
     }
 
     // MARK: - Fetching
 
     /// Return all pending items whose `nextAttemptAt` is in the past (or unset),
     /// sorted oldest-first (FIFO).
-    func fetchReady(now: Date) throws -> [SyncQueueItem] {
+    func fetchReady(now: Date, ownerId: String) throws -> [SyncQueueItem] {
         let pendingValue = SyncStatus.pending.rawValue
         var descriptor = FetchDescriptor<SyncQueueItem>(
             predicate: #Predicate { item in item.status == pendingValue }
         )
         descriptor.sortBy = [SortDescriptor(\.createdAt, order: .forward)]
         return try modelContext.fetch(descriptor).filter {
-            $0.nextAttemptAt == nil || ($0.nextAttemptAt ?? now) <= now
+            $0.ownerId == ownerId &&
+                !$0.ownerId.isEmpty &&
+                ($0.nextAttemptAt == nil || ($0.nextAttemptAt ?? now) <= now)
         }
     }
 
@@ -85,7 +100,8 @@ final class QueueStore {
     }
 
     /// Return counts for the published queue metrics.
-    func counts() -> (pending: Int, failed: Int) {
+    func counts(ownerId: String?) -> (pending: Int, failed: Int) {
+        guard let ownerId, !ownerId.isEmpty else { return (0, 0) }
         let pendingValue = SyncStatus.pending.rawValue
         let processingValue = SyncStatus.processing.rawValue
         let failedValue = SyncStatus.failed.rawValue
@@ -96,9 +112,9 @@ final class QueueStore {
             predicate: #Predicate { $0.status == failedValue }
         )
         do {
-            let p = try modelContext.fetch(pendingDescriptor).count
-            let f = try modelContext.fetch(failedDescriptor).count
-            return (p, f)
+            let pendingCount = try modelContext.fetch(pendingDescriptor).filter { $0.ownerId == ownerId }.count
+            let failedCount = try modelContext.fetch(failedDescriptor).filter { $0.ownerId == ownerId }.count
+            return (pendingCount, failedCount)
         } catch {
             Self.logger.error("Failed to count queue items: \(error.localizedDescription)")
             return (0, 0)
@@ -108,7 +124,8 @@ final class QueueStore {
     // MARK: - Status mutations
 
     /// Reset all `failed` items back to `pending` so they will be retried.
-    func resetAllFailed() {
+    func resetAllFailed(ownerId: String) {
+        guard !ownerId.isEmpty else { return }
         let failedValue = SyncStatus.failed.rawValue
         let descriptor = FetchDescriptor<SyncQueueItem>(
             predicate: #Predicate { $0.status == failedValue }
@@ -120,7 +137,7 @@ final class QueueStore {
             Self.logger.error("Failed to fetch failed sync items for retry: \(error.localizedDescription)")
             return
         }
-        for item in failedItems {
+        for item in failedItems where item.ownerId == ownerId {
             item.status = SyncStatus.pending.rawValue
             item.nextAttemptAt = nil
             item.lastError = nil
@@ -151,6 +168,16 @@ final class QueueStore {
 
     func delete(_ item: SyncQueueItem) {
         modelContext.delete(item)
+    }
+
+    /// Permanently removes queued work for an entry after deletion or authoritative reconciliation.
+    func discardWork(forEntryID entryID: String) {
+        let descriptor = FetchDescriptor<SyncQueueItem>()
+        guard let items = try? modelContext.fetch(descriptor) else { return }
+        for item in items where payloadEntryID(item) == entryID {
+            modelContext.delete(item)
+        }
+        save()
     }
 
     func save() {
@@ -221,6 +248,13 @@ final class QueueStore {
         return payload["artifactId"] as? String
     }
 
+    private func payloadEntryID(_ item: SyncQueueItem) -> String? {
+        guard let data = item.payloadJSON.data(using: .utf8),
+              let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return nil }
+        return payload["entryId"] as? String
+    }
+
     private func taskIdentity(type: SyncTaskType, payload: [String: Any]) -> String? {
         switch type {
         case .syncArtifact:
@@ -232,13 +266,14 @@ final class QueueStore {
         }
     }
 
-    private func existingTask(type: SyncTaskType, identity: String) -> SyncQueueItem? {
+    private func existingTask(type: SyncTaskType, identity: String, ownerId: String) -> SyncQueueItem? {
         let typeValue = type.rawValue
         let descriptor = FetchDescriptor<SyncQueueItem>(
             predicate: #Predicate { $0.type == typeValue }
         )
         return try? modelContext.fetch(descriptor).first { item in
-            guard item.status != SyncStatus.processing.rawValue,
+            guard item.ownerId == ownerId,
+                  item.status != SyncStatus.processing.rawValue,
                   let data = item.payloadJSON.data(using: .utf8),
                   let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else { return false }

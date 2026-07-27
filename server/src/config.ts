@@ -1,6 +1,9 @@
+/** Environment-backed runtime configuration and validated operational limits. */
 import dotenv from 'dotenv';
 
-dotenv.config();
+if (process.env.NODE_ENV !== 'test') {
+  dotenv.config();
+}
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -16,6 +19,35 @@ function booleanEnv(name: string, fallback: boolean): boolean {
   if (value === 'true') return true;
   if (value === 'false') return false;
   throw new Error(`${name} must be "true" or "false".`);
+}
+
+type AuthMode = 'dev' | 'prod';
+
+function readAuthMode(): AuthMode {
+  const mode = process.env.AUTH_MODE ?? 'prod';
+  if (mode !== 'dev' && mode !== 'prod') {
+    throw new Error('AUTH_MODE must be "dev" or "prod"');
+  }
+  return mode;
+}
+
+function readHost(authMode: AuthMode): string {
+  const host = process.env.HOST?.trim();
+
+  if (authMode === 'dev') {
+    if (host && !['127.0.0.1', '::1', 'localhost'].includes(host)) {
+      throw new Error('AUTH_MODE=dev requires HOST to be a loopback address.');
+    }
+    return host || '127.0.0.1';
+  }
+
+  if (!host) {
+    throw new Error('AUTH_MODE=prod requires HOST to be set explicitly.');
+  }
+  if (host.includes('://') || /\s/.test(host)) {
+    throw new Error('HOST must be a hostname or IP address without a URL scheme.');
+  }
+  return host;
 }
 
 type OidcEnv = {
@@ -81,15 +113,13 @@ export function validateDevCallbackUrl(url: string): string {
   );
 }
 
+const authMode = readAuthMode();
+
+/** Parse once at startup so invalid deployment configuration fails before serving requests. */
 export const config = {
   port: Number(process.env.PORT ?? 4000),
-  authMode: (() => {
-    const mode = process.env.AUTH_MODE ?? 'prod';
-    if (mode !== 'dev' && mode !== 'prod') {
-      throw new Error('AUTH_MODE must be "dev" or "prod"');
-    }
-    return mode;
-  })(),
+  host: readHost(authMode),
+  authMode,
   jwtSecret: requireEnv('JWT_SECRET'),
   accessTokenTtlMinutes: Number(process.env.ACCESS_TOKEN_TTL_MINUTES ?? 15),
   refreshTokenTtlDays: Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 7),
@@ -194,7 +224,7 @@ export const oidcConfig = (() => {
   };
 })();
 
-/** Application limits — extracted from inline magic numbers. */
+/** Application limits extracted from inline magic numbers. */
 export const limits = {
   /** Maximum number of markers per feedback item */
   maxMarkers: 50,

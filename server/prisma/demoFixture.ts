@@ -1,3 +1,4 @@
+/** Deterministic demo-fixture loading, seeding, and safe reset helpers. */
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -198,7 +199,7 @@ const validateFixtureFeedback = (fixture: DemoFixture): void => {
   }
 };
 
-export function validateDemoFixture(fixture: DemoFixture): void {
+function validateDemoFixture(fixture: DemoFixture): void {
   validateFixtureStructure(fixture);
   validateFixtureIds(fixture);
   validateFixtureArtifacts(fixture);

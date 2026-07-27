@@ -4,9 +4,10 @@ The local demo rebuilds deterministic mock-university data for development, QA, 
 
 ## Prerequisites
 
-- Node.js 20.x and npm.
-- Docker Desktop.
-- Xcode with an iOS Simulator runtime for app work or screenshots.
+- Node.js 24.x and npm 10 or later.
+- Docker with Compose. No exact Docker or Compose version is pinned.
+- Xcode 26 with an iOS 17-or-later Simulator runtime for app work or
+  screenshots.
 - A local backend environment file: `cp server/.env.example server/.env`.
 
 Never point the demo or reset commands at a shared or production database. The safety guard requires the expected local demo database identity before destructive setup runs.
@@ -36,15 +37,19 @@ npm run prisma:seed:demo
 
 ## Use the fixture in the iOS app
 
-1. In a terminal, run `cd server && npm run dev` with the copied `.env.example` values, which set `AUTH_MODE=dev`; keep the server loopback-only.
+1. Configure the local environment copy with `AUTH_MODE=dev`, then run `cd server && npm run dev`; keep the server loopback-only.
 2. Open `ios/ResonanceApp/ResonanceApp.xcodeproj`.
 3. Run the shared `ResonanceApp` scheme on an iPhone or iPad Simulator.
-4. Tap sign in. The server redirects to `/dev/login`; choose **Student Persona** or **Teacher Persona**. The development flow uses no credentials.
+4. Tap sign in. The server redirects to `/dev/login`; choose `Student Persona`
+   or `Teacher Persona`. The development flow uses no credentials.
 5. Load mock data for the active persona.
 
-In a Debug build, the load action is at **Settings > Debug > Load Mock Demo Data**.
+In a Debug build, the load action is at
+`Settings > Debug > Load Mock Demo Data`.
 
-The loader derives the local course role from the active session. Load once per student or teacher persona. **Clear Mock Demo Data** removes fixture records from the app.
+The loader derives the local course role from the active session. Load once per
+student or teacher persona. `Clear Mock Demo Data` removes fixture records from
+the app.
 
 ## Capture a local walkthrough
 
@@ -58,7 +63,10 @@ The capture harness creates dedicated student and teacher Simulators, builds a D
 
 Never publish the capture directory wholesale. Promote only visually reviewed PNGs and a sanitized manifest to a versioned directory under `docs/assets/screenshots/approved/`. The release process must exclude API logs, Xcode logs, derived data, local paths, tokens, and transient identifiers.
 
-See [Screenshot Evidence](./SCREENSHOTS.md) for the promotion rules and [Alpha Walkthrough](./ALPHA_WALKTHROUGH.md) for the approved `v0.1.0-alpha.1` set.
+See [Screenshot Evidence](./SCREENSHOTS.md) for the promotion rules and
+[Alpha Walkthrough](./ALPHA_WALKTHROUGH.md) for the exact scenarios that still
+require source-freeze capture. No approved public screenshot set currently
+exists.
 
 ## Acceptance checks
 

@@ -1,6 +1,8 @@
 import Foundation
 import os
 
+// Manages protected local media files and their cleanup for practice-entry artifacts.
+
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "resonance", category: "FileStore")
 
 enum FileStore {
@@ -103,6 +105,7 @@ enum FileStore {
         }
     }
 
+    /// Removes a local artifact only when it exists, keeping destructive cleanup idempotent.
     static func deleteFileIfExists(atPath path: String) {
         do {
             try removeFileIfExists(atPath: path)

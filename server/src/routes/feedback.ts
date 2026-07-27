@@ -1,3 +1,4 @@
+/** Feedback HTTP routes and their locked-entry authorization workflow. */
 import type { PracticeEntry, PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { nanoid } from 'nanoid';
@@ -22,123 +23,32 @@ export function registerFeedbackRoutes(
 ) {
   app.post('/feedback', { preHandler: requireAuth }, async (request, reply) => {
     const user = request.user!;
-    const body = requireRecord(request.body, 'body');
-    const requestedFeedbackId = body.id === undefined ? undefined : requireClientId(body.id, 'id');
-    const targetType = requireEnum(requireField(body.targetType, 'targetType'), 'targetType', [
-      'entry',
-      'artifact',
-    ] as const);
-    const targetId = requireString(requireField(body.targetId, 'targetId'), 'targetId');
-    const status = requireEnum(requireField(body.status, 'status'), 'status', [
-      'ok',
-      'needs_revision',
-      'next_goal',
-    ] as const);
-    const commentsText = requireString(
-      requireField(body.commentsText, 'commentsText'),
-      'commentsText',
-      { minLength: 1, max: limits.maxCommentsTextLength }
-    );
-    const hasMarkers = Object.prototype.hasOwnProperty.call(body, 'markers');
-    const rawMarkers = hasMarkers ? requireMarkerArray(body.markers) : [];
-    if (rawMarkers.length > limits.maxMarkers) {
-      throw new ApiError(
-        400,
-        ErrorCodes.VALIDATION_ERROR,
-        `Too many markers (max ${limits.maxMarkers})`
-      );
-    }
-    const markers: Array<{ timeSeconds: number; text: string }> = [];
-    for (let index = 0; index < limits.maxMarkers; index += 1) {
-      if (index >= rawMarkers.length) break;
-      const marker = rawMarkers[index]!;
-      markers.push({
-        timeSeconds: requireNumber(marker?.timeSeconds, 'marker.timeSeconds', {
-          integer: true,
-          min: 0,
-          max: limits.maxMarkerTimeSeconds,
-        }),
-        text: requireString(requireField(marker?.text, 'marker.text'), 'marker.text', {
-          max: limits.maxMarkerTextLength,
-        }),
-      });
-    }
-
-    let courseId: string;
-    let reviewEntryId: string;
-    if (targetType === 'entry') {
-      const entry = await prisma.practiceEntry.findUnique({ where: { id: targetId } });
-      if (!entry) {
-        throw new ApiError(404, ErrorCodes.ENTRY_NOT_FOUND, 'Entry not found');
-      }
-      if (entry.deletedAt) {
-        throw new ApiError(410, ErrorCodes.ENTRY_DELETED, 'Entry has been deleted');
-      }
-      if (entry.status === 'draft') {
-        throw new ApiError(
-          409,
-          ErrorCodes.ENTRY_NOT_SUBMITTED,
-          'Entry must be submitted before feedback can be added'
-        );
-      }
-      courseId = entry.courseId;
-      reviewEntryId = entry.id;
-    } else if (targetType === 'artifact') {
-      const artifact = await prisma.artifact.findUnique({
-        where: { id: targetId },
-        include: { entry: true },
-      });
-      if (!artifact) {
-        throw new ApiError(404, ErrorCodes.ARTIFACT_NOT_FOUND, 'Artifact not found');
-      }
-      if (artifact.entry.deletedAt) {
-        throw new ApiError(410, ErrorCodes.ENTRY_DELETED, 'Entry has been deleted');
-      }
-      if (artifact.entry.status === 'draft') {
-        throw new ApiError(
-          409,
-          ErrorCodes.ENTRY_NOT_SUBMITTED,
-          'Entry must be submitted before feedback can be added'
-        );
-      }
-      courseId = artifact.entry.courseId;
-      reviewEntryId = artifact.entry.id;
-    } else {
-      throw new ApiError(400, ErrorCodes.INVALID_TARGET, 'Invalid target type');
-    }
+    const parsed = parseFeedbackRequest(requireRecord(request.body, 'body'));
+    const target = await resolveFeedbackTarget(prisma, parsed.targetType, parsed.targetId);
 
     // Feedback is course-scoped. A global teacher role is not enough; the user
     // must be a teacher on the target entry's course.
-    const roleInCourse = await requireCourseRole(prisma, user.id, courseId);
+    const roleInCourse = await requireCourseRole(prisma, user.id, target.courseId);
     if (roleInCourse !== 'teacher') {
       throw new ApiError(403, ErrorCodes.TEACHER_ONLY, 'Only course teachers can leave feedback');
     }
 
-    const feedbackId = requestedFeedbackId ?? `fb_${nanoid(12)}`;
-    const markerCreates: Array<{ id: string; timeSeconds: number; text: string }> = [];
-    for (let index = 0; index < limits.maxMarkers; index += 1) {
-      if (index >= markers.length) break;
-      const marker = markers[index]!;
-      markerCreates.push({
-        id: `mk_${nanoid(10)}`,
-        timeSeconds: marker.timeSeconds,
-        text: marker.text,
-      });
-    }
+    const feedbackId = parsed.requestedFeedbackId ?? `fb_${nanoid(12)}`;
+    const markerCreates = makeMarkerCreates(parsed.markers);
 
     const result = await withPrismaErrors(
       () =>
-        withLockedEntry(prisma, reviewEntryId, (tx, lockedEntry) =>
+        withLockedEntry(prisma, target.reviewEntryId, (tx, lockedEntry) =>
           processLockedFeedback(tx, lockedEntry, {
             userId: user.id,
-            requestedFeedbackId,
+            requestedFeedbackId: parsed.requestedFeedbackId,
             feedbackId,
-            targetType,
-            targetId,
-            reviewEntryId,
-            status,
-            commentsText,
-            markers,
+            targetType: parsed.targetType,
+            targetId: parsed.targetId,
+            reviewEntryId: target.reviewEntryId,
+            status: parsed.status,
+            commentsText: parsed.commentsText,
+            markers: parsed.markers,
             markerCreates,
           })
         ),
@@ -152,6 +62,109 @@ export function registerFeedbackRoutes(
       teacherName: result.feedback.teacher.displayName,
     });
   });
+}
+
+type ParsedFeedbackRequest = {
+  requestedFeedbackId: string | undefined;
+  targetType: 'entry' | 'artifact';
+  targetId: string;
+  status: 'ok' | 'needs_revision' | 'next_goal';
+  commentsText: string;
+  markers: Array<{ timeSeconds: number; text: string }>;
+};
+
+function parseFeedbackRequest(body: Record<string, unknown>): ParsedFeedbackRequest {
+  const requestedFeedbackId = body.id === undefined ? undefined : requireClientId(body.id, 'id');
+  const targetType = requireEnum(requireField(body.targetType, 'targetType'), 'targetType', [
+    'entry',
+    'artifact',
+  ] as const);
+  const targetId = requireString(requireField(body.targetId, 'targetId'), 'targetId');
+  const status = requireEnum(requireField(body.status, 'status'), 'status', [
+    'ok',
+    'needs_revision',
+    'next_goal',
+  ] as const);
+  const commentsText = requireString(
+    requireField(body.commentsText, 'commentsText'),
+    'commentsText',
+    { minLength: 1, max: limits.maxCommentsTextLength }
+  );
+  const rawMarkers = Object.prototype.hasOwnProperty.call(body, 'markers')
+    ? requireMarkerArray(body.markers)
+    : [];
+  return {
+    requestedFeedbackId,
+    targetType,
+    targetId,
+    status,
+    commentsText,
+    markers: parseFeedbackMarkers(rawMarkers),
+  };
+}
+
+function parseFeedbackMarkers(
+  rawMarkers: Record<string, unknown>[]
+): Array<{ timeSeconds: number; text: string }> {
+  if (rawMarkers.length > limits.maxMarkers) {
+    throw new ApiError(
+      400,
+      ErrorCodes.VALIDATION_ERROR,
+      `Too many markers (max ${limits.maxMarkers})`
+    );
+  }
+  return rawMarkers.map((marker) => ({
+    timeSeconds: requireNumber(marker.timeSeconds, 'marker.timeSeconds', {
+      integer: true,
+      min: 0,
+      max: limits.maxMarkerTimeSeconds,
+    }),
+    text: requireString(requireField(marker.text, 'marker.text'), 'marker.text', {
+      max: limits.maxMarkerTextLength,
+    }),
+  }));
+}
+
+function makeMarkerCreates(markers: Array<{ timeSeconds: number; text: string }>) {
+  return markers.map((marker) => ({
+    id: `mk_${nanoid(10)}`,
+    timeSeconds: marker.timeSeconds,
+    text: marker.text,
+  }));
+}
+
+async function resolveFeedbackTarget(
+  prisma: PrismaClient,
+  targetType: ParsedFeedbackRequest['targetType'],
+  targetId: string
+): Promise<{ courseId: string; reviewEntryId: string }> {
+  if (targetType === 'entry') {
+    const entry = await prisma.practiceEntry.findUnique({ where: { id: targetId } });
+    if (!entry) throw new ApiError(404, ErrorCodes.ENTRY_NOT_FOUND, 'Entry not found');
+    requireSubmittedEntry(entry);
+    return { courseId: entry.courseId, reviewEntryId: entry.id };
+  }
+
+  const artifact = await prisma.artifact.findUnique({
+    where: { id: targetId },
+    include: { entry: true },
+  });
+  if (!artifact) throw new ApiError(404, ErrorCodes.ARTIFACT_NOT_FOUND, 'Artifact not found');
+  requireSubmittedEntry(artifact.entry);
+  return { courseId: artifact.entry.courseId, reviewEntryId: artifact.entry.id };
+}
+
+function requireSubmittedEntry(entry: Pick<PracticeEntry, 'deletedAt' | 'status'>): void {
+  if (entry.deletedAt) {
+    throw new ApiError(410, ErrorCodes.ENTRY_DELETED, 'Entry has been deleted');
+  }
+  if (entry.status === 'draft') {
+    throw new ApiError(
+      409,
+      ErrorCodes.ENTRY_NOT_SUBMITTED,
+      'Entry must be submitted before feedback can be added'
+    );
+  }
 }
 
 type FeedbackInput = {
@@ -273,7 +286,7 @@ function requireMatchingFeedback(
 async function markEntryReviewed(tx: EntryTransaction, reviewEntryId: string): Promise<void> {
   await tx.practiceEntry.update({
     where: { id: reviewEntryId },
-    data: { status: 'reviewed' },
+    data: { status: 'reviewed', version: { increment: 1 } },
   });
 }
 

@@ -1,81 +1,108 @@
 import SwiftUI
 import SwiftData
 
+// Shows queued synchronization work, failure details, and safe retry controls.
+
 struct SyncQueueView: View {
     @EnvironmentObject var syncManager: SyncManager
     @Query(sort: \SyncQueueItem.createdAt, order: .reverse) private var queueItems: [SyncQueueItem]
 
+    private var isQueueEmpty: Bool {
+        pendingQueueCount == 0 && failedQueueCount == 0 && queueItems.isEmpty
+    }
+
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    HStack {
-                        Text("Pending")
-                        Spacer()
-                        Text("\(syncManager.pendingQueueCount)")
-                            .foregroundStyle(.secondary)
-                    }
-                    HStack {
-                        Text("Failed")
-                        Spacer()
-                        Text("\(syncManager.failedQueueCount)")
-                            .foregroundStyle(.secondary)
-                    }
-                }
+            Group {
+                if isQueueEmpty {
+                    ContentUnavailableView(
+                        "No sync work",
+                        systemImage: "checkmark.circle",
+                        description: Text("Pending and failed items will appear here.")
+                    )
+                } else {
+                    List {
+                        Section {
+                            HStack {
+                                Text("Pending")
+                                Spacer()
+                                Text("\(pendingQueueCount)")
+                                    .foregroundStyle(.secondary)
+                            }
+                            HStack {
+                                Text("Failed")
+                                Spacer()
+                                Text("\(failedQueueCount)")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
 
-                if syncManager.failedQueueCount > 0 {
-                    Section {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label("Some items could not sync", systemImage: "exclamationmark.triangle.fill")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.orange)
-                            Text("Check your internet connection, then tap \"Retry Failed\" above. If a recording file was lost, re-record the audio from the entry detail screen.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        if failedQueueCount > 0 {
+                            Section {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Label("Some items could not sync", systemImage: "exclamationmark.triangle.fill")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.orange)
+                                    Text(
+                                        "Check your internet connection, then tap \"Retry Failed\" above. If a recording file was " +
+                                            "lost, re-record the audio from the entry detail screen."
+                                    )
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                         }
-                    }
-                }
 
-                ForEach(queueItems) { item in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(friendlyTaskType(item.type))
-                            .font(.subheadline.weight(.semibold))
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(statusDotColor(item.status))
-                                .frame(width: 8, height: 8)
-                            Text(item.status.capitalized)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        if let lastError = item.lastError, item.status == "failed" {
-                            Text(friendlyError(lastError))
-                                .font(.caption2)
-                                .foregroundStyle(.red)
-                                .lineLimit(3)
+                        ForEach(queueItems) { item in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(friendlyTaskType(item.type))
+                                    .font(.subheadline.weight(.semibold))
+                                StatusPill(status: lifecycleStatus(for: item.status))
+                                if let lastError = item.lastError, item.status == "failed" {
+                                    Text(friendlyError(lastError))
+                                        .font(.caption2)
+                                        .foregroundStyle(AppTheme.statusFailedForeground)
+                                        .lineLimit(3)
+                                }
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel(
+                                "\(friendlyTaskType(item.type)), \(lifecycleStatus(for: item.status).label)"
+                            )
                         }
                     }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(friendlyTaskType(item.type)), \(item.status)")
                 }
             }
-            .navigationTitle("Sync Queue")
+            .scrollContentBackground(.hidden)
+            .background(AppTheme.workspaceBackground)
+            .navigationTitle("Sync status")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Process") {
                         Task { await syncManager.processQueue() }
                     }
+                    .disabled(isQueueEmpty)
                     .accessibilityHint("Processes all pending sync items")
                 }
                 ToolbarItem(placement: .automatic) {
                     Button("Retry Failed") {
                         syncManager.retryFailedItems()
                     }
-                    .disabled(syncManager.failedQueueCount == 0)
+                    .disabled(failedQueueCount == 0)
                     .accessibilityHint("Resets failed items so they can be retried")
                 }
             }
         }
+    }
+
+    private var pendingQueueCount: Int {
+        guard ScreenshotScenario.current != nil else { return syncManager.pendingQueueCount }
+        return queueItems.filter { $0.status == "pending" || $0.status == "processing" }.count
+    }
+
+    private var failedQueueCount: Int {
+        guard ScreenshotScenario.current != nil else { return syncManager.failedQueueCount }
+        return queueItems.filter { $0.status == "failed" }.count
     }
 
     private func friendlyTaskType(_ type: String) -> String {
@@ -91,12 +118,12 @@ struct SyncQueueView: View {
         }
     }
 
-    private func statusDotColor(_ status: String) -> Color {
+    private func lifecycleStatus(for status: String) -> LifecycleStatus {
         switch status {
-        case "pending": return .yellow
-        case "processing": return .blue
-        case "failed": return .red
-        default: return .gray
+        case "pending": return .queued
+        case "processing": return .processing
+        case "failed": return .failed
+        default: return .queued
         }
     }
 
@@ -132,7 +159,6 @@ enum SyncErrorMessageMapper {
         "ENTRY_NOT_SUBMITTED": "This entry has not been submitted yet.",
         "ARTIFACTS_NOT_UPLOADED": "Audio files have not finished uploading.",
         "UPLOAD_INVALID": "Upload failed. Try re-recording the audio.",
-        "MISSING_STORAGE_KEY": "Upload failed. Try re-recording the audio.",
         "STORAGE_UNAVAILABLE": "Media storage is unavailable. Try again later.",
         "INVALID_TARGET": "Invalid target for this operation.",
         "VALIDATION_ERROR": "Server rejected this data. Check the entry fields.",

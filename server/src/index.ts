@@ -1,7 +1,14 @@
+/** Process entry point that owns dependency lifecycle and background maintenance. */
 import { PrismaClient } from '@prisma/client';
 import { config } from './config.js';
-import { expireStaleArtifactUploads, retryStorageDeletionJobs } from './services/entryCascade.js';
+import {
+  cleanupCompletedArtifactSessions,
+  cleanupFailedArtifacts,
+  expireStaleArtifactUploads,
+  retryStorageDeletionJobs,
+} from './services/entryCascade.js';
 import { settlesWithin, withDeadline } from './services/deadline.js';
+import { cleanupSyncReceipts } from './services/syncCommands.js';
 import { createS3Client, ensureBucket } from './storage.js';
 import { buildServer } from './server.js';
 
@@ -13,6 +20,7 @@ const SHUTDOWN_GRACE_MS = 5_000;
 const app = buildServer(prisma, s3);
 
 let activeStorageCleanup: Promise<void> | null = null;
+/** Coalesce interval and startup cleanup so slow storage never overlaps itself. */
 function retryStorageCleanupSafely(): Promise<void> {
   if (activeStorageCleanup) return activeStorageCleanup;
   const cleanup = (async () => {
@@ -22,9 +30,24 @@ function retryStorageCleanupSafely(): Promise<void> {
       app.log.error({ err }, 'Failed to expire stale artifact uploads');
     }
     try {
+      await cleanupFailedArtifacts(prisma);
+    } catch (err) {
+      app.log.error({ err }, 'Failed to prune retained failed artifacts');
+    }
+    try {
+      await cleanupCompletedArtifactSessions(prisma);
+    } catch (err) {
+      app.log.error({ err }, 'Failed to prune completed artifact upload sessions');
+    }
+    try {
       await retryStorageDeletionJobs(prisma, s3, app.log);
     } catch (err) {
       app.log.error({ err }, 'Failed to process queued S3 deletions');
+    }
+    try {
+      await cleanupSyncReceipts(prisma);
+    } catch (err) {
+      app.log.error({ err }, 'Failed to expire sync command receipts');
     }
   })();
   activeStorageCleanup = cleanup;
@@ -47,6 +70,7 @@ async function waitForShutdownStep(promise: Promise<unknown>, label: string): Pr
   }
 }
 
+/** Shutdown is idempotent: both signals may arrive while cleanup is still in flight. */
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.on(signal, async () => {
     if (shuttingDown) return;
@@ -74,8 +98,8 @@ try {
     'PostgreSQL startup connection'
   );
   await ensureBucket(s3);
-  await app.listen({ port: config.port, host: '0.0.0.0' });
-  app.log.info(`Server running on port ${config.port}`);
+  await app.listen({ port: config.port, host: config.host });
+  app.log.info(`Server running at ${config.host}:${config.port}`);
   storageCleanupTimer = setInterval(() => {
     void retryStorageCleanupSafely();
   }, STORAGE_CLEANUP_INTERVAL_MS);

@@ -1,3 +1,4 @@
+// Unit-tests safe error serialization and Prisma-to-HTTP status translation.
 import { describe, expect, it } from 'vitest';
 import { ApiError, sendError } from '../src/errors.js';
 

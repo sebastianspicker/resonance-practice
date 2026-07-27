@@ -1,3 +1,4 @@
+/** Authentication token issuance, rotation, and replay protection. */
 import crypto from 'crypto';
 import { PrismaClient, User } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
@@ -64,7 +65,7 @@ export function verifyRefreshToken(token: string) {
 /** Accepts PrismaClient or a Prisma transaction (which exposes the same model methods). */
 type PrismaLike = Pick<PrismaClient, 'refreshToken'>;
 
-export async function issueTokens(prisma: PrismaLike, user: User, existingFamilyId?: string) {
+async function issueTokens(prisma: PrismaLike, user: User, existingFamilyId?: string) {
   const tokenId = `rt_${nanoid(24)}`;
   const familyId = existingFamilyId ?? tokenId;
   const refreshToken = signRefreshToken(user, tokenId);
@@ -95,6 +96,7 @@ async function lockAuthUser(tx: Prisma.TransactionClient, userId: string): Promi
   return users[0] ?? null;
 }
 
+/** Serialize issuance per user so new refresh families cannot race logout or rotation. */
 export async function issueSessionTokens(prisma: PrismaClient, user: User) {
   return prisma.$transaction(async (tx) => {
     const lockedUser = await lockAuthUser(tx, user.id);
@@ -120,6 +122,7 @@ export async function revokeRefreshTokenFamily(
   });
 }
 
+/** Atomically rotate one refresh token; replay revokes its entire token family. */
 export async function rotateRefreshToken(prisma: PrismaClient, refreshToken: string) {
   const payload = verifyRefreshToken(refreshToken);
   const tokenId = payload.jti as string | undefined;

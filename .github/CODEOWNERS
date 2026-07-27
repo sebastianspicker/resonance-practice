@@ -1,29 +1,40 @@
 # Require review for security-sensitive paths
 # Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 
-# CI / CD — changes here can exfiltrate secrets or bypass checks
-.github/                    @sebastianspicker
+# Repository-wide fallback owner
+*                           @sebastianspicker
 
-# Auth, tokens, access control
-server/src/auth.ts          @sebastianspicker
-server/src/routes/auth.ts   @sebastianspicker
+# CI/CD changes can exfiltrate secrets or bypass checks
+.github/                    @sebastianspicker
+scripts/                    @sebastianspicker
+
+# Application source: auth, tokens, sync, storage, privacy, and local data
+server/src/                 @sebastianspicker
+ios/ResonanceApp/Sources/   @sebastianspicker
+
+# Test contracts and repository policy checks
+server/tests/               @sebastianspicker
+ios/ResonanceApp/Tests/     @sebastianspicker
+tests/                      @sebastianspicker
 
 # Infrastructure and deployment
 infra/                      @sebastianspicker
 
-# Security documentation
+# Public project and security documentation
+README.md                   @sebastianspicker
+CONTRIBUTING.md             @sebastianspicker
+SUPPORT.md                  @sebastianspicker
 SECURITY.md                 @sebastianspicker
-docs/SECURITY.md            @sebastianspicker
+docs/                       @sebastianspicker
 
 # Public alpha release notes and approved public screenshots
 CHANGELOG.md                @sebastianspicker
-docs/RELEASE*.md            @sebastianspicker
 docs/release-notes/         @sebastianspicker
 docs/assets/screenshots/approved/ @sebastianspicker
 
-# Dependency manifests — supply chain vector
+# Dependency manifests: supply chain controls
 server/package.json         @sebastianspicker
 server/package-lock.json    @sebastianspicker
 
-# Database schema — data integrity
+# Database schema: data integrity
 server/prisma/              @sebastianspicker

@@ -1,3 +1,4 @@
+/** Minimal development seed for the baseline application identities. */
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();

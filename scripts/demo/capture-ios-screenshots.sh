@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Capture a reproducible local Simulator walkthrough and its bounded evidence bundle.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -8,6 +9,7 @@ OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/artifacts/e2e-walkthrough}"
 DERIVED_DATA_DIR="${DERIVED_DATA_DIR:-$ROOT_DIR/.tmp/derived-data-e2e-walkthrough}"
 API_PORT="${RESONANCE_WALKTHROUGH_API_PORT:-4100}"
 API_BASE="http://127.0.0.1:$API_PORT"
+RELEASE_VERSION="${RESONANCE_WALKTHROUGH_RELEASE:-v0.1.0-alpha.1}"
 RUNTIME_ID=""
 APP_PATH=""
 BUNDLE_ID=""
@@ -19,6 +21,7 @@ TEACHER_CREATED=0
 STUDENT_BOOTED_BY_SCRIPT=0
 TEACHER_BOOTED_BY_SCRIPT=0
 CAPTURE_ROWS="$OUTPUT_DIR/.capture-rows.tsv"
+CAPTURE_SETTLE_SECONDS="${RESONANCE_SCREENSHOT_SETTLE_SECONDS:-8}"
 
 require_cmd() {
 	command -v "$1" >/dev/null 2>&1 || {
@@ -55,13 +58,18 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-for command in xcodebuild xcrun curl npm node docker jq shasum; do require_cmd "$command"; done
+for command in xcodebuild xcrun curl npm node docker jq osascript sips; do require_cmd "$command"; done
+SOURCE_COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+if [[ -n "$(git -C "$ROOT_DIR" status --porcelain --untracked-files=all)" ]]; then
+	echo "Screenshot capture requires a clean worktree, including untracked files." >&2
+	exit 1
+fi
 mkdir -p "$OUTPUT_DIR" "$ROOT_DIR/.tmp"
 find "$OUTPUT_DIR" -maxdepth 1 -type f \( -name '*.png' -o -name 'manifest.json' -o -name 'WALKTHROUGH.md' -o -name 'VERIFICATION_BLOCKED.md' \) -delete
 : >"$CAPTURE_ROWS"
 
 if ! docker info >/dev/null 2>&1; then
-	echo "Launching Docker Desktop…"
+	echo "Launching Docker Desktop..."
 	if ! open -a Docker >/dev/null 2>&1; then
 		DOCKER_DESKTOP='/Applications/Docker.app/Contents/MacOS/Docker Desktop.app/Contents/MacOS/Docker Desktop'
 		if [[ -x "$DOCKER_DESKTOP" ]]; then
@@ -90,6 +98,7 @@ fi
 	# value used by this loopback-only process is declared below.
 	cd "$OUTPUT_DIR"
 	export PORT="$API_PORT"
+	export HOST='127.0.0.1'
 	export DATABASE_URL='postgresql://resonance:resonance@127.0.0.1:5432/resonance'
 	export AUTH_MODE='dev'
 	export JWT_SECRET='walkthrough-only-loopback-jwt-secret-000000000000'
@@ -127,7 +136,7 @@ resolve_device_type() {
 ensure_device() {
 	local name="$1" type_id="$2" result_var="$3" created_var="$4" booted_var="$5"
 	local udid state
-	udid="$(xcrun simctl list devices available -j | jq -r --arg name "$name" '[.devices[][] | select(.name == $name)] | first.udid // empty')"
+	udid="$(xcrun simctl list devices available -j | jq -r --arg name "$name" --arg runtime "$RUNTIME_ID" '[.devices[$runtime][]? | select(.name == $name)] | first.udid // empty')"
 	if [[ -z "$udid" ]]; then
 		udid="$(xcrun simctl create "$name" "$type_id" "$RUNTIME_ID")"
 		printf -v "$created_var" '%s' 1
@@ -182,11 +191,25 @@ capture() {
 		SIMCTL_CHILD_RESONANCE_SCREENSHOT_ROLE="$persona" \
 		SIMCTL_CHILD_RESONANCE_SCREENSHOT_SCREEN="$screen" \
 		SIMCTL_CHILD_RESONANCE_API_BASE="$API_BASE" \
-		SIMCTL_CHILD_RESONANCE_DEMO_UNIVERSITY_NAME='Mock University Conservatory' \
+	SIMCTL_CHILD_RESONANCE_DEMO_UNIVERSITY_NAME='Mock University Conservatory' \
 		xcrun simctl launch --terminate-running-process "$udid" "$BUNDLE_ID" >/dev/null
-	sleep 4
+	sleep "$CAPTURE_SETTLE_SECONDS"
 	xcrun simctl io "$udid" screenshot "$target" >/dev/null
+	if [[ "$device" == *" landscape" ]]; then
+		local normalized="$target.normalized.png"
+		sips --rotate 90 "$target" --out "$normalized" >/dev/null
+		mv "$normalized" "$target"
+	fi
 	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$index" "$filename" "$persona" "$screen" "$title" "$device" "$appearance" >>"$CAPTURE_ROWS"
+}
+
+rotate_teacher_landscape() {
+	open "$SIMULATOR_APP" --args -CurrentDeviceUDID "$TEACHER_UDID" >/dev/null 2>&1 || true
+	osascript \
+		-e 'tell application "Simulator" to activate' \
+		-e 'delay 1' \
+		-e 'tell application "System Events" to key code 124 using command down'
+	sleep 2
 }
 
 echo "[4/7] Capturing the 12-step walkthrough"
@@ -196,26 +219,31 @@ capture 3 student entry-list 'Draft, submitted, and reviewed entries' "$STUDENT_
 capture 4 student new-entry 'Prefilled new-entry form' "$STUDENT_UDID" light 'iPhone portrait'
 capture 5 student entry-detail 'Draft capture and submission controls' "$STUDENT_UDID" light 'iPhone portrait'
 capture 6 student queue 'Pending and failed sync work' "$STUDENT_UDID" light 'iPhone portrait'
-capture 7 teacher courses 'Teacher course selection' "$TEACHER_UDID" dark 'iPad portrait'
-capture 8 teacher teacher-review-queue 'Teacher review queue' "$TEACHER_UDID" dark 'iPad portrait' review-queue
-capture 9 teacher submission-detail 'Submission media and feedback composer' "$TEACHER_UDID" dark 'iPad portrait'
-capture 10 teacher feedback-editor 'Timestamped feedback draft' "$TEACHER_UDID" dark 'iPad portrait'
-capture 11 teacher feedback-queued 'Feedback queued state' "$TEACHER_UDID" dark 'iPad portrait'
+rotate_teacher_landscape
+capture 7 teacher courses 'Teacher course selection' "$TEACHER_UDID" dark 'iPad landscape'
+capture 8 teacher teacher-review-queue 'Teacher review queue' "$TEACHER_UDID" dark 'iPad landscape' review-queue
+capture 9 teacher submission-detail 'Submission media and feedback composer' "$TEACHER_UDID" dark 'iPad landscape'
+capture 10 teacher feedback-editor 'Timestamped feedback draft' "$TEACHER_UDID" dark 'iPad landscape'
+capture 11 teacher feedback-queued 'Feedback queued state' "$TEACHER_UDID" dark 'iPad landscape'
 capture 12 student reviewed-feedback 'Reviewed entry feedback and markers' "$STUDENT_UDID" light 'iPhone portrait'
 
 echo "[5/7] Validating capture set and generating manifest"
-SOURCE_COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
-SOURCE_DIRTY=false
-git -C "$ROOT_DIR" diff --quiet --ignore-submodules HEAD -- || SOURCE_DIRTY=true
 RUNTIME_NAME="$(xcrun simctl list runtimes available -j | jq -r --arg id "$RUNTIME_ID" '.runtimes[] | select(.identifier == $id) | .name')"
-node --input-type=module - "$OUTPUT_DIR" "$CAPTURE_ROWS" "$SOURCE_COMMIT" "$SOURCE_DIRTY" "$RUNTIME_NAME" <<'NODE'
+node --input-type=module - "$OUTPUT_DIR" "$CAPTURE_ROWS" "$SOURCE_COMMIT" "$RUNTIME_NAME" "$RELEASE_VERSION" <<'NODE'
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const [outputDir, rowsPath, sourceCommit, sourceDirty, runtimeName] = process.argv.slice(2);
+const [outputDir, rowsPath, sourceCommit, runtimeName, release] = process.argv.slice(2);
+if (!/^v\d+\.\d+\.\d+-alpha\.\d+$/.test(release)) {
+  throw new Error(`Invalid alpha release identifier: ${release}`);
+}
 const rows = readFileSync(rowsPath, 'utf8').trim().split('\n').filter(Boolean);
 if (rows.length !== 12) throw new Error(`Expected 12 capture rows, found ${rows.length}`);
+const runtimeVersion = runtimeName.replace(/^iOS\s+/, '');
+if (runtimeVersion === runtimeName) {
+  throw new Error(`Expected an iOS Simulator runtime name, found ${runtimeName}`);
+}
 const hashes = new Set();
 const captures = rows.map((row) => {
   const [index, file, persona, screen, title, device, appearance] = row.split('\t');
@@ -225,28 +253,43 @@ const captures = rows.map((row) => {
   }
   const width = data.readUInt32BE(16);
   const height = data.readUInt32BE(20);
-  if (height <= width) throw new Error(`${file} is not portrait (${width}x${height})`);
+  const orientation = device.endsWith('landscape') ? 'landscape' : 'portrait';
+  if (orientation === 'portrait' && height <= width) {
+    throw new Error(`${file} is not portrait (${width}x${height})`);
+  }
+  if (orientation === 'landscape' && width <= height) {
+    throw new Error(`${file} is not landscape (${width}x${height})`);
+  }
   const sha256 = createHash('sha256').update(data).digest('hex');
   if (hashes.has(sha256)) throw new Error(`${file} duplicates another screenshot`);
   hashes.add(sha256);
+  const platform = device.startsWith('iPad') ? 'iPadOS' : 'iOS';
   return {
     index: Number(index), file, persona, screen, title, evidenceKind: 'visual-ui-evidence',
-    device, os: runtimeName, orientation: 'portrait', appearance, textSize: 'medium',
-    width, height, sha256, verified: { png: true, portrait: true, unique: true },
+    device, os: `${platform} ${runtimeVersion}`, orientation, appearance, textSize: 'medium',
+    width, height, sha256, verified: { png: true, orientation: true, unique: true },
   };
 });
 const manifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
+  release,
   generatedAt: new Date().toISOString(),
-  source: { commit: sourceCommit, dirty: sourceDirty === 'true' },
+  revalidatedAt: new Date().toISOString(),
+  source: {
+    commit: sourceCommit,
+    dirty: false,
+    status: 'captured-clean-commit',
+  },
   proofModel: {
-    measured: 'server/tests/e2e/service.e2e.test.ts',
-    visual: 'Deterministic debug-only Simulator scenarios; screenshots do not prove networking or interaction.',
+    kind: 'visual-ui-evidence',
+    description: 'Deterministic debug-only Simulator scenarios. Screenshots do not prove networking or interaction.',
   },
   verification: {
     fixtureValidator: 'passed', apiReadiness: 'passed', iosDebugBuild: 'passed',
-    screenshotCount: 12, screenshotSet: 'passed', humanVisualInspection: 'pending',
+    screenshotCount: 12, screenshotSet: 'integrity-verified', humanVisualInspection: 'pending',
     serviceE2E: 'not run by capture harness; a separate passing service gate is required before measured claims are accepted',
+    captureLogsPublished: false,
+    releaseReady: false,
   },
   captures,
 };

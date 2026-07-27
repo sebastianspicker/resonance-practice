@@ -1,6 +1,8 @@
 import SwiftData
 import SwiftUI
 
+// Lists course entries with filtering and selection behavior for the course workflow.
+
 struct EntryListView: View {
     let courseId: String
     @Query private var entries: [LocalPracticeEntry]
@@ -22,21 +24,30 @@ struct EntryListView: View {
                     HStack(alignment: .firstTextBaseline) {
                         Text(entry.goalText).font(.headline).lineLimit(3)
                         Spacer()
-                        StatusBadge(status: entry.status)
+                        StatusPill(
+                            status: entry.status.studentLifecycle(
+                                isRemoteBacked: entry.remoteUpdatedAt != nil
+                            )
+                        )
                     }
-                    HStack {
+                    HStack(spacing: 0) {
                         Text(entry.practiceDate, style: .date)
                         if let duration = entry.durationSeconds, duration > 0 {
-                            Text("· \(formatDuration(duration))")
+                            Text(" · \(formatDuration(duration))")
                         }
                     }
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.workspaceMuted)
                 }
                 .padding(.vertical, 4)
             }
-            .accessibilityLabel("\(entry.goalText), \(entry.status.displayLabel)")
+            .accessibilityLabel(
+                "\(entry.goalText), \(entry.status.studentLifecycle(isRemoteBacked: entry.remoteUpdatedAt != nil).label)"
+            )
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(AppTheme.workspaceBackground)
         .navigationDestination(for: String.self) { entryId in
             if let entry = entries.first(where: { $0.id == entryId }) {
                 EntryDetailView(entry: entry)
@@ -65,28 +76,5 @@ struct EntryListView: View {
         let minutes = (totalSeconds % 3600) / 60
         if hours > 0 { return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h" }
         return totalSeconds < 60 ? "\(totalSeconds)s" : "\(minutes) min"
-    }
-}
-
-private struct StatusBadge: View {
-    let status: EntryStatus
-
-    var body: some View {
-        Text(status.displayLabel)
-            .font(.caption.weight(.semibold))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(.secondary.opacity(0.12), in: Capsule())
-            .accessibilityLabel("Status: \(status.displayLabel)")
-    }
-}
-
-private extension EntryStatus {
-    var displayLabel: String {
-        switch self {
-        case .draft: return "Draft"
-        case .submitted: return "Submitted"
-        case .reviewed: return "Reviewed"
-        }
     }
 }

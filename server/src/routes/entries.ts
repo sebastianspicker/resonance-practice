@@ -1,4 +1,5 @@
-import type { PracticeEntry, PrismaClient } from '@prisma/client';
+/** Entry CRUD routes, including optimistic-version and cascade boundaries. */
+import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { limits } from '../config.js';
 import { ErrorCodes } from '../errorCodes.js';
@@ -6,7 +7,15 @@ import { ApiError, isPrismaError, withPrismaErrors } from '../errors.js';
 import { cascadeDeleteEntry } from '../services/entryCascade.js';
 import { lockEntryIdentity, withLockedEntry } from '../services/entryTransaction.js';
 import {
-  requireBoolean,
+  CAPTURE_MARKER_KINDS,
+  hasRestrictedEntryPatchField,
+  isExactEntryCreateRetry,
+  parseEntryCreateBody,
+  parseEntryPatchBody,
+  requireActiveEntry,
+} from './entries/parsing.js';
+import { serializeFeedback } from './feedbackSerialization.js';
+import {
   requireClientId,
   requireCourseRole,
   requireEntryAccess,
@@ -15,288 +24,31 @@ import {
   requireNumber,
   requireRecord,
   requireString,
-  requireStringArray,
   requireStudentOwner,
-  requireValidDate,
 } from '../validation.js';
 
-const CAPTURE_PROFILES = [
-  'room_overview',
-  'teacher_learner',
-  'instrument_closeup',
-  'ensemble_group',
-  'group_work',
-] as const;
-
-const CAPTURE_MARKER_KINDS = [
-  'phase_setup',
-  'phase_modeling',
-  'phase_guided_practice',
-  'phase_student_work',
-  'phase_feedback',
-  'phase_reflection',
-  'moment_question',
-  'moment_musical_model',
-  'moment_student_response',
-  'moment_transition',
-  'privacy_note',
-] as const;
-
-const RESTRICTED_ENTRY_PATCH_FIELDS = [
-  'goalText',
-  'practiceDate',
-  'tags',
-  'durationSeconds',
-  'notes',
-  'kind',
-  'consentConfirmed',
-  'consentScope',
-  'captureProfile',
-];
-
-type EntryKind = 'practice' | 'teaching_lesson';
-type ConsentScope = 'private_course_review';
-type CaptureProfile = (typeof CAPTURE_PROFILES)[number];
-
-type EntryMetadata = {
-  kind: EntryKind;
-  consentConfirmedAt: Date | null;
-  consentScope: ConsentScope | null;
-  captureProfile: CaptureProfile | null;
-};
-
-type EntryPatchBase = Pick<
-  PracticeEntry,
-  'kind' | 'consentConfirmedAt' | 'consentScope' | 'captureProfile'
->;
-
-function normalizeTags(rawTags: unknown) {
-  const tags = requireStringArray(rawTags, 'tags', { max: limits.maxTags });
-  const normalized: string[] = [];
-  for (let index = 0; index < limits.maxTags; index += 1) {
-    if (index >= tags.length) break;
-    normalized.push(
-      requireString(tags[index], 'tags[]', { minLength: 1, max: limits.maxTagLength })
-    );
-  }
-  return normalized;
-}
-
-function optionalDurationSeconds(body: Record<string, unknown>) {
-  if (body.durationSeconds === undefined) {
-    return null;
-  }
-  return requireNumber(body.durationSeconds, 'durationSeconds', {
-    integer: true,
-    min: 0,
-    max: limits.maxDurationSeconds,
+export async function readEntryFeedback(prisma: PrismaClient, entryId: string) {
+  return prisma.feedback.findMany({
+    where: { entryId },
+    include: {
+      markers: true,
+      teacher: { select: { displayName: true } },
+    },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   });
-}
-
-function nullablePatchDurationSeconds(value: unknown) {
-  if (value === null) {
-    return null;
-  }
-  return requireNumber(value, 'durationSeconds', {
-    integer: true,
-    min: 0,
-    max: limits.maxDurationSeconds,
-  });
-}
-
-function validateEntryMetadata(metadata: EntryMetadata) {
-  if (
-    metadata.kind === 'practice' &&
-    (metadata.consentConfirmedAt !== null || metadata.consentScope !== null)
-  ) {
-    throw new ApiError(
-      400,
-      ErrorCodes.VALIDATION_ERROR,
-      'Consent metadata is only valid for teaching lesson entries'
-    );
-  }
-  if (metadata.consentConfirmedAt === null && metadata.consentScope !== null) {
-    throw new ApiError(
-      400,
-      ErrorCodes.VALIDATION_ERROR,
-      'consentScope is only valid when consentConfirmed is true'
-    );
-  }
-  if (metadata.consentConfirmedAt !== null && metadata.consentScope === null) {
-    throw new ApiError(
-      400,
-      ErrorCodes.VALIDATION_ERROR,
-      'consentScope is required when consentConfirmed is true'
-    );
-  }
-  if (metadata.kind === 'practice' && metadata.captureProfile !== null) {
-    throw new ApiError(
-      400,
-      ErrorCodes.VALIDATION_ERROR,
-      'captureProfile is only valid for teaching lesson entries'
-    );
-  }
-}
-
-function parseEntryCreateBody(body: Record<string, unknown>) {
-  const consentConfirmed =
-    body.consentConfirmed === undefined
-      ? false
-      : requireBoolean(body.consentConfirmed, 'consentConfirmed');
-  const metadata = {
-    kind:
-      body.kind === undefined
-        ? 'practice'
-        : requireEnum(body.kind, 'kind', ['practice', 'teaching_lesson'] as const),
-    consentConfirmedAt: consentConfirmed ? new Date() : null,
-    consentScope:
-      body.consentScope === undefined || body.consentScope === null
-        ? null
-        : requireEnum(body.consentScope, 'consentScope', ['private_course_review'] as const),
-    captureProfile:
-      body.captureProfile === undefined || body.captureProfile === null
-        ? null
-        : requireEnum(body.captureProfile, 'captureProfile', CAPTURE_PROFILES),
-  };
-  validateEntryMetadata(metadata);
-  return {
-    id: requireClientId(requireField(body.id, 'id'), 'id'),
-    ...metadata,
-    practiceDate: requireValidDate(body.practiceDate, 'practiceDate'),
-    goalText: requireString(requireField(body.goalText, 'goalText'), 'goalText', {
-      minLength: 1,
-    }),
-    durationSeconds: optionalDurationSeconds(body),
-    tags: body.tags === undefined ? [] : normalizeTags(body.tags),
-    notes:
-      body.notes === undefined || body.notes === null ? null : requireString(body.notes, 'notes'),
-  };
-}
-
-function isExactEntryCreateRetry(
-  existing: PracticeEntry,
-  entryData: ReturnType<typeof parseEntryCreateBody>,
-  courseId: string,
-  studentId: string
-) {
-  return [
-    existing.deletedAt === null,
-    existing.courseId === courseId,
-    existing.studentId === studentId,
-    existing.kind === entryData.kind,
-    existing.practiceDate.getTime() === entryData.practiceDate.getTime(),
-    existing.goalText === entryData.goalText,
-    existing.durationSeconds === entryData.durationSeconds,
-    existing.tags.length === entryData.tags.length,
-    existing.tags.every((tag, index) => tag === entryData.tags[index]),
-    existing.notes === entryData.notes,
-    (existing.consentConfirmedAt !== null) === (entryData.consentConfirmedAt !== null),
-    existing.consentScope === entryData.consentScope,
-    existing.captureProfile === entryData.captureProfile,
-  ].every(Boolean);
-}
-
-function hasRestrictedEntryPatchField(body: Record<string, unknown>) {
-  return RESTRICTED_ENTRY_PATCH_FIELDS.some((field) => field in body);
-}
-
-function applyBasicEntryPatchFields(
-  body: Record<string, unknown>,
-  updateData: Record<string, unknown>
-) {
-  if ('goalText' in body) {
-    updateData.goalText = requireString(body.goalText, 'goalText', { minLength: 1 });
-  }
-  if ('practiceDate' in body) {
-    updateData.practiceDate = requireValidDate(body.practiceDate, 'practiceDate');
-  }
-  if ('durationSeconds' in body) {
-    updateData.durationSeconds = nullablePatchDurationSeconds(body.durationSeconds);
-  }
-  if ('tags' in body) {
-    updateData.tags = normalizeTags(body.tags);
-  }
-  if ('notes' in body) {
-    updateData.notes = body.notes === null ? null : requireString(body.notes, 'notes');
-  }
-}
-
-function parseConsentScope(value: unknown) {
-  return value === null
-    ? null
-    : requireEnum(value, 'consentScope', ['private_course_review'] as const);
-}
-
-function parseCaptureProfile(value: unknown) {
-  return value === null ? null : requireEnum(value, 'captureProfile', CAPTURE_PROFILES);
-}
-
-function resolvePatchMetadata(body: Record<string, unknown>, entry: EntryPatchBase) {
-  const metadata = {
-    kind:
-      'kind' in body
-        ? requireEnum(body.kind, 'kind', ['practice', 'teaching_lesson'] as const)
-        : entry.kind,
-    consentConfirmedAt: entry.consentConfirmedAt,
-    consentScope:
-      'consentScope' in body ? parseConsentScope(body.consentScope) : entry.consentScope,
-    captureProfile:
-      'captureProfile' in body ? parseCaptureProfile(body.captureProfile) : entry.captureProfile,
-  };
-
-  if ('consentConfirmed' in body) {
-    const consentConfirmed = requireBoolean(body.consentConfirmed, 'consentConfirmed');
-    // Re-sending an already-confirmed value is idempotent. In particular, the
-    // iOS client includes this boolean in ordinary draft updates, which must
-    // not rewrite the original consent audit timestamp.
-    metadata.consentConfirmedAt = consentConfirmed
-      ? (entry.consentConfirmedAt ?? new Date())
-      : null;
-    if (!consentConfirmed) {
-      metadata.consentScope = null;
-    }
-  }
-
-  validateEntryMetadata(metadata);
-  return metadata;
-}
-
-function applyEntryMetadataPatch(
-  body: Record<string, unknown>,
-  metadata: EntryMetadata,
-  updateData: Record<string, unknown>
-) {
-  if ('kind' in body) {
-    updateData.kind = metadata.kind;
-  }
-  if (
-    'consentScope' in body ||
-    ('consentConfirmed' in body && metadata.consentConfirmedAt === null)
-  ) {
-    updateData.consentScope = metadata.consentScope;
-  }
-  if ('consentConfirmed' in body) {
-    updateData.consentConfirmedAt = metadata.consentConfirmedAt;
-  }
-  if ('captureProfile' in body) {
-    updateData.captureProfile = metadata.captureProfile;
-  }
-}
-
-function parseEntryPatchBody(body: Record<string, unknown>, entry: EntryPatchBase) {
-  const updateData: Record<string, unknown> = {};
-  applyBasicEntryPatchFields(body, updateData);
-  applyEntryMetadataPatch(body, resolvePatchMetadata(body, entry), updateData);
-  return updateData;
-}
-
-function requireActiveEntry(entry: { deletedAt: Date | null }) {
-  if (entry.deletedAt) {
-    throw new ApiError(410, ErrorCodes.ENTRY_DELETED, 'Entry has been deleted');
-  }
 }
 
 export function registerEntryRoutes(
+  app: FastifyInstance,
+  prisma: PrismaClient,
+  requireAuth: (request: FastifyRequest) => Promise<void>
+) {
+  registerEntryCrudRoutes(app, prisma, requireAuth);
+  registerCaptureMarkerRoute(app, prisma, requireAuth);
+  registerEntryLifecycleRoutes(app, prisma, requireAuth);
+}
+
+function registerEntryCrudRoutes(
   app: FastifyInstance,
   prisma: PrismaClient,
   requireAuth: (request: FastifyRequest) => Promise<void>
@@ -390,7 +142,7 @@ export function registerEntryRoutes(
         () =>
           tx.practiceEntry.update({
             where: { id: entryId },
-            data: updateData,
+            data: { ...updateData, version: { increment: 1 } },
           }),
         {
           notFoundCode: ErrorCodes.ENTRY_NOT_FOUND,
@@ -399,7 +151,13 @@ export function registerEntryRoutes(
       );
     });
   });
+}
 
+function registerCaptureMarkerRoute(
+  app: FastifyInstance,
+  prisma: PrismaClient,
+  requireAuth: (request: FastifyRequest) => Promise<void>
+) {
   app.put('/entries/:entryId/capture-markers', { preHandler: requireAuth }, async (request) => {
     const user = request.user!;
     const entryId = (request.params as { entryId: string }).entryId;
@@ -535,13 +293,23 @@ export function registerEntryRoutes(
           ...(markerIds.length > 0 ? { id: { notIn: markerIds } } : {}),
         },
       });
+      await tx.practiceEntry.update({
+        where: { id: lockedEntry.id },
+        data: { version: { increment: 1 } },
+      });
       return tx.captureMarker.findMany({
         where: { entryId: lockedEntry.id },
         orderBy: [{ timeSeconds: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       });
     });
   });
+}
 
+function registerEntryLifecycleRoutes(
+  app: FastifyInstance,
+  prisma: PrismaClient,
+  requireAuth: (request: FastifyRequest) => Promise<void>
+) {
   app.delete('/entries/:entryId', { preHandler: requireAuth }, async (request, reply) => {
     const user = request.user!;
     const entryId = (request.params as { entryId: string }).entryId;
@@ -593,7 +361,7 @@ export function registerEntryRoutes(
       }
       return tx.practiceEntry.update({
         where: { id: entryId },
-        data: { status: 'submitted' },
+        data: { status: 'submitted', version: { increment: 1 } },
       });
     });
   });
@@ -602,24 +370,7 @@ export function registerEntryRoutes(
     const user = request.user!;
     const entryId = (request.params as { entryId: string }).entryId;
     const entry = await requireEntryAccess(prisma, user, entryId);
-    const feedback = await prisma.feedback.findMany({
-      where: { entryId: entry.id },
-      include: {
-        markers: true,
-        teacher: { select: { displayName: true } },
-      },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-    });
-    return feedback.map((item) => ({
-      id: item.id,
-      targetType: item.targetType,
-      targetId: item.targetId,
-      teacherId: item.teacherId,
-      teacherName: item.teacher.displayName,
-      createdAt: item.createdAt,
-      status: item.status,
-      commentsText: item.commentsText,
-      markers: item.markers,
-    }));
+    const feedback = await readEntryFeedback(prisma, entry.id);
+    return serializeFeedback(feedback, true);
   });
 }

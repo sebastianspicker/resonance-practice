@@ -1,6 +1,8 @@
 import Foundation
 import Network
 
+// Publishes current network reachability so synchronization can defer offline work.
+
 @MainActor
 final class NetworkMonitor: ObservableObject {
     @Published var isOnline: Bool = true

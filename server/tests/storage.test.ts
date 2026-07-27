@@ -1,3 +1,4 @@
+// Unit-tests S3 bucket setup, presigning, copy verification, and bounded storage failures.
 import { describe, expect, it, beforeEach } from 'vitest';
 import { S3Client, HeadBucketCommand, CreateBucketCommand } from '@aws-sdk/client-s3';
 import { mockClient } from 'aws-sdk-client-mock';
@@ -5,35 +6,37 @@ import { buildCreateBucketInput, ensureBucket, isS3NotFoundError } from '../src/
 
 const s3Mock = mockClient(S3Client);
 
+async function ensureConfiguredBucket() {
+  await ensureBucket(new S3Client({}));
+}
+
 describe('ensureBucket', () => {
   beforeEach(() => {
     s3Mock.reset();
   });
 
-  it('does not create bucket when HeadBucket succeeds', async () => {
-    s3Mock.on(HeadBucketCommand).resolves({});
+  it.each([
+    ['does not create bucket when HeadBucket succeeds', undefined, 0],
+    [
+      'creates bucket on 404 NotFound error',
+      Object.assign(new Error('Not Found'), {
+        name: 'NotFound',
+        $metadata: { httpStatusCode: 404 },
+      }),
+      1,
+    ],
+  ])('%s', async (_name, headError, expectedCreateCalls) => {
+    if (headError) {
+      s3Mock.on(HeadBucketCommand).rejects(headError);
+    } else {
+      s3Mock.on(HeadBucketCommand).resolves({});
+    }
     s3Mock.on(CreateBucketCommand).resolves({});
 
-    const s3 = new S3Client({});
-    await ensureBucket(s3);
+    await ensureConfiguredBucket();
 
-    expect(s3Mock.commandCalls(HeadBucketCommand).length).toBe(1);
-    expect(s3Mock.commandCalls(CreateBucketCommand).length).toBe(0);
-  });
-
-  it('creates bucket on 404 NotFound error', async () => {
-    const notFoundError = Object.assign(new Error('Not Found'), {
-      name: 'NotFound',
-      $metadata: { httpStatusCode: 404 },
-    });
-    s3Mock.on(HeadBucketCommand).rejects(notFoundError);
-    s3Mock.on(CreateBucketCommand).resolves({});
-
-    const s3 = new S3Client({});
-    await ensureBucket(s3);
-
-    expect(s3Mock.commandCalls(HeadBucketCommand).length).toBe(1);
-    expect(s3Mock.commandCalls(CreateBucketCommand).length).toBe(1);
+    expect(s3Mock.commandCalls(HeadBucketCommand)).toHaveLength(1);
+    expect(s3Mock.commandCalls(CreateBucketCommand)).toHaveLength(expectedCreateCalls);
   });
 
   it('creates bucket on NoSuchBucket error', async () => {

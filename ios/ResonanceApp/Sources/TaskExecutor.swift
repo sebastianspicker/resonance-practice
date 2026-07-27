@@ -1,6 +1,7 @@
 import Foundation
-import os
 import SwiftData
+
+// Converts durable queue items into versioned server commands and artifact upload workflows.
 
 /// Executes a single sync task against the API server.
 ///
@@ -24,13 +25,9 @@ import SwiftData
 ///   timeout after server-side creation can safely retry.
 @MainActor
 final class TaskExecutor {
-    private static let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "resonance",
-        category: "TaskExecutor"
-    )
-    private let apiClient: APIClient
-    private let store: QueueStore
-    private let session: URLSession
+    let apiClient: APIClient
+    let store: QueueStore
+    let session: URLSession
 
     init(apiClient: APIClient, store: QueueStore, session: URLSession) {
         self.apiClient = apiClient
@@ -40,286 +37,239 @@ final class TaskExecutor {
 
     // MARK: - Public API
 
+    /// Decodes one durable queue item and dispatches it through its task-specific retry contract.
     func execute(item: SyncQueueItem, accessToken: String) async throws {
-        guard let data = item.payloadJSON.data(using: .utf8) else {
-            throw SyncError.payloadParseError("Failed to convert payload to data")
+        let (taskType, payload) = try taskTypeAndPayload(for: item)
+
+        try await execute(taskType: taskType, item: item, payload: payload, accessToken: accessToken)
+    }
+
+    /// Returns the command-endpoint representation for work that does not
+    /// require a separate media upload session. Artifact uploads deliberately
+    /// stay outside this batch because their presigned PUT has different retry
+    /// and completion semantics.
+    func command(for item: SyncQueueItem) throws -> SyncCommand? {
+        let (taskType, payload) = try taskTypeAndPayload(for: item)
+
+        switch taskType {
+        case .syncArtifact: return nil
+        case .createEntry: return try createEntryCommand(item: item, payload: payload)
+        case .updateEntry, .syncCaptureProfile: return try updateEntryCommand(item: item, payload: payload)
+        case .syncCaptureMarkers: return try captureMarkersCommand(item: item, payload: payload)
+        case .submitEntry: return try submitEntryCommand(item: item, payload: payload)
+        case .deleteEntry: return try deleteEntryCommand(item: item, payload: payload)
+        case .postFeedback: return try feedbackCommand(item: item, payload: payload)
         }
-        guard let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw SyncError.payloadParseError("Failed to parse payload as JSON dictionary")
-        }
-        guard let taskType = SyncTaskType(rawValue: item.type) else {
+    }
+
+    private func taskTypeAndPayload(for item: SyncQueueItem) throws -> (SyncTaskType, [String: Any]) {
+        guard let taskType = item.taskType else {
             throw SyncError.unknownTaskType("Unknown sync task type: \(item.type)")
         }
-
-        try await execute(taskType: taskType, payload: payload, accessToken: accessToken)
-    }
-
-    // MARK: - Private helpers
-
-    private func execute(taskType: SyncTaskType, payload: [String: Any], accessToken: String) async throws {
-        switch taskType {
-        case .createEntry: try await executeCreateEntry(payload: payload, accessToken: accessToken)
-        case .updateEntry: try await executeUpdateEntry(payload: payload, accessToken: accessToken)
-        case .submitEntry: try await executeSubmitEntry(payload: payload, accessToken: accessToken)
-        case .deleteEntry: try await executeDeleteEntry(payload: payload, accessToken: accessToken)
-        case .syncArtifact: try await executeSyncArtifact(payload: payload, accessToken: accessToken)
-        case .syncCaptureProfile: try await executeSyncCaptureProfile(payload: payload, accessToken: accessToken)
-        case .syncCaptureMarkers: try await executeSyncCaptureMarkers(payload: payload, accessToken: accessToken)
-        case .postFeedback: try await executePostFeedback(payload: payload, accessToken: accessToken)
+        guard let data = item.payloadJSON.data(using: .utf8),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            throw SyncError.payloadParseError("Failed to parse payload as JSON dictionary")
         }
+        return (taskType, payload)
     }
 
-    private func executeCreateEntry(payload: [String: Any], accessToken: String) async throws {
-        let entryId = payload["entryId"] as? String ?? ""
-        let entry = try store.fetchEntry(id: entryId)
-        let response: EntryResponse
-        do {
-            response = try await apiClient.createEntry(
-                accessToken: accessToken,
-                courseId: entry.courseId,
-                entry: entry
-            )
-        } catch let error as APIError where error.error.code == "ID_CONFLICT" {
-            let remote = try await apiClient.fetchEntry(accessToken: accessToken, entryId: entryId)
-            guard isExactCreateRetry(remote: remote, local: entry) else {
-                throw error
+    private func createEntryCommand(item: SyncQueueItem, payload: [String: Any]) throws -> SyncCommand {
+        let entry = try entry(forPayload: payload)
+        return makeCommand(item: item, entityID: entry.id, kind: .createEntry, payload: entryPayload(entry))
+    }
+
+    private func updateEntryCommand(item: SyncQueueItem, payload: [String: Any]) throws -> SyncCommand {
+        let entry = try entry(forPayload: payload)
+        return makeCommand(
+            item: item,
+            entityID: entry.id,
+            kind: .updateEntry,
+            baseVersion: try baseVersion(for: entry),
+            payload: entryPayload(entry)
+        )
+        entry.remoteUpdatedAt = response.updatedAt ?? Date()
+        store.save()
+    }
+
+    private func captureMarkersCommand(item: SyncQueueItem, payload: [String: Any]) throws -> SyncCommand {
+        let entry = try store.fetchEntry(id: requiredEntryID(payload))
+        let markers = try store.fetchCaptureMarkers(entryId: entry.id).map(markerPayload)
+        return SyncCommand(
+            operationId: item.id,
+            entityId: entry.id,
+            kind: .replaceCaptureMarkers,
+            baseVersion: try baseVersion(for: entry),
+            payload: .object(["markers": .array(markers)])
+        )
+    }
+
+    private func submitEntryCommand(item: SyncQueueItem, payload: [String: Any]) throws -> SyncCommand {
+        let entry = try entry(forPayload: payload)
+        return makeCommand(item: item, entityID: entry.id, kind: .submitEntry, baseVersion: try baseVersion(for: entry))
+    }
+
+    private func makeCommand(
+        item: SyncQueueItem,
+        entityID: String,
+        kind: SyncCommandKind,
+        baseVersion: Int? = nil,
+        payload: JSONValue = .object([:])
+    ) -> SyncCommand {
+        SyncCommand(
+            operationId: item.id,
+            entityId: entityID,
+            kind: kind,
+            baseVersion: baseVersion,
+            payload: payload
+        )
+    }
+
+    private func deleteEntryCommand(item: SyncQueueItem, payload: [String: Any]) throws -> SyncCommand {
+        let entryID = try requiredEntryID(payload)
+        guard let baseVersion = payload["baseVersion"] as? Int else {
+            throw SyncError.missingServerVersion(entryID)
+        }
+        return SyncCommand(
+            operationId: item.id,
+            entityId: entryID,
+            kind: .deleteEntry,
+            baseVersion: baseVersion
+        )
+    }
+
+    func entry(forPayload payload: [String: Any]) throws -> LocalPracticeEntry {
+        try store.fetchEntry(id: requiredEntryID(payload))
+    }
+
+    private func feedbackCommand(item: SyncQueueItem, payload: [String: Any]) throws -> SyncCommand {
+        let feedbackID = payload["feedbackId"] as? String ?? ""
+        let feedback = try store.fetchFirst(
+            FetchDescriptor<LocalFeedback>(predicate: #Predicate { $0.id == feedbackID })
+        )
+        let entry = try entryForFeedback(feedback)
+        return SyncCommand(
+            operationId: item.id,
+            entityId: feedback.id,
+            kind: .createFeedback,
+            baseVersion: try baseVersion(for: entry),
+            payload: feedbackPayload(feedback)
+        )
+    }
+
+    func commandEntityID(for item: SyncQueueItem) throws -> String? {
+        let (taskType, payload) = try taskTypeAndPayload(for: item)
+        if taskType == .syncArtifact {
+            guard let artifactID = payload["artifactId"] as? String, !artifactID.isEmpty else {
+                throw SyncError.payloadParseError("Sync payload is missing artifactId")
             }
-            response = remote
+            return try store.fetchArtifact(id: artifactID).entryId
         }
+        if taskType == .postFeedback {
+            guard let feedbackID = payload["feedbackId"] as? String, !feedbackID.isEmpty else {
+                throw SyncError.payloadParseError("Sync payload is missing feedbackId")
+            }
+            let feedback = try store.fetchFirst(
+                FetchDescriptor<LocalFeedback>(predicate: #Predicate { $0.id == feedbackID })
+            )
+            return try entryForFeedback(feedback).id
+        }
+        return payload["entryId"] as? String
+    }
+
+    /// Applies an outcome only when it belongs to the local operation that requested it.
+    func apply(_ result: SyncCommandResult, for item: SyncQueueItem) throws {
+        guard result.operationId == item.id else {
+            throw SyncError.payloadParseError("Command response did not match local operation \(item.id)")
+        }
+        switch result.status {
+        case .applied, .duplicate:
+            if let resource = result.resource {
+                apply(resource, currentVersion: result.currentVersion)
+            } else if let entry = try? store.fetchEntry(id: result.entityId) {
+                entry.serverVersion = result.currentVersion ?? entry.serverVersion
+                if result.kind == .submitEntry { entry.status = .submitted }
+                store.save()
+            }
+        case .conflict:
+            let localEntityID = (try? commandEntityID(for: item)) ?? result.entityId
+            throw SyncError.serverConflict(
+                entityId: result.resource?.id ?? localEntityID,
+                currentVersion: result.currentVersion
+            )
+        case .rejected:
+            throw SyncError.commandRejected(result.code ?? result.message ?? "Command rejected")
+        case .retryable:
+            throw SyncError.commandRetryable(result.code ?? result.message ?? "Command retryable")
+        }
+    }
+
+    private func requiredEntryID(_ payload: [String: Any]) throws -> String {
+        guard let entryID = payload["entryId"] as? String, !entryID.isEmpty else {
+            throw SyncError.payloadParseError("Sync payload is missing entryId")
+        }
+        return entryID
+    }
+
+    /// Rejects mutations for entries that have never received an authoritative server version.
+    func baseVersion(for entry: LocalPracticeEntry) throws -> Int {
+        guard let version = entry.serverVersion else {
+            throw SyncError.missingServerVersion(entry.id)
+        }
+        return version
+    }
+
+    private func entryPayload(_ entry: LocalPracticeEntry) -> JSONValue {
+        var values: [String: JSONValue] = [
+            "courseId": .string(entry.courseId),
+            "kind": .string(entry.kind.rawValue),
+            "practiceDate": .string(JSONEncoder.apiEncoderDateString(entry.practiceDate)),
+            "goalText": .string(entry.goalText),
+            "tags": .array(entry.tags.map(JSONValue.string)),
+            "consentConfirmedAt": entry.consentConfirmedAt.map { .string(JSONEncoder.apiEncoderDateString($0)) } ?? .null,
+            "consentScope": entry.consentScope.map { .string($0.rawValue) } ?? .null,
+            "captureProfile": entry.captureProfile.map { .string($0.rawValue) } ?? .null
+        ]
+        values["durationSeconds"] = entry.durationSeconds.map(JSONValue.integer) ?? .null
+        values["notes"] = entry.notes.map(JSONValue.string) ?? .null
+        return .object(values)
+    }
+
+    private func markerPayload(_ marker: LocalCaptureMarker) -> JSONValue {
+        .object([
+            "id": .string(marker.id),
+            "artifactId": .string(marker.artifactId),
+            "timeSeconds": .integer(marker.timeSeconds),
+            "kind": .string(marker.kind.rawValue),
+            "note": marker.note.map(JSONValue.string) ?? .null
+        ])
+    }
+
+    private func feedbackPayload(_ feedback: LocalFeedback) -> JSONValue {
+        .object([
+            "targetType": .string(feedback.targetType),
+            "targetId": .string(feedback.targetId),
+            "status": .string(feedback.status.rawValue),
+            "commentsText": .string(feedback.commentsText),
+            "markers": .array(feedback.markers.map {
+                .object(["id": .string($0.id), "timeSeconds": .integer($0.timeSeconds), "text": .string($0.text)])
+            })
+        ])
+    }
+
+    private func entryForFeedback(_ feedback: LocalFeedback) throws -> LocalPracticeEntry {
+        if feedback.targetType == "entry" { return try store.fetchEntry(id: feedback.targetId) }
+
+        let artifact = try store.fetchArtifact(id: feedback.targetId)
+        return try store.fetchEntry(id: artifact.entryId)
+    }
+
+    private func apply(_ response: EntryResponse, currentVersion: Int?) {
+        guard let entry = try? store.fetchEntry(id: response.id) else { return }
+        entry.status = EntryStatus(rawValue: response.status) ?? entry.status
+        entry.serverVersion = currentVersion ?? response.version ?? entry.serverVersion
         entry.remoteUpdatedAt = response.updatedAt ?? response.createdAt ?? Date()
         store.save()
     }
 
-    private func executeUpdateEntry(payload: [String: Any], accessToken: String) async throws {
-        let entryId = payload["entryId"] as? String ?? ""
-        let entry = try store.fetchEntry(id: entryId)
-        let response = try await apiClient.updateEntry(accessToken: accessToken, entry: entry)
-        entry.remoteUpdatedAt = response.updatedAt ?? Date()
-        store.save()
-    }
-
-    private func executeSubmitEntry(payload: [String: Any], accessToken: String) async throws {
-        let entryId = payload["entryId"] as? String ?? ""
-        let entry = try store.fetchEntry(id: entryId)
-        guard !entry.artifacts.isEmpty,
-              entry.artifacts.allSatisfy({ $0.uploadState == .uploaded }) else {
-            throw SyncError.dependenciesPending("Submission is waiting for media uploads")
-        }
-        do {
-            _ = try await apiClient.submitEntry(accessToken: accessToken, entryId: entryId)
-            entry.status = .submitted
-            store.save()
-        } catch let error as APIError where error.error.code == "ENTRY_LOCKED" {
-            // A lost submit response can leave this queue item pending even
-            // though the server already moved the entry out of draft. Fetch
-            // the authoritative state instead of turning that successful
-            // operation into a terminal local failure.
-            let remote = try await apiClient.fetchEntry(accessToken: accessToken, entryId: entryId)
-            guard let remoteStatus = EntryStatus(rawValue: remote.status), remoteStatus != .draft else {
-                throw error
-            }
-            entry.status = remoteStatus
-            store.save()
-        }
-    }
-
-    private func executeDeleteEntry(payload: [String: Any], accessToken: String) async throws {
-        let entryId = payload["entryId"] as? String ?? ""
-        do {
-            try await apiClient.deleteEntry(accessToken: accessToken, entryId: entryId)
-        } catch let error as APIError
-            where error.error.code == "ENTRY_NOT_FOUND" || error.error.code == "ENTRY_DELETED" {
-            return
-        }
-    }
-
-    private func executeSyncArtifact(payload: [String: Any], accessToken: String) async throws {
-        let artifactId = payload["artifactId"] as? String ?? ""
-        let artifact = try store.fetchArtifact(id: artifactId)
-        let fileSize = try artifactFileSize(artifact)
-        let remoteArtifact = try await createOrReconcileArtifact(
-            artifact,
-            artifactId: artifactId,
-            fileSize: fileSize,
-            accessToken: accessToken
-        )
-
-        guard remoteArtifact.uploadState != UploadState.uploaded.rawValue else {
-            markArtifactUploaded(artifact, from: remoteArtifact)
-            return
-        }
-
-        try await uploadAndConfirmArtifact(artifact, artifactId: artifactId, accessToken: accessToken)
-    }
-
-    private func artifactFileSize(_ artifact: LocalArtifact) throws -> Int {
-        guard FileManager.default.fileExists(atPath: artifact.localPath) else {
-            throw SyncError.localFileNotFound("Local file not found for artifact \(artifact.id) at \(artifact.localPath)")
-        }
-        do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: artifact.localPath)
-            guard let size = attributes[.size] as? NSNumber else {
-                throw SyncError.localFileMetadataUnavailable("Could not determine size for artifact \(artifact.id)")
-            }
-            return size.intValue
-        } catch let error as SyncError {
-            throw error
-        } catch {
-            throw SyncError.localFileMetadataUnavailable("Could not read local file metadata for artifact \(artifact.id): \(error.localizedDescription)")
-        }
-    }
-
-    private func createOrReconcileArtifact(
-        _ artifact: LocalArtifact,
-        artifactId: String,
-        fileSize: Int,
-        accessToken: String
-    ) async throws -> ArtifactResponse {
-        do {
-            return try await apiClient.createArtifact(
-                accessToken: accessToken,
-                entryId: artifact.entryId,
-                artifact: artifact,
-                sizeBytes: fileSize
-            )
-        } catch let error as APIError where error.error.code == "ID_CONFLICT" {
-            let remoteEntry = try await apiClient.fetchEntry(accessToken: accessToken, entryId: artifact.entryId)
-            guard let matchingArtifact = remoteEntry.artifacts?.first(where: { $0.id == artifactId }),
-                  isExactArtifactRetry(remote: matchingArtifact, local: artifact, sizeBytes: fileSize) else {
-                throw error
-            }
-            return matchingArtifact
-        }
-    }
-
-    private func markArtifactUploaded(_ artifact: LocalArtifact, from remoteArtifact: ArtifactResponse) {
-        artifact.uploadState = .uploaded
-        artifact.syncPhase = .uploaded
-        artifact.storageKey = remoteArtifact.storageKey
-        artifact.remoteUrl = remoteArtifact.remoteUrl
-        store.save()
-    }
-
-    private func uploadAndConfirmArtifact(
-        _ artifact: LocalArtifact,
-        artifactId: String,
-        accessToken: String
-    ) async throws {
-        artifact.uploadState = .uploading
-        artifact.syncPhase = .uploading
-        store.save()
-
-        let presign = try await apiClient.presignArtifact(accessToken: accessToken, artifactId: artifact.id)
-        guard let uploadURL = URL(string: presign.uploadUrl), uploadURL.scheme != nil else {
-            throw SyncError.invalidPresignUrl("Invalid presign URL for artifact \(artifactId)")
-        }
-        try await uploadFile(url: uploadURL, fileURL: URL(fileURLWithPath: artifact.localPath), requiredHeaders: presign.requiredHeaders ?? [:])
-        artifact.syncPhase = .confirming
-        store.save()
-
-        let response = try await apiClient.confirmArtifact(accessToken: accessToken, artifactId: artifactId)
-        artifact.uploadState = UploadState(rawValue: response.uploadState) ?? .uploaded
-        artifact.syncPhase = .uploaded
-        artifact.storageKey = response.storageKey
-        artifact.remoteUrl = response.remoteUrl
-        store.save()
-    }
-
-    private func isExactCreateRetry(remote: EntryResponse, local: LocalPracticeEntry) -> Bool {
-        remote.courseId == local.courseId &&
-            remote.studentId == local.studentId &&
-            (remote.kind ?? EntryKind.practice.rawValue) == local.kind.rawValue &&
-            abs(remote.practiceDate.timeIntervalSince(local.practiceDate)) < 0.001 &&
-            remote.goalText == local.goalText &&
-            remote.durationSeconds == local.durationSeconds &&
-            remote.tags == local.tags &&
-            remote.notes == local.notes &&
-            (remote.consentConfirmedAt != nil) == (local.consentConfirmedAt != nil) &&
-            remote.consentScope == local.consentScope?.rawValue &&
-            remote.captureProfile == local.captureProfile?.rawValue
-    }
-
-    private func isExactArtifactRetry(
-        remote: ArtifactResponse,
-        local: LocalArtifact,
-        sizeBytes: Int
-    ) -> Bool {
-        remote.entryId == local.entryId &&
-            remote.type == local.type.rawValue &&
-            remote.durationSeconds == local.durationSeconds &&
-            remote.expectedSizeBytes == sizeBytes
-    }
-
-    private func executeSyncCaptureProfile(payload: [String: Any], accessToken: String) async throws {
-        let entryId = payload["entryId"] as? String ?? ""
-        let entry = try store.fetchEntry(id: entryId)
-        let response = try await apiClient.updateEntryCaptureProfile(
-            accessToken: accessToken,
-            entryId: entryId,
-            captureProfile: entry.captureProfile
-        )
-        entry.remoteUpdatedAt = response.updatedAt ?? Date()
-        store.save()
-    }
-
-    private func executeSyncCaptureMarkers(payload: [String: Any], accessToken: String) async throws {
-        let entryId = payload["entryId"] as? String ?? ""
-        _ = try store.fetchEntry(id: entryId)
-        let markers = try store.fetchCaptureMarkers(entryId: entryId)
-        _ = try await apiClient.syncCaptureMarkers(
-            accessToken: accessToken,
-            entryId: entryId,
-            markers: markers
-        )
-    }
-
-    private func executePostFeedback(payload: [String: Any], accessToken: String) async throws {
-        let targetType = payload["targetType"] as? String ?? "entry"
-        let targetId = payload["targetId"] as? String ?? ""
-        let feedbackId = payload["feedbackId"] as? String ?? ""
-
-        let descriptor = FetchDescriptor<LocalFeedback>(predicate: #Predicate { $0.id == feedbackId })
-        let feedback: LocalFeedback
-        do {
-            feedback = try store.fetchFirst(descriptor)
-        } catch {
-            throw SyncError.localFeedbackNotFound("Local feedback not found: \(feedbackId)")
-        }
-        let status = feedback.status
-        let commentsText = feedback.commentsText
-        let markers = feedback.markers
-        _ = try await apiClient.createFeedback(
-            accessToken: accessToken,
-            submission: FeedbackSubmission(
-                feedbackId: feedback.id,
-                targetType: targetType,
-                targetId: targetId,
-                status: status,
-                commentsText: commentsText,
-                markers: markers
-            )
-        )
-
-        if targetType == "entry", let entry = try? store.fetchEntry(id: targetId) {
-            entry.status = .reviewed
-            store.save()
-        } else if targetType == "artifact",
-                  let artifact = try? store.fetchArtifact(id: targetId),
-                  let entry = try? store.fetchEntry(id: artifact.entryId) {
-            entry.status = .reviewed
-            store.save()
-        }
-    }
-
-    private func uploadFile(url: URL, fileURL: URL, requiredHeaders: [String: String]) async throws {
-        var request = URLRequest(url: url)
-        request.httpMethod = "PUT"
-        for (header, value) in requiredHeaders {
-            request.setValue(value, forHTTPHeaderField: header)
-        }
-        let (_, response) = try await session.upload(for: request, fromFile: fileURL)
-        if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
-            throw URLError(.badServerResponse)
-        }
-    }
 }

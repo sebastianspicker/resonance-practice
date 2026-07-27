@@ -3,6 +3,9 @@ contact_links:
   - name: Documentation index
     url: https://github.com/sebastianspicker/resonance/blob/main/docs/INDEX.md
     about: Start here for canonical product, architecture, API, security, and release docs.
+  - name: Alpha support guide
+    url: https://github.com/sebastianspicker/resonance/blob/main/SUPPORT.md
+    about: Check the source-alpha support boundary and choose the right issue type.
   - name: Security policy
-    url: https://github.com/sebastianspicker/resonance/blob/main/docs/SECURITY.md
-    about: Use the security policy for vulnerability reporting guidance.
+    url: https://github.com/sebastianspicker/resonance/blob/main/SECURITY.md
+    about: Report vulnerabilities privately; do not open a public issue.

@@ -1,3 +1,4 @@
+/** CLI seed for deterministic local demo data, guarded by its caller. */
 import { PrismaClient } from '@prisma/client';
 import type { DemoFixture } from './demoFixture.js';
 import {

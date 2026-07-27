@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Reproduce the local subset of CI, including guarded infrastructure setup.
 set -euo pipefail
 
 usage() {
@@ -43,6 +44,7 @@ fi
 
 export DATABASE_URL="${DATABASE_URL:-postgresql://resonance:resonance@localhost:5432/resonance_test}"
 node ./scripts/assert-test-database-url.mjs
+node ./scripts/check-node-version.mjs
 
 if ! command -v npm >/dev/null; then
 	echo "npm is required." >&2
@@ -173,6 +175,9 @@ node ./scripts/demo/validate-fixture.mjs
 echo "Validating public documentation and screenshots..."
 node ./scripts/validate-public-docs.mjs
 
+echo "Testing repository policy scripts..."
+node --test tests/repository/*.test.mjs
+
 echo "Checking committed build artifacts..."
 ./scripts/check-no-build-artifacts.sh
 
@@ -187,6 +192,12 @@ echo "Installing dependencies..."
 
 echo "Linting..."
 (cd server && npm run lint)
+
+echo "Checking dead code..."
+(cd server && npm run quality:dead-code)
+
+echo "Checking source duplication..."
+(cd server && npm run quality:duplicates)
 
 echo "Checking formatting..."
 (cd server && npm run format:check)
@@ -224,5 +235,19 @@ echo "Running tests with coverage..."
 echo "Running process-level E2E tests..."
 (cd server && npm run test:e2e)
 
+echo "Linting Swift sources and tests..."
+./scripts/lint-swift.sh lint
+
 echo "Running iOS simulator verification..."
-./scripts/verify-ios.sh
+IOS_COMPILER_LOG_PATH="${TMPDIR:-/tmp}/resonance-xcodebuild.log" ./scripts/verify-ios.sh
+
+echo "Analyzing compiled Swift..."
+./scripts/lint-swift.sh analyze "${TMPDIR:-/tmp}/resonance-xcodebuild.log"
+
+if xcrun --toolchain swift swift --version 2>/dev/null | grep -Fq "Swift version 6.3.3"; then
+	echo "Running exact Swift 6.3.3 simulator verification..."
+	IOS_TOOLCHAIN=swift IOS_EXPECTED_SWIFT_VERSION=6.3.3 ./scripts/verify-ios.sh
+else
+	echo "Swift 6.3.3 custom toolchain is required; run ./scripts/install-swift-toolchain.sh." >&2
+	exit 1
+fi

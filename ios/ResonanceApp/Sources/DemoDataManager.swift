@@ -1,6 +1,8 @@
 import Foundation
 import SwiftData
 
+// Loads and removes deterministic mock-university data for local demos and screenshots.
+
 @MainActor
 final class DemoDataManager {
     private let modelContext: ModelContext
@@ -82,7 +84,12 @@ final class DemoDataManager {
         return artifactToEntry
     }
 
-    private func loadFeedback(_ feedbackItems: [DemoFeedback], usersById: [String: DemoUser], entriesById: [String: LocalPracticeEntry], artifactToEntry: [String: String]) {
+    private func loadFeedback(
+        _ feedbackItems: [DemoFeedback],
+        usersById: [String: DemoUser],
+        entriesById: [String: LocalPracticeEntry],
+        artifactToEntry: [String: String]
+    ) {
         for feedback in feedbackItems {
             let teacherName = usersById[feedback.teacherId]?.displayName ?? "Mock Teacher"
             let localFeedback = LocalFeedback(
@@ -90,7 +97,7 @@ final class DemoDataManager {
                 targetType: feedback.targetType,
                 targetId: feedback.targetId,
                 teacherName: teacherName,
-                status: FeedbackStatus(rawValue: feedback.status) ?? .ok,
+                status: FeedbackStatus(rawValue: feedback.status) ?? .accepted,
                 commentsText: feedback.commentsText
             )
             localFeedback.createdAt = feedback.createdAt
@@ -117,7 +124,12 @@ final class DemoDataManager {
         for item in queue ?? [] {
             let payloadData = try JSONSerialization.data(withJSONObject: item.payload)
             guard let payloadJSON = String(data: payloadData, encoding: .utf8) else { continue }
-            let queueItem = SyncQueueItem(id: item.id, type: item.type, payloadJSON: payloadJSON)
+            let queueItem = SyncQueueItem(
+                id: item.id,
+                type: item.type,
+                payloadJSON: payloadJSON,
+                ownerId: "demo"
+            )
             queueItem.status = item.status
             queueItem.retryCount = item.retryCount
             queueItem.lastError = item.lastError
@@ -144,7 +156,10 @@ final class DemoDataManager {
         }
         let demoArtifactIDs = Set(demoArtifacts.map(\.id))
         let demoFeedback = feedback.filter {
-            $0.id.hasPrefix(demoPrefix) || $0.targetId.hasPrefix(demoPrefix) || demoEntryIDs.contains($0.targetId) || demoArtifactIDs.contains($0.targetId)
+            $0.id.hasPrefix(demoPrefix) ||
+                $0.targetId.hasPrefix(demoPrefix) ||
+                demoEntryIDs.contains($0.targetId) ||
+                demoArtifactIDs.contains($0.targetId)
         }
         let demoCaptureMarkers = captureMarkers.filter {
             $0.id.hasPrefix(demoPrefix) || demoEntryIDs.contains($0.entryId) || demoArtifactIDs.contains($0.artifactId)

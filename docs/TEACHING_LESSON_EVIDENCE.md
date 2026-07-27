@@ -10,7 +10,7 @@ This note records the evidence basis and product boundaries for Resonance's teac
 | Classroom-videography guidance ties camera position and movement to the lesson or research aim and favors stable setups for whole-lesson representation. | Camera overlays should guide composition only; they must not imply scoring or objective interpretation. | Preview-only safe frame, horizon, movement corridor, zones, no-consent area, and contour guides are not stored as analysis. The source stores raw media and manual metadata. |
 | Wyss, Baeuerlein & Mahler (2023) distinguish noticing from reasoning and show that video perspective affects what observers notice. | A single perspective is not a neutral or complete record of a lesson. Reviewers need context for what the selected view emphasizes. | The selected `captureProfile` travels with teaching-lesson evidence and is available to the private teacher review flow. |
 | Atal, Admiraal & Saab (2023) describe structured uses of video in teacher education; 360-degree video is a possible format, not a requirement for this workflow. | Start with a structured, conventional capture and review loop rather than adding immersive media by default. | The alpha uses standard iPhone/iPad video, capture profiles, and manual markers. |
-| Music-teacher-education literature, including Bautista et al. (2019), Powell (2016), and Economidou Stavrou (2026), frames video reflection as useful when connected to inquiry and reflective practice. | Product language should support teacher-led inquiry, student participation, musical modelling, feedback, and lesson flow—not surveillance or appraisal. | Marker kinds and feedback copy focus on phases and pedagogical moments. The workflow stays inside private course review. |
+| Music-teacher-education literature, including Bautista et al. (2019), Powell (2016), and Economidou Stavrou (2026), frames video reflection as useful when connected to inquiry and reflective practice. | Product language should support teacher-led inquiry, student participation, musical modelling, feedback, and lesson flow, not surveillance or appraisal. | Marker kinds and feedback copy focus on phases and pedagogical moments. The workflow stays inside private course review. |
 
 ## Implemented safeguards and workflow boundaries
 
@@ -19,7 +19,9 @@ This note records the evidence basis and product boundaries for Resonance's teac
 - Capture-profile metadata gives the reviewer context about the intended perspective.
 - Marker synchronization replaces the entry's marker set, avoiding stale omitted markers.
 - Server authorization limits private media to the owning student and same-course teachers.
-- Process-level service E2E covers lesson creation, upload, marker sync, submission, queue metadata, authorized retrieval, and feedback; screenshots remain visual evidence only.
+- The process-level service-E2E suite covers lesson creation, upload, marker
+  sync, submission, queue metadata, authorized retrieval, and feedback. It must
+  pass again on the final candidate; screenshots remain visual evidence only.
 
 ## Explicit non-capabilities
 

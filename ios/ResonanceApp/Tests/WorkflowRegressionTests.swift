@@ -3,31 +3,131 @@ import Foundation
 import SwiftData
 @testable import ResonanceApp
 
+// Purpose: verifies queue coalescing, ownership isolation, and cross-service workflow regressions.
+
 final class SyncQueueCoalescingTests: XCTestCase {
+    private struct OnlineSyncFixture {
+        let container: ModelContainer
+        let authManager: AuthManager
+        let syncManager: SyncManager
+    }
+
     @MainActor
-    func testProcessQueueCoalescesConcurrentTriggersAndProcessesNewItemsOnce() async throws {
-        let container = PersistenceController.createContainer(inMemory: true)
-        let apiClient = APIClient()
+    private func makeAuthenticatedAuthManager(
+        apiClient: APIClient,
+        userId: String,
+        displayName: String
+    ) -> AuthManager {
         let authManager = AuthManager(apiClient: apiClient, removeSessionData: {})
         authManager.session = AuthSession(
             accessToken: makeUnexpiredJWT(),
             refreshToken: "refresh-token",
-            userId: "student-1",
-            displayName: "Student",
+            userId: userId,
+            displayName: displayName,
             globalRole: "student"
+        )
+        return authManager
+    }
+
+    @MainActor
+    private func makeOnlineSyncManager(
+        userId: String,
+        displayName: String,
+        apiClient: APIClient = APIClient(),
+        verifiedOwner: @escaping () throws -> String?,
+        processItemOverride: @escaping @MainActor (SyncQueueItem, String) async throws -> Void
+    ) -> OnlineSyncFixture {
+        let container = PersistenceController.createContainer(inMemory: true)
+        let authManager = makeAuthenticatedAuthManager(
+            apiClient: apiClient, userId: userId, displayName: displayName
         )
         let networkMonitor = NetworkMonitor()
         networkMonitor.isOnline = true
-
-        let firstItemStarted = expectation(description: "first item started")
-        var releaseFirstItem: CheckedContinuation<Void, Never>?
-        var processedEntryIds: [String] = []
-
         let syncManager = SyncManager(
             modelContext: container.mainContext,
             authManager: authManager,
             apiClient: apiClient,
             networkMonitor: networkMonitor,
+            verifiedOwner: verifiedOwner,
+            processItemOverride: processItemOverride
+        )
+        return OnlineSyncFixture(
+            container: container,
+            authManager: authManager,
+            syncManager: syncManager
+        )
+    }
+
+    @MainActor
+    private func makeStudentSyncManager(
+        processItemOverride: @escaping @MainActor (SyncQueueItem, String) async throws -> Void
+    ) -> OnlineSyncFixture {
+        makeOnlineSyncManager(
+            userId: "student-1",
+            displayName: "Student",
+            verifiedOwner: { "student-1" },
+            processItemOverride: processItemOverride
+        )
+    }
+
+    @MainActor
+    func testProfileConflictNeverSendsOrMutatesPreviousOwnersQueue() async throws {
+        var sentItemIDs: [String] = []
+        let fixture = makeOnlineSyncManager(
+            userId: "user-b",
+            displayName: "User B",
+            verifiedOwner: { "user-a" },
+            processItemOverride: { item, _ in sentItemIDs.append(item.id) }
+        )
+        let otherUserItem = SyncQueueItem(
+            id: "user-a-work",
+            type: SyncTaskType.createEntry.rawValue,
+            payloadJSON: "{\"entryId\":\"entry-a\"}",
+            ownerId: "user-a"
+        )
+        fixture.container.mainContext.insert(otherUserItem)
+        try fixture.container.mainContext.save()
+
+        await fixture.syncManager.processQueue()
+
+        XCTAssertTrue(sentItemIDs.isEmpty)
+        let remaining = try fixture.container.mainContext.fetch(FetchDescriptor<SyncQueueItem>())
+        XCTAssertEqual(remaining.map(\.id), ["user-a-work"])
+        XCTAssertEqual(remaining.first?.ownerId, "user-a")
+    }
+
+    @MainActor
+    func testInvalidationPreventsAnInFlightResponseFromDeletingQueueWork() async throws {
+        let started = expectation(description: "request started")
+        var release: CheckedContinuation<Void, Never>?
+        let fixture = makeOnlineSyncManager(
+            userId: "user-a",
+            displayName: "User A",
+            verifiedOwner: { "user-a" },
+            processItemOverride: { _, _ in
+                started.fulfill()
+                await withCheckedContinuation { release = $0 }
+            }
+        )
+        fixture.syncManager.enqueue(type: .createEntry, payload: ["entryId": "entry-a"])
+
+        let processingTask = Task { await fixture.syncManager.processQueue() }
+        await fulfillment(of: [started], timeout: 1)
+        fixture.syncManager.invalidateProcessing()
+        release?.resume()
+        await processingTask.value
+
+        let remaining = try fixture.container.mainContext.fetch(FetchDescriptor<SyncQueueItem>())
+        XCTAssertEqual(remaining.count, 1)
+        XCTAssertEqual(remaining.first?.status, SyncStatus.pending.rawValue)
+    }
+
+    @MainActor
+    func testProcessQueueCoalescesConcurrentTriggersAndProcessesNewItemsOnce() async throws {
+        let firstItemStarted = expectation(description: "first item started")
+        var releaseFirstItem: CheckedContinuation<Void, Never>?
+        var processedEntryIds: [String] = []
+        let fixture = makeStudentSyncManager(
             processItemOverride: { item, _ in
                 let payloadData = try XCTUnwrap(item.payloadJSON.data(using: .utf8))
                 let payload = try XCTUnwrap(try JSONSerialization.jsonObject(with: payloadData) as? [String: Any])
@@ -42,29 +142,33 @@ final class SyncQueueCoalescingTests: XCTestCase {
             }
         )
 
-        syncManager.enqueue(type: .createEntry, payload: ["entryId": "entry-1"])
+        fixture.syncManager.enqueue(type: .createEntry, payload: ["entryId": "entry-1"])
 
-        let firstTask = Task { await syncManager.processQueue() }
+        let firstTask = Task { await fixture.syncManager.processQueue() }
         await fulfillment(of: [firstItemStarted], timeout: 1.0)
 
-        syncManager.enqueue(type: .createEntry, payload: ["entryId": "entry-2"])
-        let secondTask = Task { await syncManager.processQueue() }
+        fixture.syncManager.enqueue(type: .createEntry, payload: ["entryId": "entry-2"])
+        let secondTask = Task { await fixture.syncManager.processQueue() }
 
         releaseFirstItem?.resume()
         await firstTask.value
         await secondTask.value
 
-        let remainingItems = try container.mainContext.fetch(FetchDescriptor<SyncQueueItem>())
+        let remainingItems = try fixture.container.mainContext.fetch(FetchDescriptor<SyncQueueItem>())
         XCTAssertTrue(remainingItems.isEmpty)
         XCTAssertEqual(processedEntryIds, ["entry-1", "entry-2"])
         XCTAssertEqual(Set(processedEntryIds).count, 2)
-        XCTAssertEqual(syncManager.pendingQueueCount, 0)
-        XCTAssertEqual(syncManager.failedQueueCount, 0)
+        XCTAssertEqual(fixture.syncManager.pendingQueueCount, 0)
+        XCTAssertEqual(fixture.syncManager.failedQueueCount, 0)
     }
 
     @MainActor
     func testInvalidSessionLeavesWorkPendingAndSignsOutWithoutRetryChurn() async throws {
+        let logoutRequested = expectation(description: "server logout requested")
         MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/auth/logout")
+            logoutRequested.fulfill()
             let response = HTTPURLResponse(
                 url: try XCTUnwrap(request.url),
                 statusCode: 200,
@@ -77,22 +181,11 @@ final class SyncQueueCoalescingTests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
         let apiClient = APIClient(session: URLSession(configuration: configuration))
-        let container = PersistenceController.createContainer(inMemory: true)
-        let authManager = AuthManager(apiClient: apiClient, removeSessionData: {})
-        authManager.session = AuthSession(
-            accessToken: makeUnexpiredJWT(),
-            refreshToken: "refresh-token",
+        let fixture = makeOnlineSyncManager(
             userId: "student-1",
             displayName: "Student",
-            globalRole: "student"
-        )
-        let networkMonitor = NetworkMonitor()
-        networkMonitor.isOnline = true
-        let syncManager = SyncManager(
-            modelContext: container.mainContext,
-            authManager: authManager,
             apiClient: apiClient,
-            networkMonitor: networkMonitor,
+            verifiedOwner: { "student-1" },
             processItemOverride: { _, _ in
                 throw APIError(
                     error: APIError.APIErrorBody(
@@ -103,38 +196,23 @@ final class SyncQueueCoalescingTests: XCTestCase {
                 )
             }
         )
-        syncManager.enqueue(type: .createEntry, payload: ["entryId": "entry-auth-boundary"])
+        fixture.syncManager.enqueue(type: .createEntry, payload: ["entryId": "entry-auth-boundary"])
 
-        await syncManager.processQueue()
+        await fixture.syncManager.processQueue()
 
-        let items = try container.mainContext.fetch(FetchDescriptor<SyncQueueItem>())
+        let items = try fixture.container.mainContext.fetch(FetchDescriptor<SyncQueueItem>())
         let item = try XCTUnwrap(items.first)
         XCTAssertEqual(item.status, SyncStatus.pending.rawValue)
         XCTAssertEqual(item.retryCount, 0)
         XCTAssertEqual(item.lastError, "INVALID_TOKEN")
-        XCTAssertNil(authManager.session)
+        XCTAssertNil(fixture.authManager.session)
+        await fulfillment(of: [logoutRequested], timeout: 1)
     }
 
     @MainActor
     func testRetryableFailureStopsThePassBeforeDependentLaterItem() async throws {
-        let container = PersistenceController.createContainer(inMemory: true)
-        let apiClient = APIClient()
-        let authManager = AuthManager(apiClient: apiClient)
-        authManager.session = AuthSession(
-            accessToken: makeUnexpiredJWT(),
-            refreshToken: "refresh-token",
-            userId: "student-1",
-            displayName: "Student",
-            globalRole: "student"
-        )
-        let networkMonitor = NetworkMonitor()
-        networkMonitor.isOnline = true
         var executedTypes: [String] = []
-        let syncManager = SyncManager(
-            modelContext: container.mainContext,
-            authManager: authManager,
-            apiClient: apiClient,
-            networkMonitor: networkMonitor,
+        let fixture = makeStudentSyncManager(
             processItemOverride: { item, _ in
                 executedTypes.append(item.type)
                 if item.type == SyncTaskType.createEntry.rawValue {
@@ -145,20 +223,22 @@ final class SyncQueueCoalescingTests: XCTestCase {
         let first = SyncQueueItem(
             id: "create-first",
             type: SyncTaskType.createEntry.rawValue,
-            payloadJSON: "{\"entryId\":\"entry-1\"}"
+            payloadJSON: "{\"entryId\":\"entry-1\"}",
+            ownerId: "student-1"
         )
         first.createdAt = Date(timeIntervalSince1970: 1)
         let dependent = SyncQueueItem(
             id: "artifact-second",
             type: SyncTaskType.syncArtifact.rawValue,
-            payloadJSON: "{\"artifactId\":\"artifact-1\",\"entryId\":\"entry-1\"}"
+            payloadJSON: "{\"artifactId\":\"artifact-1\",\"entryId\":\"entry-1\"}",
+            ownerId: "student-1"
         )
         dependent.createdAt = Date(timeIntervalSince1970: 2)
-        container.mainContext.insert(first)
-        container.mainContext.insert(dependent)
-        try container.mainContext.save()
+        fixture.container.mainContext.insert(first)
+        fixture.container.mainContext.insert(dependent)
+        try fixture.container.mainContext.save()
 
-        await syncManager.processQueue()
+        await fixture.syncManager.processQueue()
 
         XCTAssertEqual(executedTypes, [SyncTaskType.createEntry.rawValue])
         XCTAssertEqual(first.status, SyncStatus.pending.rawValue)
@@ -167,57 +247,84 @@ final class SyncQueueCoalescingTests: XCTestCase {
         XCTAssertEqual(dependent.status, SyncStatus.pending.rawValue)
         XCTAssertEqual(dependent.retryCount, 0)
     }
+
+    @MainActor
+    func testArtifactWorkReservesItsParentEntryInCommandWaves() throws {
+        let container = PersistenceController.createContainer(inMemory: true)
+        let entry = LocalPracticeEntry(
+            id: "entry-artifact-barrier",
+            courseId: "course-1",
+            studentId: "student-1",
+            details: PracticeEntryDetails(
+                practiceDate: Date(),
+                goalText: "Upload before submit",
+                durationSeconds: nil,
+                tags: [],
+                notes: nil
+            ),
+            status: .draft
+        )
+        let artifact = LocalArtifact(
+            id: "artifact-barrier",
+            entryId: entry.id,
+            type: .audio,
+            durationSeconds: 30,
+            localPath: "/tmp/artifact-barrier.m4a"
+        )
+        entry.artifacts.append(artifact)
+        container.mainContext.insert(entry)
+        container.mainContext.insert(artifact)
+        try container.mainContext.save()
+        let executor = makeTaskExecutor(for: container.mainContext)
+        let item = SyncQueueItem(
+            id: "artifact-operation",
+            type: SyncTaskType.syncArtifact.rawValue,
+            payloadJSON: "{\"artifactId\":\"\(artifact.id)\"}"
+        )
+
+        XCTAssertEqual(try executor.commandEntityID(for: item), entry.id)
+        XCTAssertNil(try executor.command(for: item))
+    }
 }
 
 final class CalendarRefreshSafetyTests: XCTestCase {
+    private struct CalendarRefreshFixture {
+        let container: ModelContainer
+        let url: URL
+        let service: CalendarService
+    }
+
     @MainActor
     func testNon200ResponseDoesNotClearExistingEvents() async throws {
-        let container = PersistenceController.createContainer(inMemory: true)
-        insertCalendarEvent(id: "existing", into: container.mainContext)
+        let fixture = makeCalendarRefreshFixture(statusCode: 500, data: Data())
 
-        let url = URL(string: "https://calendar.example.test/feed.ics")!
-        let service = CalendarService(session: makeSession(for: url) { _ in
-            (HTTPURLResponse(url: url, statusCode: 500, httpVersion: nil, headerFields: nil)!, Data())
-        })
-
-        do {
-            try await service.refresh(from: url, modelContext: container.mainContext)
-            XCTFail("Expected refresh to throw for non-200 response")
-        } catch let error as CalendarError {
+        try await assertExistingEventSurvivesRefreshFailure(
+            service: fixture.service,
+            url: fixture.url,
+            container: fixture.container
+        ) { error in
             XCTAssertEqual(error.errorDescription, "Calendar server returned HTTP 500")
         }
-
-        let events = try container.mainContext.fetch(FetchDescriptor<CalendarEvent>())
-        XCTAssertEqual(events.map(\.id), ["existing"])
     }
 
     @MainActor
     func testMalformedContentDoesNotClearExistingEvents() async throws {
-        let container = PersistenceController.createContainer(inMemory: true)
-        insertCalendarEvent(id: "existing", into: container.mainContext)
+        let fixture = makeCalendarRefreshFixture(
+            statusCode: 200,
+            data: Data("not-an-ical-feed".utf8)
+        )
 
-        let url = URL(string: "https://calendar.example.test/feed.ics")!
-        let service = CalendarService(session: makeSession(for: url) { _ in
-            (HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("not-an-ical-feed".utf8))
-        })
-
-        do {
-            try await service.refresh(from: url, modelContext: container.mainContext)
-            XCTFail("Expected refresh to throw for malformed calendar content")
-        } catch let error as CalendarError {
+        try await assertExistingEventSurvivesRefreshFailure(
+            service: fixture.service,
+            url: fixture.url,
+            container: fixture.container
+        ) { error in
             XCTAssertEqual(error, .invalidCalendarData)
         }
-
-        let events = try container.mainContext.fetch(FetchDescriptor<CalendarEvent>())
-        XCTAssertEqual(events.map(\.id), ["existing"])
     }
 
     @MainActor
     func testValidContentReplacesExistingEventsDeterministically() async throws {
-        let container = PersistenceController.createContainer(inMemory: true)
-        insertCalendarEvent(id: "existing", into: container.mainContext)
-
-        let url = URL(string: "https://calendar.example.test/feed.ics")!
         let ical = """
         BEGIN:VCALENDAR
         BEGIN:VEVENT
@@ -229,13 +336,11 @@ final class CalendarRefreshSafetyTests: XCTestCase {
         END:VEVENT
         END:VCALENDAR
         """
-        let service = CalendarService(session: makeSession(for: url) { _ in
-            (HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(ical.utf8))
-        })
+        let fixture = makeCalendarRefreshFixture(statusCode: 200, data: Data(ical.utf8))
 
-        try await service.refresh(from: url, modelContext: container.mainContext)
+        try await fixture.service.refresh(from: fixture.url, modelContext: fixture.container.mainContext)
 
-        let events = try container.mainContext.fetch(FetchDescriptor<CalendarEvent>())
+        let events = try fixture.container.mainContext.fetch(FetchDescriptor<CalendarEvent>())
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.id, "new-event")
         XCTAssertEqual(events.first?.summary, "Lesson")
@@ -243,23 +348,17 @@ final class CalendarRefreshSafetyTests: XCTestCase {
 
     @MainActor
     func testOversizedCalendarContentDoesNotClearExistingEvents() async throws {
-        let container = PersistenceController.createContainer(inMemory: true)
-        insertCalendarEvent(id: "existing", into: container.mainContext)
-
-        let url = URL(string: "https://calendar.example.test/feed.ics")!
         let oversized = "BEGIN:VCALENDAR\n" + String(repeating: "A", count: 1_048_577)
-        let service = CalendarService(session: makeSession(for: url) { _ in
-            (HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(oversized.utf8))
-        })
+        let fixture = makeCalendarRefreshFixture(statusCode: 200, data: Data(oversized.utf8))
 
         do {
-            try await service.refresh(from: url, modelContext: container.mainContext)
+            try await fixture.service.refresh(from: fixture.url, modelContext: fixture.container.mainContext)
             XCTFail("Expected refresh to throw for oversized calendar content")
         } catch let error as CalendarError {
             XCTAssertEqual(error, .calendarDataTooLarge)
         }
 
-        let events = try container.mainContext.fetch(FetchDescriptor<CalendarEvent>())
+        let events = try fixture.container.mainContext.fetch(FetchDescriptor<CalendarEvent>())
         XCTAssertEqual(events.map(\.id), ["existing"])
     }
 
@@ -274,6 +373,44 @@ final class CalendarRefreshSafetyTests: XCTestCase {
         )
         modelContext.insert(event)
         try? modelContext.save()
+    }
+
+    @MainActor
+    private func makeCalendarRefreshFixture(statusCode: Int, data: Data) -> CalendarRefreshFixture {
+        let container = PersistenceController.createContainer(inMemory: true)
+        insertCalendarEvent(id: "existing", into: container.mainContext)
+        let url = URL(string: "https://calendar.example.test/feed.ics")!
+        let service = CalendarService(session: makeSession(for: url) { _ in
+            (HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: nil, headerFields: nil)!, data)
+        })
+        return CalendarRefreshFixture(container: container, url: url, service: service)
+    }
+
+    @MainActor
+    private func assertRefreshFailure(
+        service: CalendarService,
+        url: URL,
+        context: ModelContext,
+        assertion: (CalendarError) -> Void
+    ) async throws {
+        do {
+            try await service.refresh(from: url, modelContext: context)
+            XCTFail("Expected calendar refresh to throw")
+        } catch let error as CalendarError {
+            assertion(error)
+        }
+    }
+
+    @MainActor
+    private func assertExistingEventSurvivesRefreshFailure(
+        service: CalendarService,
+        url: URL,
+        container: ModelContainer,
+        assertion: (CalendarError) -> Void
+    ) async throws {
+        try await assertRefreshFailure(service: service, url: url, context: container.mainContext, assertion: assertion)
+        let events = try container.mainContext.fetch(FetchDescriptor<CalendarEvent>())
+        XCTAssertEqual(events.map(\.id), ["existing"])
     }
 
     private func makeSession(
@@ -306,7 +443,7 @@ final class EntryReconciliationPendingWorkTests: XCTestCase {
         enqueueCaptureProfileSync(for: entry, in: context)
         try context.save()
 
-        let expectedURL = AppConfig.apiBaseURL.appendingPathComponent("courses/course-1/entries")
+        let expectedURL = AppConfig.apiV1URL(path: "courses/course-1/entries")
         EntryReconciliationURLProtocol.requestHandler = { request in
             XCTAssertEqual(request.url?.path, expectedURL.path)
             let response = self.staleRemoteEntryListData()
@@ -413,14 +550,13 @@ final class RemoteArtifactPlaybackSourceTests: XCTestCase {
             durationSeconds: 30,
             localPath: ""
         )
-        let expectedURL = AppConfig.apiBaseURL.appendingPathComponent("artifacts/\(artifact.id)/download")
+        let expectedURL = AppConfig.apiV1URL(path: "artifacts/\(artifact.id)/download-session")
         ArtifactPlaybackURLProtocol.requestHandler = { request in
             XCTAssertEqual(request.url, expectedURL)
-            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer access-token")
-            let data = try XCTUnwrap(
-                "{\"downloadUrl\":\"https://storage.example.test/artifact-remote-only\",\"expiresInSeconds\":900}"
-                    .data(using: .utf8)
+            let data = Data(
+                "{\"downloadUrl\":\"https://storage.example.test/artifact-remote-only\",\"expiresInSeconds\":900}".utf8
             )
             let response = try XCTUnwrap(
                 HTTPURLResponse(url: expectedURL, statusCode: 200, httpVersion: nil, headerFields: nil)
@@ -447,21 +583,10 @@ final class SubmitEntryStateTests: XCTestCase {
 
     @MainActor
     func testSubmitEntryMarksLocalEntrySubmittedOnlyAfterServerSuccess() async throws {
-        let container = PersistenceController.createContainer(inMemory: true)
+        let (container, entry) = try makeStoredSubmittableEntry(id: "entry-submit-success")
         let modelContext = container.mainContext
-        let entry = makeSubmittableEntry(id: "entry-submit-success")
-        modelContext.insert(entry)
-        try modelContext.save()
 
-        let expectedURL = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entry.id)/submit")
-        MockURLProtocol.requestHandler = { request in
-            XCTAssertEqual(request.url, expectedURL)
-            XCTAssertEqual(request.httpMethod, "POST")
-            return (
-                HTTPURLResponse(url: expectedURL, statusCode: 200, httpVersion: nil, headerFields: nil)!,
-                submitEntryResponseJSON(id: entry.id, status: "submitted")
-            )
-        }
+        installSubmitResponse(for: entry, statusCode: 200, data: submitEntryResponseJSON(id: entry.id, status: "submitted"))
 
         let executor = makeSubmitExecutor(modelContext: modelContext)
         let item = makeSubmitQueueItem(entryId: entry.id)
@@ -473,29 +598,20 @@ final class SubmitEntryStateTests: XCTestCase {
 
     @MainActor
     func testSubmitEntryFailureLeavesLocalEntryDraft() async throws {
-        let container = PersistenceController.createContainer(inMemory: true)
+        let (container, entry) = try makeStoredSubmittableEntry(id: "entry-submit-rejected")
         let modelContext = container.mainContext
-        let entry = makeSubmittableEntry(id: "entry-submit-rejected")
-        modelContext.insert(entry)
-        try modelContext.save()
 
-        let expectedURL = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entry.id)/submit")
-        MockURLProtocol.requestHandler = { request in
-            XCTAssertEqual(request.url, expectedURL)
-            XCTAssertEqual(request.httpMethod, "POST")
-            let body = """
-            {
-                "error": {
-                    "code": "ARTIFACTS_NOT_UPLOADED",
-                    "message": "All artifacts must be uploaded before submitting"
+        let body = Data(
+                """
+                {
+                    "error": {
+                        "code": "ARTIFACTS_NOT_UPLOADED",
+                        "message": "All artifacts must be uploaded before submitting"
+                    }
                 }
-            }
-            """.data(using: .utf8)!
-            return (
-                HTTPURLResponse(url: expectedURL, statusCode: 409, httpVersion: nil, headerFields: nil)!,
-                body
+                """.utf8
             )
-        }
+        installSubmitResponse(for: entry, statusCode: 409, data: body)
 
         let executor = makeSubmitExecutor(modelContext: modelContext)
         let item = makeSubmitQueueItem(entryId: entry.id)
@@ -512,14 +628,11 @@ final class SubmitEntryStateTests: XCTestCase {
 
     @MainActor
     func testSubmitEntryReconcilesSubmittedStateAfterLockedRetry() async throws {
-        let container = PersistenceController.createContainer(inMemory: true)
+        let (container, entry) = try makeStoredSubmittableEntry(id: "entry-submit-locked")
         let modelContext = container.mainContext
-        let entry = makeSubmittableEntry(id: "entry-submit-locked")
-        modelContext.insert(entry)
-        try modelContext.save()
 
         let submitURL = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entry.id)/submit")
-        let entryURL = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entry.id)")
+        let entryURL = AppConfig.apiV1URL(path: "entries/\(entry.id)")
         MockURLProtocol.requestHandler = { request in
             if request.url == submitURL {
                 XCTAssertEqual(request.httpMethod, "POST")
@@ -555,12 +668,31 @@ final class SubmitEntryStateTests: XCTestCase {
         )
     }
 
+    @MainActor
+    private func installSubmitResponse(for entry: LocalPracticeEntry, statusCode: Int, data: Data) {
+        let expectedURL = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entry.id)/submit")
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url, expectedURL)
+            XCTAssertEqual(request.httpMethod, "POST")
+            return (
+                HTTPURLResponse(url: expectedURL, statusCode: statusCode, httpVersion: nil, headerFields: nil)!,
+                data
+            )
+        }
+    }
+
     private func makeSubmittableEntry(id: String) -> LocalPracticeEntry {
         let entry = LocalPracticeEntry(
             id: id,
             courseId: "course-1",
             studentId: "student-1",
-            details: PracticeEntryDetails(practiceDate: Date(timeIntervalSince1970: 1_771_848_000), goalText: "Submitted only after server success", durationSeconds: nil, tags: ["tone"], notes: nil),
+            details: PracticeEntryDetails(
+                practiceDate: Date(timeIntervalSince1970: 1_771_848_000),
+                goalText: "Submitted only after server success",
+                durationSeconds: nil,
+                tags: ["tone"],
+                notes: nil
+            ),
             status: .draft
         )
         let artifact = LocalArtifact(
@@ -576,6 +708,15 @@ final class SubmitEntryStateTests: XCTestCase {
         return entry
     }
 
+    @MainActor
+    private func makeStoredSubmittableEntry(id: String) throws -> (ModelContainer, LocalPracticeEntry) {
+        let container = PersistenceController.createContainer(inMemory: true)
+        let entry = makeSubmittableEntry(id: id)
+        container.mainContext.insert(entry)
+        try container.mainContext.save()
+        return (container, entry)
+    }
+
     private func makeSubmitQueueItem(entryId: String) -> SyncQueueItem {
         guard let data = try? JSONSerialization.data(withJSONObject: ["entryId": entryId]) else {
             preconditionFailure("A string-only submission payload must be JSON-serializable")
@@ -589,443 +730,4 @@ final class SubmitEntryStateTests: XCTestCase {
             payloadJSON: payloadJSON
         )
     }
-}
-
-final class ArtifactSyncRecoveryTests: XCTestCase {
-    override func tearDown() {
-        MockURLProtocol.requestHandler = nil
-        super.tearDown()
-    }
-
-    @MainActor
-    func testArtifactRetryReconcilesAlreadyUploadedRemoteArtifact() async throws {
-        let container = PersistenceController.createContainer(inMemory: true)
-        let modelContext = container.mainContext
-        let localFileURL = FileManager.default.temporaryDirectory.appendingPathComponent("artifact-already-uploaded.m4a")
-        try Data("audio".utf8).write(to: localFileURL)
-        defer { try? FileManager.default.removeItem(at: localFileURL) }
-        let (entry, artifact) = makeArtifactRetryFixture(localFileURL: localFileURL)
-        modelContext.insert(entry)
-        modelContext.insert(artifact)
-        try modelContext.save()
-
-        let createURL = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entry.id)/artifacts")
-        let entryURL = AppConfig.apiBaseURL.appendingPathComponent("entries/\(entry.id)")
-        MockURLProtocol.requestHandler = { request in
-            if request.url == createURL {
-                return (
-                    HTTPURLResponse(url: createURL, statusCode: 409, httpVersion: nil, headerFields: nil)!,
-                    Data("{\"error\":{\"code\":\"ID_CONFLICT\",\"message\":\"Artifact already exists\"}}".utf8)
-                )
-            }
-            XCTAssertEqual(request.url, entryURL)
-            XCTAssertEqual(request.httpMethod, "GET")
-            return (
-                HTTPURLResponse(url: entryURL, statusCode: 200, httpVersion: nil, headerFields: nil)!,
-                entryResponseWithUploadedArtifact(entryId: entry.id, artifactId: artifact.id)
-            )
-        }
-
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [MockURLProtocol.self]
-        let executor = TaskExecutor(
-            apiClient: APIClient(session: URLSession(configuration: configuration)),
-            store: QueueStore(modelContext: modelContext),
-            session: URLSession(configuration: .ephemeral)
-        )
-        let item = SyncQueueItem(
-            id: "artifact-retry",
-            type: SyncTaskType.syncArtifact.rawValue,
-            payloadJSON: "{\"artifactId\":\"\(artifact.id)\"}"
-        )
-
-        try await executor.execute(item: item, accessToken: "access-token")
-
-        XCTAssertEqual(artifact.uploadState, .uploaded)
-        XCTAssertEqual(artifact.syncPhase, .uploaded)
-        XCTAssertEqual(artifact.storageKey, "artifacts/\(entry.id)/\(artifact.id)")
-        XCTAssertEqual(artifact.remoteUrl, "https://storage.example.test/\(artifact.id)")
-    }
-
-    private func makeArtifactRetryFixture(localFileURL: URL) -> (LocalPracticeEntry, LocalArtifact) {
-        let entry = LocalPracticeEntry(
-            id: "entry-artifact-retry",
-            courseId: "course-1",
-            studentId: "student-1",
-            details: PracticeEntryDetails(practiceDate: Date(), goalText: "Goal", durationSeconds: nil, tags: [], notes: nil),
-            status: .draft
-        )
-        let artifact = LocalArtifact(
-            id: "artifact-already-uploaded",
-            entryId: entry.id,
-            type: .audio,
-            durationSeconds: 30,
-            localPath: localFileURL.path
-        )
-        entry.artifacts.append(artifact)
-        return (entry, artifact)
-    }
-}
-
-final class CameraPrivacyConfigurationTests: XCTestCase {
-    func testInfoPlistDeclaresCameraUsageDescription() throws {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let packageRoot = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        let infoPlistURL = packageRoot.appendingPathComponent("Sources/Resources/Info.plist")
-        let data = try Data(contentsOf: infoPlistURL)
-        let plist = try XCTUnwrap(
-            PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
-        )
-
-        let cameraPurpose = try XCTUnwrap(plist["NSCameraUsageDescription"] as? String)
-        XCTAssertFalse(cameraPurpose.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-    }
-}
-
-final class EntryDeletionCoordinatorTests: XCTestCase {
-    @MainActor
-    func testDeletingEntryCancelsQueuedWorkAndPersistsOneRemoteDelete() throws {
-        let container = PersistenceController.createContainer(inMemory: true)
-        let modelContext = container.mainContext
-        let entry = makeEntry(id: "entry-unsynced")
-        let artifactURL = FileManager.default.temporaryDirectory.appendingPathComponent("entry-unsynced-audio.m4a")
-        try Data("audio".utf8).write(to: artifactURL)
-
-        let artifact = LocalArtifact(
-            id: "artifact-unsynced",
-            entryId: entry.id,
-            type: .audio,
-            durationSeconds: 12,
-            localPath: artifactURL.path
-        )
-        entry.artifacts.append(artifact)
-        modelContext.insert(entry)
-        modelContext.insert(artifact)
-        modelContext.insert(makeQueueItem(id: "create-entry", type: .createEntry, payload: ["entryId": entry.id], status: .failed))
-        modelContext.insert(makeQueueItem(id: "sync-artifact", type: .syncArtifact, payload: ["artifactId": artifact.id], status: .processing))
-        modelContext.insert(makeQueueItem(id: "post-feedback", type: .postFeedback, payload: ["targetId": artifact.id, "targetType": "artifact"], status: .pending))
-        try modelContext.save()
-
-        let result = try EntryDeletionCoordinator.delete(entry: entry, modelContext: modelContext)
-
-        XCTAssertTrue(result.enqueuedRemoteDelete)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: artifactURL.path))
-        XCTAssertTrue(try modelContext.fetch(FetchDescriptor<LocalPracticeEntry>()).isEmpty)
-        XCTAssertTrue(try modelContext.fetch(FetchDescriptor<LocalArtifact>()).isEmpty)
-        let remainingQueueItems = try modelContext.fetch(FetchDescriptor<SyncQueueItem>())
-        XCTAssertEqual(remainingQueueItems.count, 1)
-        XCTAssertEqual(remainingQueueItems.first?.type, SyncTaskType.deleteEntry.rawValue)
-        XCTAssertTrue(remainingQueueItems.first?.payloadJSON.contains(entry.id) == true)
-    }
-
-    @MainActor
-    func testDeletingSyncedEntryKeepsOnlyRemoteDeleteQueueItem() throws {
-        let container = PersistenceController.createContainer(inMemory: true)
-        let modelContext = container.mainContext
-        let entry = makeEntry(id: "entry-synced")
-        let artifactURL = FileManager.default.temporaryDirectory.appendingPathComponent("entry-synced-audio.m4a")
-        try Data("audio".utf8).write(to: artifactURL)
-
-        let artifact = LocalArtifact(
-            id: "artifact-synced",
-            entryId: entry.id,
-            type: .audio,
-            durationSeconds: 8,
-            localPath: artifactURL.path
-        )
-        entry.artifacts.append(artifact)
-        modelContext.insert(entry)
-        modelContext.insert(artifact)
-        modelContext.insert(makeQueueItem(id: "sync-artifact", type: .syncArtifact, payload: ["artifactId": artifact.id], status: .failed))
-        try modelContext.save()
-
-        let result = try EntryDeletionCoordinator.delete(entry: entry, modelContext: modelContext)
-
-        XCTAssertTrue(result.enqueuedRemoteDelete)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: artifactURL.path))
-        XCTAssertTrue(try modelContext.fetch(FetchDescriptor<LocalPracticeEntry>()).isEmpty)
-        XCTAssertTrue(try modelContext.fetch(FetchDescriptor<LocalArtifact>()).isEmpty)
-
-        let remainingQueueItems = try modelContext.fetch(FetchDescriptor<SyncQueueItem>())
-        XCTAssertEqual(remainingQueueItems.count, 1)
-        XCTAssertEqual(remainingQueueItems.first?.type, SyncTaskType.deleteEntry.rawValue)
-    }
-
-    @MainActor
-    func testMediaDeletionFailureLeavesLocalRecordsAndQueueWorkIntact() throws {
-        let container = PersistenceController.createContainer(inMemory: true)
-        let modelContext = container.mainContext
-        let entry = makeEntry(id: "entry-media-failure")
-        let artifact = LocalArtifact(
-            id: "artifact-media-failure",
-            entryId: entry.id,
-            type: .audio,
-            durationSeconds: 8,
-            localPath: "/unavailable/media.m4a"
-        )
-        entry.artifacts.append(artifact)
-        modelContext.insert(entry)
-        modelContext.insert(artifact)
-        modelContext.insert(makeQueueItem(id: "create-entry", type: .createEntry, payload: ["entryId": entry.id], status: .pending))
-        try modelContext.save()
-
-        XCTAssertThrowsError(
-            try EntryDeletionCoordinator.delete(
-                entry: entry,
-                modelContext: modelContext,
-                removeArtifactFile: { _ in throw EntryDeletionTestError.mediaDeletionFailed }
-            )
-        )
-
-        XCTAssertEqual(try modelContext.fetch(FetchDescriptor<LocalPracticeEntry>()).count, 1)
-        XCTAssertEqual(try modelContext.fetch(FetchDescriptor<LocalArtifact>()).count, 1)
-        let queueItems = try modelContext.fetch(FetchDescriptor<SyncQueueItem>())
-        XCTAssertEqual(queueItems.count, 1)
-        XCTAssertEqual(queueItems.first?.type, SyncTaskType.createEntry.rawValue)
-    }
-
-    @MainActor
-    func testAdditionalOwnedMediaPathIsDeletedOnceWithEntry() throws {
-        let container = PersistenceController.createContainer(inMemory: true)
-        let modelContext = container.mainContext
-        let entry = makeEntry(id: "entry-extra-media")
-        let extraURL = FileManager.default.temporaryDirectory.appendingPathComponent("entry-extra-media.m4a")
-        try Data("recording".utf8).write(to: extraURL)
-        defer { try? FileManager.default.removeItem(at: extraURL) }
-        modelContext.insert(entry)
-        try modelContext.save()
-        var removedPaths: [String] = []
-
-        _ = try EntryDeletionCoordinator.delete(
-            entry: entry,
-            modelContext: modelContext,
-            additionalOwnedMediaPaths: [extraURL.path, extraURL.path],
-            removeArtifactFile: { path in
-                removedPaths.append(path)
-                try FileStore.removeFileIfExists(atPath: path)
-            }
-        )
-
-        XCTAssertEqual(removedPaths, [extraURL.path])
-        XCTAssertFalse(FileManager.default.fileExists(atPath: extraURL.path))
-        XCTAssertTrue(try modelContext.fetch(FetchDescriptor<LocalPracticeEntry>()).isEmpty)
-    }
-
-    @MainActor
-    func testAdditionalOwnedMediaFailurePreservesPathForSuccessfulRetry() throws {
-        let container = PersistenceController.createContainer(inMemory: true)
-        let modelContext = container.mainContext
-        let entry = makeEntry(id: "entry-extra-media-failure")
-        modelContext.insert(entry)
-        modelContext.insert(makeQueueItem(id: "create-entry", type: .createEntry, payload: ["entryId": entry.id], status: .pending))
-        try modelContext.save()
-
-        XCTAssertThrowsError(
-            try EntryDeletionCoordinator.delete(
-                entry: entry,
-                modelContext: modelContext,
-                additionalOwnedMediaPaths: ["/unavailable/recorder.m4a"],
-                removeArtifactFile: { _ in throw EntryDeletionTestError.mediaDeletionFailed }
-            )
-        )
-
-        XCTAssertEqual(try modelContext.fetch(FetchDescriptor<LocalPracticeEntry>()).count, 1)
-        let queueItems = try modelContext.fetch(FetchDescriptor<SyncQueueItem>())
-        XCTAssertEqual(queueItems.count, 1)
-        XCTAssertEqual(queueItems.first?.type, SyncTaskType.createEntry.rawValue)
-
-        var retriedPaths: [String] = []
-        _ = try EntryDeletionCoordinator.delete(
-            entry: entry,
-            modelContext: modelContext,
-            additionalOwnedMediaPaths: ["/unavailable/recorder.m4a"],
-            removeArtifactFile: { retriedPaths.append($0) }
-        )
-
-        XCTAssertEqual(retriedPaths, ["/unavailable/recorder.m4a"])
-        XCTAssertTrue(try modelContext.fetch(FetchDescriptor<LocalPracticeEntry>()).isEmpty)
-        XCTAssertEqual(
-            try modelContext.fetch(FetchDescriptor<SyncQueueItem>()).map(\.type),
-            [SyncTaskType.deleteEntry.rawValue]
-        )
-    }
-
-    @MainActor
-    private func makeEntry(id: String) -> LocalPracticeEntry {
-        LocalPracticeEntry(
-            id: id,
-            courseId: "course-1",
-            studentId: "student-1",
-            details: PracticeEntryDetails(practiceDate: Date(), goalText: "Goal", durationSeconds: nil, tags: [], notes: nil),
-            status: .draft
-        )
-    }
-
-    private func makeQueueItem(
-        id: String,
-        type: SyncTaskType,
-        payload: [String: Any],
-        status: SyncStatus
-    ) -> SyncQueueItem {
-        guard let data = try? JSONSerialization.data(withJSONObject: payload) else {
-            preconditionFailure("The supplied queue payload must be JSON-serializable")
-        }
-        guard let payloadJSON = String(bytes: data, encoding: .utf8) else {
-            preconditionFailure("A JSON queue payload must be valid UTF-8")
-        }
-        let item = SyncQueueItem(id: id, type: type.rawValue, payloadJSON: payloadJSON)
-        item.status = status.rawValue
-        return item
-    }
-}
-
-private enum EntryDeletionTestError: Error {
-    case mediaDeletionFailed
-}
-
-private final class MockURLProtocol: URLProtocol {
-    static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
-
-    override class func canInit(with request: URLRequest) -> Bool {
-        true
-    }
-
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
-        request
-    }
-
-    override func startLoading() {
-        guard let handler = Self.requestHandler else {
-            XCTFail("MockURLProtocol.requestHandler not set")
-            return
-        }
-
-        do {
-            let (response, data) = try handler(request)
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: data)
-            client?.urlProtocolDidFinishLoading(self)
-        } catch {
-            client?.urlProtocol(self, didFailWithError: error)
-        }
-    }
-
-    override func stopLoading() {}
-}
-
-private final class EntryReconciliationURLProtocol: URLProtocol {
-    static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
-
-    override class func canInit(with request: URLRequest) -> Bool { true }
-
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-        guard let handler = Self.requestHandler else {
-            XCTFail("EntryReconciliationURLProtocol.requestHandler not set")
-            return
-        }
-        do {
-            let (response, data) = try handler(request)
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: data)
-            client?.urlProtocolDidFinishLoading(self)
-        } catch {
-            client?.urlProtocol(self, didFailWithError: error)
-        }
-    }
-
-    override func stopLoading() {}
-}
-
-private final class ArtifactPlaybackURLProtocol: URLProtocol {
-    static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
-
-    override class func canInit(with request: URLRequest) -> Bool { true }
-
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-        guard let handler = Self.requestHandler else {
-            XCTFail("ArtifactPlaybackURLProtocol.requestHandler not set")
-            return
-        }
-        do {
-            let (response, data) = try handler(request)
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: data)
-            client?.urlProtocolDidFinishLoading(self)
-        } catch {
-            client?.urlProtocol(self, didFailWithError: error)
-        }
-    }
-
-    override func stopLoading() {}
-}
-
-private func submitEntryResponseJSON(id: String, status: String) -> Data {
-    """
-    {
-        "id": "\(id)",
-        "courseId": "course-1",
-        "studentId": "student-1",
-        "kind": "practice",
-        "practiceDate": "2026-02-23T12:00:00Z",
-        "goalText": "Submitted only after server success",
-        "durationSeconds": null,
-        "tags": ["tone"],
-        "notes": null,
-        "status": "\(status)",
-        "consentConfirmedAt": null,
-        "consentScope": null,
-        "captureProfile": null,
-        "captureMarkers": []
-    }
-    """.data(using: .utf8)!
-}
-
-private func entryResponseWithUploadedArtifact(entryId: String, artifactId: String) -> Data {
-    """
-    {
-      "id": "\(entryId)",
-      "courseId": "course-1",
-      "studentId": "student-1",
-      "kind": "practice",
-      "practiceDate": "2026-02-23T12:00:00Z",
-      "goalText": "Goal",
-      "durationSeconds": null,
-      "tags": [],
-      "notes": null,
-      "status": "draft",
-      "consentConfirmedAt": null,
-      "consentScope": null,
-      "captureProfile": null,
-      "captureMarkers": [],
-      "artifacts": [
-        {
-          "id": "\(artifactId)",
-          "entryId": "\(entryId)",
-          "type": "audio",
-          "durationSeconds": 30,
-          "expectedSizeBytes": 5,
-          "uploadState": "uploaded",
-          "storageKey": "artifacts/\(entryId)/\(artifactId)",
-          "remoteUrl": "https://storage.example.test/\(artifactId)"
-        }
-      ]
-    }
-    """.data(using: .utf8)!
-}
-
-private func makeUnexpiredJWT() -> String {
-    let header = base64URLString(from: Data("{\"alg\":\"none\"}".utf8))
-    let payload = base64URLString(from: Data("{\"exp\":\(Int(Date().addingTimeInterval(3600).timeIntervalSince1970))}".utf8))
-    return "\(header).\(payload).signature"
-}
-
-private func base64URLString(from data: Data) -> String {
-    data.base64EncodedString()
-        .replacingOccurrences(of: "+", with: "-")
-        .replacingOccurrences(of: "/", with: "_")
-        .replacingOccurrences(of: "=", with: "")
 }

@@ -4,13 +4,20 @@ This document describes the routes implemented in the current source tree. It is
 
 Base URL: `http://localhost:4000`
 
+The iOS alpha client uses the `/api/v1` routes below for synchronization, reads, and artifact transfers. The unversioned route descriptions retained later in this document are compatibility surfaces; new clients must use v1.
+
 All authenticated endpoints require an `Authorization: Bearer <accessToken>` header.
 
 ## Response Headers
 
 Every response includes:
 
-- `x-request-id` — a unique identifier for the request, useful for tracing and debugging. Clients should log this value and include it in bug reports to help correlate issues with server-side logs.
+- `x-request-id`: a unique identifier for the request, useful for tracing and debugging. Clients should log this value and include it in bug reports to help correlate issues with server-side logs.
+
+## Service Probes
+
+- `GET /health` is a process-liveness probe and returns `{ "status": "ok" }` without querying dependencies.
+- `GET /ready` checks PostgreSQL and the configured object-storage bucket within the validated dependency deadline. It returns `{ "status": "ready" }` with `200`, or `{ "status": "unavailable" }` with `503`.
 
 ## Service Probes
 
@@ -21,9 +28,122 @@ Every response includes:
 
 In addition to the error codes listed below, the API uses:
 
-- `201 Created` — returned by `POST` endpoints that create a resource (e.g., `POST /courses/:courseId/entries`, `POST /entries/:entryId/artifacts`, `POST /auth/session`).
-- `204 No Content` — returned by `DELETE` endpoints on success (empty body).
-- `200 OK` — all other successful responses.
+- `201 Created`: returned by `POST` endpoints that create a resource (for example, `POST /courses/:courseId/entries` and `POST /auth/session`).
+- `204 No Content`: returned by `DELETE` endpoints on success with an empty body.
+- `200 OK`: all other successful responses.
+
+## Version 1 sync and artifacts
+
+### POST /api/v1/sync/commands
+
+Applies one to 25 commands in request order. A batch may contain independent entities, but commands affecting the same entity are processed FIFO. Each command has a client-generated `operationId`; retries with the same ID and payload return the stored outcome instead of applying the mutation again.
+
+```json
+{
+  "commands": [
+    {
+      "operationId": "operation-id",
+      "entityId": "entry-id",
+      "kind": "updateEntry",
+      "baseVersion": 3,
+      "payload": {
+        "courseId": "course-id",
+        "goalText": "Work on arpeggios"
+      }
+    }
+  ]
+}
+```
+
+Supported `kind` values are `createEntry`, `updateEntry`, `replaceCaptureMarkers`, `submitEntry`, `deleteEntry`, and `createFeedback`. `createEntry` does not carry `baseVersion`; every other kind requires a positive integer `baseVersion`.
+
+Each result has this shape:
+
+```json
+{
+  "operationId": "operation-id",
+  "entityId": "entry-id",
+  "kind": "updateEntry",
+  "status": "applied|duplicate|conflict|rejected|retryable",
+  "code": "optional-machine-code",
+  "message": "optional-message",
+  "currentVersion": 4,
+  "resource": { "optional": "entry representation" }
+}
+```
+
+`applied` and `duplicate` are successful outcomes. `conflict` means the supplied entry version is stale; clients must reconcile with `currentVersion` rather than overwriting newer server data. `rejected` is a terminal business or validation failure, while `retryable` means the client may retry using the same operation ID. Reusing a command operation ID with a different payload returns an HTTP `200` result with `status: "rejected"` and `code: "OPERATION_REUSED"`.
+
+Only successful mutations retain receipts. Receipts bind a payload hash and
+minimal authorization context for seven days; replay rechecks current course
+membership and omits resources that have since been deleted. Admission is
+limited to 12 requests and 100 commands per authenticated user per minute, with
+at most 500 unexpired receipts per user. Quota exhaustion fails closed with
+`429 RATE_LIMITED` before the mutation commits.
+
+### POST /api/v1/artifact-sessions
+
+Allocates (or retrieves) an idempotent artifact-upload session. Only the student owner of a draft entry may allocate one.
+
+```json
+{
+  "operationId": "operation-id",
+  "entryId": "entry-id",
+  "artifactId": "artifact-id",
+  "type": "audio",
+  "durationSeconds": 120,
+  "sizeBytes": 1048576,
+  "baseVersion": 4
+}
+```
+
+The response includes `sessionId`, the artifact representation, a signed
+staging `uploadUrl`, `requiredHeaders`, `expiresInSeconds`, the entry's
+`currentVersion`, and `completed`. Clients must send the returned headers
+unchanged. The allocation increments the entry version; subsequent dependent
+commands must use `currentVersion`.
+
+If a retry finds that the session already completed, the response contains
+`completed: true`, `uploadUrl: null`, and `requiredHeaders: null`; it never
+issues another PUT credential. An active-session retry is signed only for the
+exact remaining session lifetime reported in `expiresInSeconds`; a session with
+too little lifetime is rotated to a new staging key before signing.
+
+### POST /api/v1/artifact-sessions/:sessionId/complete
+
+Completes an upload session through a durable claim/CAS protocol. The server
+HEAD-verifies the staging object's exact size, pins the copy to the observed
+ETag, copies it to a claim-token-specific final key, and publishes only that
+final key. A concurrent completion request receives `409 UPLOAD_INVALID` with
+an in-progress retry message and does not issue storage requests. The response
+is:
+
+```json
+{ "artifact": { "id": "artifact-id", "uploadState": "uploaded" }, "currentVersion": 5 }
+```
+
+Completion is idempotent. Staging cleanup is delayed until the signed PUT has
+expired and any bounded completion claim has ended, plus grace, so a late
+client write or copy cannot recreate published or untracked evidence. Missing
+or mismatched objects, missing integrity validators, and source-precondition
+failures return `409 UPLOAD_INVALID`; unavailable storage returns
+`503 STORAGE_UNAVAILABLE`.
+
+### v1 read inventory
+
+- `GET /api/v1/me`
+- `GET /api/v1/courses`
+- `GET /api/v1/courses/:courseId/entries?cursor=&limit=&status=`
+- `GET /api/v1/courses/:courseId/review-queue?cursor=&limit=`
+- `GET /api/v1/entries/:entryId`
+- `GET /api/v1/entries/:entryId/feedback`
+- `POST /api/v1/artifacts/:artifactId/download-session`
+
+Entry and review-queue pages use `{ "items": [], "nextCursor": "string-or-null" }`, default to 50 items, accept at most 200 items, and use deterministic `practiceDate DESC`, `createdAt DESC`, `id DESC` ordering. Download-session responses contain a short-lived `downloadUrl` and set `Cache-Control: no-store`.
+
+Students can read only their own entries. Teachers can read only `submitted`
+or `reviewed` entries in their courses; draft list filters, details, feedback,
+and artifact downloads are denied.
 
 ## Auth
 
@@ -38,8 +158,8 @@ Request:
 { "code": "string", "redirectUri": "string" }
 ```
 
-- `code` (required) — authorization code, max 2048 characters.
-- `redirectUri` (optional) — validated in production mode against the registered OIDC callback URI (`OIDC_REDIRECT_URI`) or the app custom scheme (`resonance://auth-callback`). Ignored in dev mode.
+- `code` (required): authorization code, max 2048 characters.
+- `redirectUri` (optional): validated in production mode against the registered OIDC callback URI (`OIDC_REDIRECT_URI`) or the app custom scheme (`resonance://auth-callback`). Ignored in dev mode.
 
 Response:
 ```json
@@ -79,9 +199,22 @@ Response:
 
 ### POST /auth/logout
 
-Revoke all refresh tokens for the authenticated user.
+Revoke a user's refresh-token family.
 
-Authorization: requires valid access token.
+One of the following is required:
+
+- a valid access token; or
+- a JSON body containing the refresh token, which allows logout after the access
+  token has expired.
+
+Refresh-token logout is deliberately idempotent and does not reveal whether the
+token was recognized.
+
+Request body for refresh-token logout:
+
+```json
+{ "refreshToken": "jwt" }
+```
 
 Response:
 ```json
@@ -97,15 +230,15 @@ App-facing login entrypoint.
 
 Response: `302 Redirect`.
 
-### GET /auth/oidc/login _(production only)_
+### GET /auth/oidc/login
 
-Initiates the OIDC authorization flow. Redirects the client to the configured university IdP.
+Initiates the OIDC authorization flow and redirects the client to the configured university IdP. `/auth/login` selects this route only in production mode, but the route itself is registered in both modes.
 
-Only available when `OIDC_DISCOVERY_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_REDIRECT_URI` are set. Returns `501 AUTH_NOT_CONFIGURED` otherwise.
+Production startup requires `OIDC_DISCOVERY_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_REDIRECT_URI`. Development mode may omit them; a direct call then returns `501 AUTH_NOT_CONFIGURED`.
 
 Response: `302 Redirect` → university IdP authorization URL.
 
-### GET /auth/oidc/callback _(production only)_
+### GET /auth/oidc/callback
 
 OIDC callback endpoint. Exchanges the authorization code for an ID token, upserts the user, issues an internal single-use auth code, and redirects to the iOS app custom URL scheme.
 
@@ -138,7 +271,7 @@ Authorize as a dev persona and redirect with an authorization code.
 
 Query parameters:
 
-- `role` (required) — `student` or `teacher`.
+- `role` (required): `student` or `teacher`.
 
 Redirects to `resonance://auth-callback?code=...`.
 
@@ -151,8 +284,8 @@ Request:
 { "role": "student|teacher", "userId": "string (optional)" }
 ```
 
-- `role` (optional, default `"student"`) — create/upsert a persona with this role.
-- `userId` (optional) — issue a code for an existing user by ID. If provided, `role` is ignored.
+- `role` (optional, default `"student"`): create or update a persona with this role.
+- `userId` (optional): issue a code for an existing user by ID. If provided, `role` is ignored.
 
 Response:
 ```json
@@ -184,11 +317,11 @@ Returns entries visible to the user, including nested `artifacts`.
 
 Optional query parameters:
 
-- `status` — filter by entry status: `draft`, `submitted`, or `reviewed`. Invalid values return `400 VALIDATION_ERROR`.
-  - **Students:** without a filter, all of the student's entries are returned. With a filter, only entries matching that status are returned.
-  - **Teachers:** without a filter, only `submitted` entries are returned. With a filter, entries matching that status are returned.
-- `limit` — max number of items per page (default: 50, max: 200).
-- `cursor` — entry ID of the last item on the previous page. Omit for the first page.
+- `status`: filter by entry status: `draft`, `submitted`, or `reviewed`. Invalid values return `400 VALIDATION_ERROR`.
+  - Students: without a filter, all of the student's entries are returned. With a filter, only entries matching that status are returned.
+  - Teachers: without a filter, only `submitted` entries are returned. Teachers may request `submitted` or `reviewed`; requesting `draft` returns `403 ENTRY_ACCESS_DENIED`.
+- `limit`: max number of items per page (default: 50, max: 200).
+- `cursor`: entry ID of the last item on the previous page. Omit for the first page.
 
 Response shape:
 ```json
@@ -207,9 +340,9 @@ Fetch a single entry by ID, including nested `artifacts` and `captureMarkers`.
 Authorization:
 
 - Students can only fetch their own entries.
-- Teachers can fetch any entry in a course they belong to.
+- Teachers can fetch only submitted or reviewed entries in courses they belong to. Draft details are denied.
 
-Returns `404 ENTRY_NOT_FOUND` if the entry does not exist, `403 ENTRY_ACCESS_DENIED` if the user is not allowed to see it, and `410 ENTRY_DELETED` if the entry has been soft-deleted.
+Returns `404 ENTRY_NOT_FOUND` if the entry does not exist or was deleted, and `403 ENTRY_ACCESS_DENIED` if the user is not allowed to see it. A tombstoned client ID is rejected when stale work attempts to recreate a deleted entry.
 
 ### POST /courses/:courseId/entries
 
@@ -243,16 +376,16 @@ Teaching-lesson entry:
 }
 ```
 
-- `id` (required) — client-generated ID, 1-128 alphanumeric/hyphen/underscore characters. An exact repeat returns the existing entry with `200`; reusing the ID with different create data returns `409 ID_CONFLICT`.
-- `kind` (optional, default `"practice"`) — `"practice"` or `"teaching_lesson"`.
-- `practiceDate` (required) — ISO 8601 date (`YYYY-MM-DD`) or datetime with timezone (`YYYY-MM-DDTHH:mm:ssZ`).
-- `goalText` (required) — string, max 10000 characters.
-- `durationSeconds` (optional) — number, 0-28800 (8 hours).
-- `tags` (optional, default `[]`) — string array, max 30 tags, each trimmed tag must be non-empty and max 100 characters.
-- `notes` (optional) — string or null.
-- `consentConfirmed` (optional) — boolean. Only valid for `teaching_lesson`.
-- `consentScope` (optional) — currently `"private_course_review"`. Required when `consentConfirmed` is `true`.
-- `captureProfile` (optional) — only valid for `teaching_lesson`. One of `room_overview`, `teacher_learner`, `instrument_closeup`, `ensemble_group`, `group_work`.
+- `id` (required): client-generated ID, 1-128 alphanumeric, hyphen, or underscore characters. An exact repeat returns the existing entry with `200`; reusing the ID with different create data returns `409 ID_CONFLICT`.
+- `kind` (optional, default `"practice"`): `"practice"` or `"teaching_lesson"`.
+- `practiceDate` (required): ISO 8601 date (`YYYY-MM-DD`) or datetime with timezone (`YYYY-MM-DDTHH:mm:ssZ`).
+- `goalText` (required): string, max 10000 characters.
+- `durationSeconds` (optional): number, 0-28800 (8 hours).
+- `tags` (optional, default `[]`): string array, max 30 tags, each trimmed tag must be non-empty and max 100 characters.
+- `notes` (optional): string or null.
+- `consentConfirmed` (optional): boolean. Only valid for `teaching_lesson`.
+- `consentScope` (optional): currently `"private_course_review"`. Required when `consentConfirmed` is `true`.
+- `captureProfile` (optional): only valid for `teaching_lesson`. One of `room_overview`, `teacher_learner`, `instrument_closeup`, `ensemble_group`, `group_work`.
 
 New entries are created with status `draft`.
 
@@ -288,72 +421,25 @@ Entry lifecycle:
 
 ## Artifacts
 
-### POST /entries/:entryId/artifacts
+### Retired mutation routes
 
-Create an artifact record. Only the owning student can add artifacts, and only to `draft` entries.
+The following compatibility mutations return `410 UPLOAD_INVALID`:
 
-Request:
-```json
-{
-  "id": "client-generated-id",
-  "type": "audio",
-  "durationSeconds": 120,
-  "sizeBytes": 1048576
-}
-```
+- `POST /entries/:entryId/artifacts`
+- `POST /artifacts/:artifactId/presign`
+- `POST /artifacts/:artifactId/confirm`
 
-- `id` (required) — client-generated ID, 1-128 alphanumeric/hyphen/underscore characters. An exact repeat returns the existing artifact with `200`; reusing the ID with different entry, type, duration, or size returns `409 ID_CONFLICT`.
-- `type` (required) — `"audio"` or `"video"`.
-- `durationSeconds` (required) — number, 0-28800 (8 hours).
-- `sizeBytes` (required) — integer, 1-104857600 (100 MiB). The declared size is bound to the signed upload request and verified at confirmation.
-
-### POST /artifacts/:artifactId/presign
-
-Request a pre-signed upload URL.
-
-Authorization: only the owning student of the artifact's entry can call this endpoint.
-
-Response includes required request headers for upload:
-```json
-{
-  "uploadUrl": "...",
-  "storageKey": "...",
-  "expiresInSeconds": 900,
-  "requiredHeaders": {
-    "Content-Type": "audio/m4a",
-    "Content-Length": "1048576"
-  }
-}
-```
-
-Clients must send every returned header unchanged. Content-Type is `audio/m4a`
-for audio artifacts and `video/mp4` for video artifacts. A retry reuses an
-unexpired upload slot; expired attempts receive a new storage key and the old
-object is queued for cleanup.
-
-Errors:
-
-- `409 UPLOAD_INVALID` — artifact is already uploaded, lacks a declared size, or confirmation is in progress.
-- `409 ENTRY_LOCKED` — the parent entry is no longer a draft.
-
-### POST /artifacts/:artifactId/confirm
-
-Confirm upload. The server performs HEAD and requires the stored object size to
-exactly match the size declared when the artifact record was created.
-
-Authorization: only the owning student of the artifact's entry can call this endpoint.
-
-Errors:
-
-- `400 MISSING_STORAGE_KEY` — presign was not called first.
-- `409 UPLOAD_INVALID` — object is missing, the slot expired or changed, or the object size differs from the declaration.
-- `503 STORAGE_UNAVAILABLE` — storage rejected the check or could not be reached.
+They wrote directly to a served object key and cannot satisfy the immutable
+staging/finalization boundary. Clients must use
+`POST /api/v1/artifact-sessions` and
+`POST /api/v1/artifact-sessions/:sessionId/complete`.
 
 ### GET /artifacts/:artifactId/download
 
-Returns a short-lived URL for private playback. The student owner and a teacher
-who belongs to the same course are authorized through the entry access rules.
-The artifact must be uploaded, nondeleted, and have a storage key.
+Returns a short-lived URL for private playback. The student owner is
+authorized; a teacher must belong to the same course and the parent entry must
+be submitted or reviewed. Draft media is denied to teachers. The artifact must
+be uploaded, nondeleted, and have a storage key.
 
 Response:
 ```json
@@ -386,11 +472,11 @@ Request:
 }
 ```
 
-- `id` (required) — client-generated marker ID, 1-128 alphanumeric/hyphen/underscore characters.
-- `artifactId` (required) — video artifact ID belonging to the same entry. Audio artifacts and artifacts from other entries return `404 ARTIFACT_NOT_FOUND`.
-- `timeSeconds` (required) — integer, 0-28800.
-- `kind` (required) — one of `phase_setup`, `phase_modeling`, `phase_guided_practice`, `phase_student_work`, `phase_feedback`, `phase_reflection`, `moment_question`, `moment_musical_model`, `moment_student_response`, `moment_transition`, `privacy_note`.
-- `note` (optional) — free text, max 1000 characters.
+- `id` (required): client-generated marker ID, 1-128 alphanumeric, hyphen, or underscore characters.
+- `artifactId` (required): video artifact ID belonging to the same entry. Audio artifacts and artifacts from other entries return `404 ARTIFACT_NOT_FOUND`.
+- `timeSeconds` (required): integer, 0-28800.
+- `kind` (required): one of `phase_setup`, `phase_modeling`, `phase_guided_practice`, `phase_student_work`, `phase_feedback`, `phase_reflection`, `moment_question`, `moment_musical_model`, `moment_student_response`, `moment_transition`, `privacy_note`.
+- `note` (optional): free text, max 1000 characters.
 
 Markers omitted from the `markers` array are deleted for that entry. Send an empty array to clear all lesson-contour markers.
 
@@ -416,12 +502,12 @@ Response:
 
 Teacher-only list of submitted entries with cursor-based pagination.
 
-**BREAKING CHANGE (v0.2):** Response shape changed from a bare array `[...]` to `{ items: [...], nextCursor: string | null }`.
+The response is an object containing `items` and `nextCursor`.
 
 Optional query parameters:
 
-- `limit` — number of items per page (default 20, max 100). Values below 1 return `400 VALIDATION_ERROR`.
-- `cursor` — entry ID from a previous `nextCursor` value. The server returns items ordered _after_ this entry. Invalid cursor IDs return `400 VALIDATION_ERROR`.
+- `limit`: number of items per page (default 20, max 100). Values below 1 return `400 VALIDATION_ERROR`.
+- `cursor`: entry ID from a previous `nextCursor` value. The server returns items ordered after this entry. Invalid cursor IDs return `400 VALIDATION_ERROR`.
 
 Response:
 ```json
@@ -481,14 +567,14 @@ Request:
 }
 ```
 
-- `id` (optional) — client-generated ID, 1-128 alphanumeric/hyphen/underscore characters.
-- `targetType` (required) — `"entry"` or `"artifact"`.
-- `targetId` (required) — ID of the entry or artifact.
-- `status` (required) — `"ok"`, `"needs_revision"`, or `"next_goal"`.
-- `commentsText` (required) — trimmed non-empty string, max 10000 characters.
-- `markers` (optional, default `[]`) — array of time-stamped annotations, max 50 markers.
-  - `timeSeconds` (required) — integer, 0-28800.
-  - `text` (required) — string, max 1000 characters.
+- `id` (optional): client-generated ID, 1-128 alphanumeric, hyphen, or underscore characters.
+- `targetType` (required): `"entry"` or `"artifact"`.
+- `targetId` (required): ID of the entry or artifact.
+- `status` (required): `"ok"`, `"needs_revision"`, or `"next_goal"`.
+- `commentsText` (required): trimmed non-empty string, max 10000 characters.
+- `markers` (optional, default `[]`): array of time-stamped annotations, max 50 markers.
+  - `timeSeconds` (required): integer, 0-28800.
+  - `text` (required): string, max 1000 characters.
 
 Preconditions:
 
@@ -553,13 +639,12 @@ All errors use:
 | `ENTRY_NOT_FOUND` | Entry does not exist |
 | `ARTIFACT_NOT_FOUND` | Artifact does not exist |
 | `COURSE_NOT_FOUND` | Course does not exist |
-| `ENTRY_DELETED` | Entry has been soft-deleted (410) |
+| `ENTRY_DELETED` | A tombstoned client ID or in-flight operation refers to a deleted entry (410) |
 | `ENTRY_LOCKED` | Entry is not in draft status |
 | `ENTRY_NOT_SUBMITTED` | Entry must be submitted before this action |
 | `ARTIFACTS_NOT_UPLOADED` | All artifacts must be uploaded before submitting |
 | `CONSENT_REQUIRED` | Teaching lesson entry requires confirmed consent before submitting |
 | `UPLOAD_INVALID` | Upload missing, expired, changed, or different from its declared size |
-| `MISSING_STORAGE_KEY` | Presign not called before confirm |
 | `STORAGE_UNAVAILABLE` | Object storage is temporarily unavailable |
 | `INVALID_TARGET` | Invalid feedback target type |
 | `VALIDATION_ERROR` | Request validation failed |
@@ -584,3 +669,8 @@ All errors use:
 | Client ID format | 1-128 chars, alphanumeric/hyphen/underscore |
 | HTTP body size limit | 1 MB |
 | Auth rate limit | 10 requests per minute |
+| v1 sync admission | 12 requests and 100 commands per authenticated user per minute |
+| Sync receipt quota | 500 unexpired successful receipts per user |
+| Active artifact sessions | 24 per user; 8 per entry |
+| Durable artifacts | 500 artifacts and 10 GiB declared bytes per user |
+| Failed artifact retention | 7 days before bounded background pruning |

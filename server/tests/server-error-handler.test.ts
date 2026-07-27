@@ -1,3 +1,4 @@
+// Verifies the process-level error handler returns safe responses without leaking internals.
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildServer } from '../src/server.js';
@@ -5,7 +6,7 @@ import { buildServer } from '../src/server.js';
 /**
  * Tests for the generic error handler fallthrough in server.ts (lines 155-168).
  * These test the paths where non-ApiError, non-CTP, non-429 errors reach
- * the error handler — both the 5xx (>=500) and 4xx (<500) branches.
+ * the error handler, including both the 5xx (>=500) and 4xx (<500) branches.
  *
  * A dedicated Fastify instance is used so we can register test routes
  * BEFORE calling app.ready().

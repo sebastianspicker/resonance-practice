@@ -1,76 +1,73 @@
+// Verifies malformed request bodies fail consistently before domain mutations run.
 import request from 'supertest';
-import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
-import {
-  app,
-  setupApp,
-  teardownApp,
-  resetDb,
-  seedBasic,
-  getAccessToken,
-  prisma,
-} from './testUtils.js';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { app, installBasicSuite, login, postFeedback, prisma } from './support/testUtils.js';
 
-function login(role: 'student' | 'teacher') {
-  const userId = role === 'student' ? 'student-1' : 'teacher-1';
-  return getAccessToken(role, { userId });
+function postEntry(token: string, body: Record<string, unknown>) {
+  return request(app.server)
+    .post('/courses/COURSE_TEST/entries')
+    .set('Authorization', `Bearer ${token}`)
+    .send(body);
+}
+
+function patchEntry(token: string, entryId: string, body: Record<string, unknown>) {
+  return request(app.server)
+    .patch(`/entries/${entryId}`)
+    .set('Authorization', `Bearer ${token}`)
+    .send(body);
+}
+
+function postArtifactSession(token: string, body: Record<string, unknown>) {
+  return request(app.server)
+    .post('/api/v1/artifact-sessions')
+    .set('Authorization', `Bearer ${token}`)
+    .send(body);
+}
+
+async function expectNullBodyRejected(method: 'post' | 'patch', path: string) {
+  const token = await login('student');
+  const pendingRequest = request(app.server)[method](path);
+  const response = await pendingRequest
+    .set('Authorization', `Bearer ${token}`)
+    .set('Content-Type', 'application/json')
+    .send('null');
+
+  expect(response.status).toBe(400);
+  expect(response.body.error?.code).toBe('VALIDATION_ERROR');
 }
 
 describe('input validation', () => {
-  beforeAll(async () => {
-    await setupApp();
-  });
-
-  afterAll(async () => {
-    await teardownApp();
-  });
-
-  beforeEach(async () => {
-    await resetDb();
-    await seedBasic();
-  });
+  installBasicSuite();
 
   // ── POST /courses/:courseId/entries ──
 
   describe('POST /courses/:courseId/entries', () => {
     it('rejects a JSON null request body', async () => {
-      const token = await login('student');
-      const res = await request(app.server)
-        .post('/courses/COURSE_TEST/entries')
-        .set('Authorization', `Bearer ${token}`)
-        .set('Content-Type', 'application/json')
-        .send('null');
-      expect(res.status).toBe(400);
-      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+      await expectNullBodyRejected('post', '/courses/COURSE_TEST/entries');
     });
 
     it('rejects durationSeconds exceeding upper bound', async () => {
       const token = await login('student');
-      const res = await request(app.server)
-        .post('/courses/COURSE_TEST/entries')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          id: 'entry-dur-too-high',
-          practiceDate: new Date().toISOString(),
-          goalText: 'Test',
-          tags: [],
-          durationSeconds: 99999,
-        });
+      const res = await postEntry(token, {
+        id: 'entry-dur-too-high',
+        practiceDate: new Date().toISOString(),
+        goalText: 'Test',
+        tags: [],
+        durationSeconds: 99999,
+      });
       expect(res.status).toBe(400);
       expect(res.body.error?.code).toBe('VALIDATION_ERROR');
     });
 
     it('accepts durationSeconds at upper bound (28800)', async () => {
       const token = await login('student');
-      const res = await request(app.server)
-        .post('/courses/COURSE_TEST/entries')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          id: 'entry-dur-max',
-          practiceDate: new Date().toISOString(),
-          goalText: 'Test',
-          tags: [],
-          durationSeconds: 28800,
-        });
+      const res = await postEntry(token, {
+        id: 'entry-dur-max',
+        practiceDate: new Date().toISOString(),
+        goalText: 'Test',
+        tags: [],
+        durationSeconds: 28800,
+      });
       expect(res.status).toBe(201);
       expect(res.body.durationSeconds).toBe(28800);
     });
@@ -78,30 +75,24 @@ describe('input validation', () => {
     it('rejects too many tags', async () => {
       const token = await login('student');
       const tags = Array.from({ length: 31 }, (_, i) => `tag-${i}`);
-      const res = await request(app.server)
-        .post('/courses/COURSE_TEST/entries')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          id: 'entry-too-many-tags',
-          practiceDate: new Date().toISOString(),
-          goalText: 'Test',
-          tags,
-        });
+      const res = await postEntry(token, {
+        id: 'entry-too-many-tags',
+        practiceDate: new Date().toISOString(),
+        goalText: 'Test',
+        tags,
+      });
       expect(res.status).toBe(400);
       expect(res.body.error?.code).toBe('VALIDATION_ERROR');
     });
 
     it('rejects tag exceeding max length', async () => {
       const token = await login('student');
-      const res = await request(app.server)
-        .post('/courses/COURSE_TEST/entries')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          id: 'entry-long-tag',
-          practiceDate: new Date().toISOString(),
-          goalText: 'Test',
-          tags: ['a'.repeat(101)],
-        });
+      const res = await postEntry(token, {
+        id: 'entry-long-tag',
+        practiceDate: new Date().toISOString(),
+        goalText: 'Test',
+        tags: ['a'.repeat(101)],
+      });
       expect(res.status).toBe(400);
       expect(res.body.error?.code).toBe('VALIDATION_ERROR');
     });
@@ -223,31 +214,25 @@ describe('input validation', () => {
 
     it('rejects negative durationSeconds', async () => {
       const token = await login('student');
-      const res = await request(app.server)
-        .post('/courses/COURSE_TEST/entries')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          id: 'entry-neg-dur',
-          practiceDate: new Date().toISOString(),
-          goalText: 'Test',
-          tags: [],
-          durationSeconds: -1,
-        });
+      const res = await postEntry(token, {
+        id: 'entry-neg-dur',
+        practiceDate: new Date().toISOString(),
+        goalText: 'Test',
+        tags: [],
+        durationSeconds: -1,
+      });
       expect(res.status).toBe(400);
     });
 
     it('rejects decimal durationSeconds', async () => {
       const token = await login('student');
-      const res = await request(app.server)
-        .post('/courses/COURSE_TEST/entries')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          id: 'entry-decimal-dur',
-          practiceDate: new Date().toISOString(),
-          goalText: 'Test',
-          tags: [],
-          durationSeconds: 1.5,
-        });
+      const res = await postEntry(token, {
+        id: 'entry-decimal-dur',
+        practiceDate: new Date().toISOString(),
+        goalText: 'Test',
+        tags: [],
+        durationSeconds: 1.5,
+      });
       expect(res.status).toBe(400);
       expect(res.body.error?.code).toBe('VALIDATION_ERROR');
     });
@@ -289,14 +274,7 @@ describe('input validation', () => {
     });
 
     it('rejects a JSON null request body', async () => {
-      const token = await login('student');
-      const res = await request(app.server)
-        .patch(`/entries/${entryId}`)
-        .set('Authorization', `Bearer ${token}`)
-        .set('Content-Type', 'application/json')
-        .send('null');
-      expect(res.status).toBe(400);
-      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+      await expectNullBodyRejected('patch', `/entries/${entryId}`);
     });
 
     it('rejects durationSeconds exceeding upper bound', async () => {
@@ -452,28 +430,22 @@ describe('input validation', () => {
         data: { kind: 'teaching_lesson' },
       });
       const token = await login('student');
-      const res = await request(app.server)
-        .patch(`/entries/${entryId}`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({ captureProfile: 'room_overview' });
+      const res = await patchEntry(token, entryId, { captureProfile: 'room_overview' });
       expect(res.status).toBe(200);
       expect(res.body.captureProfile).toBe('room_overview');
     });
 
     it('rejects captureProfile updates on practice entries', async () => {
       const token = await login('student');
-      const res = await request(app.server)
-        .patch(`/entries/${entryId}`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({ captureProfile: 'room_overview' });
+      const res = await patchEntry(token, entryId, { captureProfile: 'room_overview' });
       expect(res.status).toBe(400);
       expect(res.body.error?.code).toBe('VALIDATION_ERROR');
     });
   });
 
-  // ── POST /entries/:entryId/artifacts ──
+  // ── POST /api/v1/artifact-sessions ──
 
-  describe('POST /entries/:entryId/artifacts', () => {
+  describe('POST /api/v1/artifact-sessions', () => {
     let entryId: string;
 
     beforeEach(async () => {
@@ -493,32 +465,100 @@ describe('input validation', () => {
 
     it('rejects durationSeconds exceeding upper bound', async () => {
       const token = await login('student');
-      const res = await request(app.server)
-        .post(`/entries/${entryId}/artifacts`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({ id: 'artifact-dur-high', type: 'audio', durationSeconds: 50000 });
+      const res = await postArtifactSession(token, {
+        operationId: 'operation-dur-high',
+        entryId,
+        artifactId: 'artifact-dur-high',
+        type: 'audio',
+        durationSeconds: 50000,
+        sizeBytes: 1,
+        baseVersion: 1,
+      });
       expect(res.status).toBe(400);
       expect(res.body.error?.code).toBe('VALIDATION_ERROR');
     });
 
     it('accepts durationSeconds at upper bound', async () => {
       const token = await login('student');
-      const res = await request(app.server)
-        .post(`/entries/${entryId}/artifacts`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({ id: 'artifact-dur-ok', type: 'audio', durationSeconds: 28800, sizeBytes: 1 });
-      expect(res.status).toBe(201);
-      expect(res.body.durationSeconds).toBe(28800);
+      const res = await postArtifactSession(token, {
+        operationId: 'operation-dur-ok',
+        entryId,
+        artifactId: 'artifact-dur-ok',
+        type: 'audio',
+        durationSeconds: 28800,
+        sizeBytes: 1,
+        baseVersion: 1,
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.artifact.durationSeconds).toBe(28800);
     });
 
     it('accepts video artifact writes', async () => {
       const token = await login('student');
-      const res = await request(app.server)
-        .post(`/entries/${entryId}/artifacts`)
+      const res = await postArtifactSession(token, {
+        operationId: 'operation-video-accepted',
+        entryId,
+        artifactId: 'artifact-video-accepted',
+        type: 'video',
+        durationSeconds: 60,
+        sizeBytes: 1,
+        baseVersion: 1,
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.artifact.type).toBe('video');
+    });
+
+    it('requires a positive integer upload size within the configured limit', async () => {
+      const token = await login('student');
+      for (const [id, sizeBytes] of [
+        ['artifact-size-zero', 0],
+        ['artifact-size-decimal', 1.5],
+        ['artifact-size-too-large', 104_857_601],
+      ] as const) {
+        const res = await request(app.server)
+          .post('/api/v1/artifact-sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            operationId: `operation-${id}`,
+            entryId,
+            artifactId: id,
+            type: 'audio',
+            durationSeconds: 60,
+            sizeBytes,
+            baseVersion: 1,
+          });
+        expect(res.status).toBe(400);
+        expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+      }
+
+      const missing = await request(app.server)
+        .post('/api/v1/artifact-sessions')
         .set('Authorization', `Bearer ${token}`)
-        .send({ id: 'artifact-video-accepted', type: 'video', durationSeconds: 60, sizeBytes: 1 });
-      expect(res.status).toBe(201);
-      expect(res.body.type).toBe('video');
+        .send({
+          operationId: 'operation-size-missing',
+          entryId,
+          artifactId: 'artifact-size-missing',
+          type: 'audio',
+          durationSeconds: 60,
+          baseVersion: 1,
+        });
+      expect(missing.status).toBe(400);
+      expect(missing.body.error?.code).toBe('VALIDATION_ERROR');
+
+      const boundary = await request(app.server)
+        .post('/api/v1/artifact-sessions')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          operationId: 'operation-size-boundary',
+          entryId,
+          artifactId: 'artifact-size-boundary',
+          type: 'audio',
+          durationSeconds: 60,
+          sizeBytes: 104_857_600,
+          baseVersion: 1,
+        });
+      expect(boundary.status).toBe(200);
+      expect(boundary.body.artifact.expectedSizeBytes).toBe(104_857_600);
     });
 
     it('requires a positive integer upload size within the configured limit', async () => {
@@ -558,19 +598,29 @@ describe('input validation', () => {
 
     it('rejects negative durationSeconds', async () => {
       const token = await login('student');
-      const res = await request(app.server)
-        .post(`/entries/${entryId}/artifacts`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({ id: 'artifact-neg', type: 'audio', durationSeconds: -5 });
+      const res = await postArtifactSession(token, {
+        operationId: 'operation-neg',
+        entryId,
+        artifactId: 'artifact-neg',
+        type: 'audio',
+        durationSeconds: -5,
+        sizeBytes: 1,
+        baseVersion: 1,
+      });
       expect(res.status).toBe(400);
     });
 
     it('rejects decimal durationSeconds', async () => {
       const token = await login('student');
-      const res = await request(app.server)
-        .post(`/entries/${entryId}/artifacts`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({ id: 'artifact-decimal', type: 'audio', durationSeconds: 12.25 });
+      const res = await postArtifactSession(token, {
+        operationId: 'operation-decimal',
+        entryId,
+        artifactId: 'artifact-decimal',
+        type: 'audio',
+        durationSeconds: 12.25,
+        sizeBytes: 1,
+        baseVersion: 1,
+      });
       expect(res.status).toBe(400);
       expect(res.body.error?.code).toBe('VALIDATION_ERROR');
     });
@@ -596,144 +646,55 @@ describe('input validation', () => {
       });
     });
 
-    it('rejects commentsText exceeding max length', async () => {
-      const token = await login('teacher');
-      const res = await request(app.server)
-        .post('/feedback')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          targetType: 'entry',
-          targetId: entryId,
-          status: 'ok',
-          commentsText: 'x'.repeat(10001),
-          markers: [],
-        });
-      expect(res.status).toBe(400);
-      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
-    });
-
-    it('accepts commentsText at max length', async () => {
-      const token = await login('teacher');
-      const res = await request(app.server)
-        .post('/feedback')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          targetType: 'entry',
-          targetId: entryId,
-          status: 'ok',
-          commentsText: 'x'.repeat(10000),
-          markers: [],
-        });
-      expect(res.status).toBe(201);
-    });
-
-    it('rejects whitespace-only commentsText', async () => {
-      const token = await login('teacher');
-      const res = await request(app.server)
-        .post('/feedback')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          targetType: 'entry',
-          targetId: entryId,
-          status: 'ok',
-          commentsText: '   \n\t',
-          markers: [],
-        });
-      expect(res.status).toBe(400);
-      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
-    });
-
-    it('stores trimmed commentsText', async () => {
-      const token = await login('teacher');
-      const res = await request(app.server)
-        .post('/feedback')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          targetType: 'entry',
-          targetId: entryId,
-          status: 'ok',
-          commentsText: '  Focus the attack.  ',
-          markers: [],
-        });
-      expect(res.status).toBe(201);
-      expect(res.body.commentsText).toBe('Focus the attack.');
-    });
-
-    it('rejects marker with timeSeconds exceeding upper bound', async () => {
-      const token = await login('teacher');
-      const res = await request(app.server)
-        .post('/feedback')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          targetType: 'entry',
-          targetId: entryId,
-          status: 'ok',
-          commentsText: 'Review',
-          markers: [{ timeSeconds: 99999, text: 'Too far' }],
-        });
-      expect(res.status).toBe(400);
-      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
-    });
-
-    it('rejects marker missing text', async () => {
-      const token = await login('teacher');
-      const res = await request(app.server)
-        .post('/feedback')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          targetType: 'entry',
-          targetId: entryId,
-          status: 'ok',
-          commentsText: 'Review',
-          markers: [{ timeSeconds: 10 }],
-        });
-      expect(res.status).toBe(400);
-    });
-
-    it('rejects marker missing timeSeconds', async () => {
-      const token = await login('teacher');
-      const res = await request(app.server)
-        .post('/feedback')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          targetType: 'entry',
-          targetId: entryId,
-          status: 'ok',
-          commentsText: 'Review',
-          markers: [{ text: 'No time' }],
-        });
-      expect(res.status).toBe(400);
-    });
-
-    it('rejects marker with text exceeding max length', async () => {
-      const token = await login('teacher');
-      const res = await request(app.server)
-        .post('/feedback')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          targetType: 'entry',
-          targetId: entryId,
-          status: 'ok',
-          commentsText: 'Review',
-          markers: [{ timeSeconds: 5, text: 'z'.repeat(1001) }],
-        });
-      expect(res.status).toBe(400);
-    });
-
-    it('rejects marker with decimal timeSeconds', async () => {
-      const token = await login('teacher');
-      const res = await request(app.server)
-        .post('/feedback')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          targetType: 'entry',
-          targetId: entryId,
-          status: 'ok',
-          commentsText: 'Review',
-          markers: [{ timeSeconds: 12.5, text: 'Half second' }],
-        });
-      expect(res.status).toBe(400);
-      expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+    it.each([
+      [
+        'rejects commentsText exceeding max length',
+        { commentsText: 'x'.repeat(10001), markers: [] },
+        400,
+      ],
+      ['accepts commentsText at max length', { commentsText: 'x'.repeat(10000), markers: [] }, 201],
+      ['rejects whitespace-only commentsText', { commentsText: '   \n\t', markers: [] }, 400],
+      [
+        'stores trimmed commentsText',
+        { commentsText: '  Focus the attack.  ', markers: [] },
+        201,
+        'Focus the attack.',
+      ],
+      [
+        'rejects marker with timeSeconds exceeding upper bound',
+        { commentsText: 'Review', markers: [{ timeSeconds: 99999, text: 'Too far' }] },
+        400,
+      ],
+      [
+        'rejects marker missing text',
+        { commentsText: 'Review', markers: [{ timeSeconds: 10 }] },
+        400,
+      ],
+      [
+        'rejects marker missing timeSeconds',
+        { commentsText: 'Review', markers: [{ text: 'No time' }] },
+        400,
+      ],
+      [
+        'rejects marker with text exceeding max length',
+        { commentsText: 'Review', markers: [{ timeSeconds: 5, text: 'z'.repeat(1001) }] },
+        400,
+      ],
+      [
+        'rejects marker with decimal timeSeconds',
+        { commentsText: 'Review', markers: [{ timeSeconds: 12.5, text: 'Half second' }] },
+        400,
+      ],
+    ])('%s', async (_name, body, expectedStatus, expectedCommentsText?) => {
+      const res = await postFeedback(await login('teacher'), {
+        targetType: 'entry',
+        targetId: entryId,
+        status: 'ok',
+        ...body,
+      });
+      expect(res.status).toBe(expectedStatus);
+      if (expectedStatus === 400) expect(res.body.error?.code).toBe('VALIDATION_ERROR');
+      if (expectedCommentsText) expect(res.body.commentsText).toBe(expectedCommentsText);
     });
   });
 

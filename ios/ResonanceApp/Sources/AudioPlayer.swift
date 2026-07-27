@@ -2,6 +2,8 @@ import Foundation
 import AVFoundation
 import os
 
+// Resolves local or authorized remote recordings and manages their playback state.
+
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "resonance", category: "AudioPlayer")
 
 enum ArtifactPlaybackSourceError: LocalizedError {
@@ -16,10 +18,12 @@ enum ArtifactPlaybackSourceError: LocalizedError {
 }
 
 @MainActor
+/// Prefers protected local media and requests an authorized remote URL only when needed.
 struct ArtifactPlaybackSourceResolver {
     let apiClient: APIClient
     var fileManager: FileManager = .default
 
+    /// Resolves one playable URL without persisting the server's short-lived signed URL.
     func resolve(artifact: LocalArtifact, accessToken: String?) async throws -> URL {
         if !artifact.localPath.isEmpty, fileManager.fileExists(atPath: artifact.localPath) {
             return URL(fileURLWithPath: artifact.localPath)
@@ -39,6 +43,8 @@ final class AudioPlayer: NSObject, ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
+    /// Normalized 0…1 level for local file playback metering (streams stay decorative).
+    @Published private(set) var averageLevel: Double = 0
     @Published private(set) var currentFilePath: String?
     @Published private(set) var playbackError: String?
 
@@ -61,6 +67,7 @@ final class AudioPlayer: NSObject, ObservableObject {
             if url.isFileURL {
                 player = try AVAudioPlayer(contentsOf: url)
                 player?.delegate = self
+                player?.isMeteringEnabled = true
                 duration = player?.duration ?? 0
                 guard player?.play() == true else {
                     playbackError = "Playback could not be started."
@@ -103,11 +110,15 @@ final class AudioPlayer: NSObject, ObservableObject {
 
     private func startTimer() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if let player = self.player {
                     self.currentTime = player.currentTime
+                    player.updateMeters()
+                    let power = player.averagePower(forChannel: 0)
+                    let normalized = Double((power + 50) / 50)
+                    self.averageLevel = min(max(normalized, 0.02), 1)
                 } else if let streamPlayer = self.streamPlayer {
                     if let item = streamPlayer.currentItem, item.status == .failed {
                         self.failStreamPlayback(item.error?.localizedDescription ?? "Playback failed.")
@@ -119,6 +130,8 @@ final class AudioPlayer: NSObject, ObservableObject {
                     if duration.isFinite && duration > 0 {
                         self.duration = duration
                     }
+                    // Remote streams have no first-class metering; keep a soft decorative pulse.
+                    self.averageLevel = 0.2 + 0.15 * abs(sin(self.currentTime * 3))
                 }
             }
         }
@@ -139,6 +152,7 @@ final class AudioPlayer: NSObject, ObservableObject {
         isPlaying = false
         currentTime = 0
         duration = 0
+        averageLevel = 0
         currentFilePath = nil
     }
 
@@ -204,6 +218,7 @@ extension AudioPlayer: AVAudioPlayerDelegate {
             guard let self else { return }
             self.isPlaying = false
             self.currentTime = 0
+            self.averageLevel = 0
             self.currentFilePath = nil
             self.stopTimer()
             self.deactivateAudioSession()

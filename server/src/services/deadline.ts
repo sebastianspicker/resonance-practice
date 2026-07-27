@@ -1,4 +1,5 @@
-export class OperationTimeoutError extends Error {
+/** Deadline wrappers that keep remote dependency calls bounded and abortable. */
+class OperationTimeoutError extends Error {
   constructor(
     readonly operation: string,
     readonly timeoutMs: number

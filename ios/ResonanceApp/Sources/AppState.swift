@@ -1,8 +1,14 @@
 import Foundation
 import SwiftData
 
+// Coordinates app-wide dependencies and profile-bound local-data lifecycle transitions.
 @MainActor
 final class AppState: ObservableObject {
+    private struct OwnerActions {
+        let read: () throws -> String?
+        let write: (String) throws -> Void
+        let remove: () throws -> Void
+    }
     let apiClient: APIClient
     let authManager: AuthManager
     let syncManager: SyncManager
@@ -16,6 +22,8 @@ final class AppState: ObservableObject {
     private let localDataOwner: () throws -> String?
     private let setLocalDataOwner: (String) throws -> Void
     private let removeLocalDataOwner: () throws -> Void
+    private let clearLocalCredentials: () throws -> AuthSession?
+    private let revokeRemoteSession: (AuthSession?) -> Void
 
     @Published var lastErrorMessage: String?
     @Published var showErrorAlert: Bool = false
@@ -29,7 +37,11 @@ final class AppState: ObservableObject {
         removeCalendarSubscription: (() throws -> Void)? = nil,
         localDataOwner: (() throws -> String?)? = nil,
         setLocalDataOwner: ((String) throws -> Void)? = nil,
-        removeLocalDataOwner: (() throws -> Void)? = nil
+        removeLocalDataOwner: (() throws -> Void)? = nil,
+        clearLocalCredentials: (() throws -> AuthSession?)? = nil,
+        revokeRemoteSession: ((AuthSession?) -> Void)? = nil,
+        apiClient: APIClient? = nil,
+        networkMonitor: NetworkMonitor? = nil
     ) {
         self.modelContext = modelContext
         self.fetchArtifacts = fetchArtifacts ?? {
@@ -47,53 +59,76 @@ final class AppState: ObservableObject {
         self.removeCalendarSubscription = removeCalendarSubscription ?? {
             try CalendarSubscriptionStore.removeStoredURL()
         }
-        let client = APIClient()
+        let client = apiClient ?? APIClient()
         self.apiClient = client
-#if RESONANCE_SCREENSHOTS
-        let screenshotScenario = ScreenshotScenario.current
-#else
-        let screenshotScenario: ScreenshotScenario? = nil
-#endif
-        if let screenshotScenario {
-            let screenshotUserId = screenshotScenario.persona == .teacher
-                ? AppConfig.screenshotTeacherUserId
-                : AppConfig.screenshotStudentUserId
-            self.localDataOwner = localDataOwner ?? { screenshotUserId }
-            self.setLocalDataOwner = setLocalDataOwner ?? { _ in }
-            self.removeLocalDataOwner = removeLocalDataOwner ?? {}
-        } else {
-            self.localDataOwner = localDataOwner ?? {
-                try KeychainStore.read("localDataOwnerId")
-            }
-            self.setLocalDataOwner = setLocalDataOwner ?? { userId in
-                try KeychainStore.store(userId, for: "localDataOwnerId")
-            }
-            self.removeLocalDataOwner = removeLocalDataOwner ?? {
-                try KeychainStore.removeStoredValue(for: "localDataOwnerId")
-            }
-        }
-        let auth: AuthManager
-        if screenshotScenario != nil {
-            auth = AuthManager(
-                apiClient: client,
-                storeSessionData: { _ in },
-                readSessionData: { nil },
-                removeSessionData: {},
-                setSessionPersistenceUncertain: { _ in },
-                isSessionPersistenceUncertain: { false }
-            )
-        } else {
-            auth = AuthManager(apiClient: client)
-        }
+        let screenshotScenario = Self.screenshotScenario
+        let ownerActions = Self.ownerActions(
+            scenario: screenshotScenario,
+            read: localDataOwner,
+            write: setLocalDataOwner,
+            remove: removeLocalDataOwner
+        )
+        self.localDataOwner = ownerActions.read
+        self.setLocalDataOwner = ownerActions.write
+        self.removeLocalDataOwner = ownerActions.remove
+        let auth = Self.makeAuthManager(client: client, screenshotScenario: screenshotScenario)
         self.authManager = auth
-        let net = NetworkMonitor()
+        self.clearLocalCredentials = clearLocalCredentials ?? {
+            try auth.clearLocalSessionReturningPreviousSession()
+        }
+        self.revokeRemoteSession = revokeRemoteSession ?? { auth.revokeRemoteSession($0) }
+        let net = networkMonitor ?? NetworkMonitor()
         self.networkMonitor = net
-        self.syncManager = SyncManager(modelContext: modelContext, authManager: auth, apiClient: client, networkMonitor: net)
+        self.syncManager = SyncManager(
+            modelContext: modelContext,
+            authManager: auth,
+            apiClient: client,
+            networkMonitor: net,
+            verifiedOwner: self.localDataOwner
+        )
+    }
+
+    private static var screenshotScenario: ScreenshotScenario? {
+#if RESONANCE_SCREENSHOTS
+        ScreenshotScenario.current
+#else
+        nil
+#endif
+    }
+
+    private static func ownerActions(
+        scenario: ScreenshotScenario?,
+        read: (() throws -> String?)?,
+        write: ((String) throws -> Void)?,
+        remove: (() throws -> Void)?
+    ) -> OwnerActions {
+        guard let scenario else {
+            return OwnerActions(
+                read: read ?? { try KeychainStore.read("localDataOwnerId") },
+                write: write ?? { try KeychainStore.store($0, for: "localDataOwnerId") },
+                remove: remove ?? { try KeychainStore.removeStoredValue(for: "localDataOwnerId") }
+            )
+        }
+        let userId = scenario.persona == .teacher ? AppConfig.screenshotTeacherUserId : AppConfig.screenshotStudentUserId
+        return OwnerActions(read: read ?? { userId }, write: write ?? { _ in }, remove: remove ?? {})
+    }
+
+    private static func makeAuthManager(client: APIClient, screenshotScenario: ScreenshotScenario?) -> AuthManager {
+        guard screenshotScenario != nil else { return AuthManager(apiClient: client) }
+        return AuthManager(
+            apiClient: client,
+            storeSessionData: { _ in },
+            readSessionData: { nil },
+            removeSessionData: {},
+            setSessionPersistenceUncertain: { _ in },
+            isSessionPersistenceUncertain: { false }
+        )
     }
 
     func activateLocalProfile(userId: String) throws -> Bool {
         let previousOwner = try localDataOwner()
         if let previousOwner, previousOwner != userId {
+            syncManager.invalidateProcessing()
             return false
         }
         if previousOwner == nil {
@@ -108,7 +143,9 @@ final class AppState: ObservableObject {
         return true
     }
 
-    func replaceLocalProfile(with userId: String) throws {
+    /// Cancels sync and erases the prior owner's local records before establishing a new owner.
+    func replaceLocalProfile(with userId: String) async throws {
+        await syncManager.cancelAndWaitForProcessing()
         try purgeLocalUserData()
         try setLocalDataOwner(userId)
         guard try localDataOwner() == userId else {
@@ -116,14 +153,17 @@ final class AppState: ObservableObject {
         }
     }
 
-    func signOutAndDeleteLocalData() {
+    /// Performs the destructive sign-out path after in-flight sync work has been quiesced.
+    func signOutAndDeleteLocalData() async {
         do {
+            await syncManager.cancelAndWaitForProcessing()
+            let signedOutSession = try clearLocalCredentials()
+            defer { revokeRemoteSession(signedOutSession) }
             try purgeLocalUserData()
             try removeLocalDataOwner()
             guard try localDataOwner() == nil else {
                 throw AppStateError.localDataOwnerRemovalVerificationFailed
             }
-            authManager.signOut()
         } catch {
             reportError(error)
         }

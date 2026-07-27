@@ -1,0 +1,35 @@
+# Enforces maintainability and compiler-assisted hygiene for production Swift sources.
+included:
+  - ios/ResonanceApp/Sources
+
+excluded:
+  - ios/ResonanceApp/.build
+  - ios/ResonanceApp/ResonanceApp.xcodeproj
+
+analyzer_rules:
+  - unused_declaration
+  - unused_import
+
+cyclomatic_complexity:
+  warning: 10
+  error: 15
+
+function_body_length:
+  warning: 60
+  error: 80
+
+file_length:
+  warning: 500
+  error: 600
+
+line_length:
+  warning: 140
+  error: 180
+  ignores_comments: true
+  ignores_urls: true
+
+type_body_length:
+  warning: 300
+  error: 400
+
+reporter: xcode

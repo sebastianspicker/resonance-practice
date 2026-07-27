@@ -1,40 +1,21 @@
+// Verifies login, refresh, logout, and development-auth behavior through the HTTP API.
 import request from 'supertest';
-import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   app,
-  setupApp,
-  teardownApp,
-  resetDb,
-  seedBasic,
+  expectDevSessionIssued,
   getAccessToken,
+  installBasicSuite,
+  issueDevSession,
   prisma,
-} from './testUtils.js';
+} from './support/testUtils.js';
 
 describe('auth', () => {
-  beforeAll(async () => {
-    await setupApp();
-  });
-
-  afterAll(async () => {
-    await teardownApp();
-  });
-
-  beforeEach(async () => {
-    await resetDb();
-    await seedBasic();
-  });
+  installBasicSuite();
 
   it('exchanges dev code for tokens', async () => {
-    const issue = await request(app.server).post('/dev/issue').send({ role: 'student' });
-    expect(issue.status).toBe(200);
-
-    const session = await request(app.server).post('/auth/session').send({
-      code: issue.body.code,
-      redirectUri: 'resonance://auth-callback',
-    });
-
-    expect(session.status).toBe(201);
-    expect(typeof session.body.accessToken).toBe('string');
+    const { issue, session } = await issueDevSession('student');
+    expectDevSessionIssued(issue, session);
     expect(session.body.accessToken.split('.')).toHaveLength(3);
     expect(typeof session.body.refreshToken).toBe('string');
     expect(session.body.refreshToken.split('.')).toHaveLength(3);
@@ -58,10 +39,9 @@ describe('auth', () => {
   });
 
   it('contains refresh-token replay to its lineage without revoking another session', async () => {
-    const issue = await request(app.server).post('/dev/issue').send({ role: 'student' });
-    const session = await request(app.server).post('/auth/session').send({
-      code: issue.body.code,
-      redirectUri: 'resonance://auth-callback',
+    const { session } = await issueDevSession('student');
+    const { session: independentSession } = await issueDevSession('student', {
+      userId: session.body.user.id,
     });
     const independentIssue = await request(app.server)
       .post('/dev/issue')
@@ -103,18 +83,9 @@ describe('auth', () => {
   });
 
   it('revokes a refresh-token family when logging out with refreshToken body only', async () => {
-    const issue1 = await request(app.server).post('/dev/issue').send({ role: 'student' });
-    const session1 = await request(app.server).post('/auth/session').send({
-      code: issue1.body.code,
-      redirectUri: 'resonance://auth-callback',
-    });
-
-    const issue2 = await request(app.server)
-      .post('/dev/issue')
-      .send({ role: 'student', userId: session1.body.user.id });
-    const session2 = await request(app.server).post('/auth/session').send({
-      code: issue2.body.code,
-      redirectUri: 'resonance://auth-callback',
+    const { session: session1 } = await issueDevSession('student');
+    const { session: session2 } = await issueDevSession('student', {
+      userId: session1.body.user.id,
     });
 
     const logout = await request(app.server)
@@ -136,11 +107,7 @@ describe('auth', () => {
   });
 
   it('leaves no live replacement token when logout races refresh rotation', async () => {
-    const issue = await request(app.server).post('/dev/issue').send({ role: 'student' });
-    const session = await request(app.server).post('/auth/session').send({
-      code: issue.body.code,
-      redirectUri: 'resonance://auth-callback',
-    });
+    const { session } = await issueDevSession('student');
     const refreshToken = session.body.refreshToken as string;
 
     const [refresh, logout] = await Promise.all([

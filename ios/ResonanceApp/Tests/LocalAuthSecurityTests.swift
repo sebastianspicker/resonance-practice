@@ -3,6 +3,8 @@ import Security
 import XCTest
 @testable import ResonanceApp
 
+// Purpose: verifies fail-closed local authentication storage and sign-out behavior.
+
 final class LocalAuthSecurityTests: XCTestCase {
     func testRefreshTokensUseDeviceOnlyKeychainAccessibility() {
         XCTAssertEqual(
@@ -43,112 +45,59 @@ final class LocalAuthSecurityTests: XCTestCase {
 
     @MainActor
     func testSessionPersistenceWriteFailureCannotPublishOrReloadPartialState() {
-        var persistedData: Data?
-        var persistenceUncertain = false
-        var writes = 0
-        let authManager = AuthManager(
-            apiClient: APIClient(),
-            storeSessionData: { _ in
-                writes += 1
-                throw KeychainStoreError.operationFailed(
-                    "update",
-                    key: "authSession",
-                    status: errSecAuthFailed
-                )
-            },
-            readSessionData: { persistedData },
-            removeSessionData: { persistedData = nil },
-            setSessionPersistenceUncertain: { persistenceUncertain = $0 },
-            isSessionPersistenceUncertain: { persistenceUncertain }
+        let harness = SessionPersistenceHarness()
+        harness.storeFailure = KeychainStoreError.operationFailed(
+            "update", key: "authSession", status: errSecAuthFailed
         )
+        let authManager = harness.makeManager()
 
         XCTAssertThrowsError(try authManager.persistSession(makeSession()))
-        XCTAssertEqual(writes, 1)
+        XCTAssertEqual(harness.storeCalls, 1)
         XCTAssertNil(authManager.session)
-        XCTAssertNil(persistedData)
+        XCTAssertNil(harness.persistedData)
 
-        let reloadedManager = AuthManager(
-            apiClient: APIClient(),
-            storeSessionData: { persistedData = $0 },
-            readSessionData: { persistedData },
-            removeSessionData: { persistedData = nil },
-            setSessionPersistenceUncertain: { persistenceUncertain = $0 },
-            isSessionPersistenceUncertain: { persistenceUncertain }
-        )
+        let reloadedManager = harness.makeManager()
         XCTAssertNil(reloadedManager.session)
     }
 
     @MainActor
     func testPostWriteFailureRollsBackDurableSessionBeforeReload() {
-        var persistedData: Data?
-        var persistenceUncertain = false
-        let authManager = AuthManager(
-            apiClient: APIClient(),
-            storeSessionData: { data in
-                persistedData = data
-                throw KeychainStoreError.valueVerificationFailed("authSession")
-            },
-            readSessionData: { persistedData },
-            removeSessionData: { persistedData = nil },
-            setSessionPersistenceUncertain: { persistenceUncertain = $0 },
-            isSessionPersistenceUncertain: { persistenceUncertain }
-        )
+        let harness = SessionPersistenceHarness()
+        harness.persistBeforeStoreFailure = true
+        harness.storeFailure = KeychainStoreError.valueVerificationFailed("authSession")
+        let authManager = harness.makeManager()
 
         XCTAssertThrowsError(try authManager.persistSession(makeSession()))
         XCTAssertNil(authManager.session)
-        XCTAssertNil(persistedData)
-        XCTAssertFalse(persistenceUncertain)
+        XCTAssertNil(harness.persistedData)
+        XCTAssertFalse(harness.persistenceUncertain)
 
-        let reloadedManager = AuthManager(
-            apiClient: APIClient(),
-            readSessionData: { persistedData },
-            removeSessionData: { persistedData = nil },
-            setSessionPersistenceUncertain: { persistenceUncertain = $0 },
-            isSessionPersistenceUncertain: { persistenceUncertain }
-        )
+        let reloadedManager = harness.makeManager()
         XCTAssertNil(reloadedManager.session)
     }
 
     @MainActor
     func testRollbackFailureKeepsDurableSafetyMarkerAndBlocksReload() {
-        var persistedData: Data?
-        var persistenceUncertain = false
-        let authManager = AuthManager(
-            apiClient: APIClient(),
-            storeSessionData: { data in
-                persistedData = data
-                throw KeychainStoreError.valueVerificationFailed("authSession")
-            },
-            readSessionData: { persistedData },
-            removeSessionData: {
-                throw KeychainStoreError.removalVerificationFailed("authSession")
-            },
-            setSessionPersistenceUncertain: { persistenceUncertain = $0 },
-            isSessionPersistenceUncertain: { persistenceUncertain }
-        )
+        let harness = SessionPersistenceHarness()
+        harness.persistBeforeStoreFailure = true
+        harness.storeFailure = KeychainStoreError.valueVerificationFailed("authSession")
+        harness.removeFailure = KeychainStoreError.removalVerificationFailed("authSession")
+        let authManager = harness.makeManager()
 
         XCTAssertThrowsError(try authManager.persistSession(makeSession())) { error in
             XCTAssertEqual(error as? AuthSessionPersistenceError, .rollbackFailed)
         }
         XCTAssertNil(authManager.session)
-        XCTAssertNotNil(persistedData)
-        XCTAssertTrue(persistenceUncertain)
+        XCTAssertNotNil(harness.persistedData)
+        XCTAssertTrue(harness.persistenceUncertain)
 
-        let reloadedManager = AuthManager(
-            apiClient: APIClient(),
-            readSessionData: { persistedData },
-            removeSessionData: {
-                throw KeychainStoreError.removalVerificationFailed("authSession")
-            },
-            setSessionPersistenceUncertain: { persistenceUncertain = $0 },
-            isSessionPersistenceUncertain: { persistenceUncertain }
-        )
+        let reloadedManager = harness.makeManager()
         XCTAssertNil(reloadedManager.session)
         XCTAssertEqual(
             reloadedManager.authError,
             "Sign-in blocked: local credential state could not be verified."
         )
-        XCTAssertTrue(persistenceUncertain)
+        XCTAssertTrue(harness.persistenceUncertain)
     }
 
     @MainActor
@@ -289,6 +238,35 @@ final class LocalAuthSecurityTests: XCTestCase {
     }
 }
 
+private final class SessionPersistenceHarness {
+    var persistedData: Data?
+    var persistenceUncertain = false
+    var storeCalls = 0
+    var persistBeforeStoreFailure = false
+    var storeFailure: Error?
+    var removeFailure: Error?
+
+    @MainActor
+    func makeManager() -> AuthManager {
+        AuthManager(
+            apiClient: APIClient(),
+            storeSessionData: { data in
+                self.storeCalls += 1
+                if self.persistBeforeStoreFailure { self.persistedData = data }
+                if let storeFailure = self.storeFailure { throw storeFailure }
+                self.persistedData = data
+            },
+            readSessionData: { self.persistedData },
+            removeSessionData: {
+                if let removeFailure = self.removeFailure { throw removeFailure }
+                self.persistedData = nil
+            },
+            setSessionPersistenceUncertain: { self.persistenceUncertain = $0 },
+            isSessionPersistenceUncertain: { self.persistenceUncertain }
+        )
+    }
+}
+
 private final class AmbiguousPersistenceHarness {
     var persistedData: Data?
     var keychainMarkerPresent = false
@@ -333,12 +311,8 @@ private final class DeferredRefreshHarness {
     }
 }
 
-private final class DeferredAuthURLProtocol: URLProtocol {
-    static var requestHandler: ((DeferredAuthURLProtocol, URLRequest) -> Void)?
-
-    override class func canInit(with request: URLRequest) -> Bool { true }
-
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+private final class DeferredAuthURLProtocol: TestURLProtocolBase {
+    nonisolated(unsafe) static var requestHandler: ((DeferredAuthURLProtocol, URLRequest) -> Void)?
 
     override func startLoading() {
         guard let handler = Self.requestHandler else {
@@ -368,15 +342,8 @@ private final class DeferredAuthURLProtocol: URLProtocol {
 }
 
 private func makeAuthJWT(expiresIn: TimeInterval) -> String {
-    let header = authBase64URLString(from: Data("{\"alg\":\"none\"}".utf8))
+    let header = base64URLString(from: Data("{\"alg\":\"none\"}".utf8))
     let expiration = Int(Date().addingTimeInterval(expiresIn).timeIntervalSince1970)
-    let payload = authBase64URLString(from: Data("{\"exp\":\(expiration)}".utf8))
+    let payload = base64URLString(from: Data("{\"exp\":\(expiration)}".utf8))
     return "\(header).\(payload).signature"
-}
-
-private func authBase64URLString(from data: Data) -> String {
-    data.base64EncodedString()
-        .replacingOccurrences(of: "+", with: "-")
-        .replacingOccurrences(of: "/", with: "_")
-        .replacingOccurrences(of: "=", with: "")
 }

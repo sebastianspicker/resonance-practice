@@ -3,6 +3,21 @@
   "version": "0.1.0-alpha.1",
   "private": true,
   "type": "module",
+  "description": "Fastify API for the Resonance offline-first music-education alpha.",
+  "license": "MIT",
+  "homepage": "https://github.com/sebastianspicker/resonance#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sebastianspicker/resonance.git",
+    "directory": "server"
+  },
+  "bugs": {
+    "url": "https://github.com/sebastianspicker/resonance/issues"
+  },
+  "engines": {
+    "node": "24.x",
+    "npm": ">=10"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
@@ -13,6 +28,9 @@
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint .",
+    "quality": "npm run lint && npm run quality:dead-code && npm run quality:duplicates",
+    "quality:dead-code": "knip --config knip.json --no-progress --treat-config-hints-as-errors",
+    "quality:duplicates": "jscpd --config .jscpd.json --no-colors --no-tips src tests prisma ../ios/ResonanceApp/Sources ../ios/ResonanceApp/Tests",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"prisma/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" \"prisma/**/*.ts\"",
     "prisma:generate": "prisma generate",
@@ -35,7 +53,6 @@
     "jsonwebtoken": "9.0.3",
     "nanoid": "5.1.7",
     "openid-client": "5.7.1",
-    "pino": "10.3.1",
     "prisma": "5.22.0"
   },
   "overrides": {
@@ -43,8 +60,9 @@
     "fast-xml-parser": "5.7.2"
   },
   "devDependencies": {
+    "@eslint/js": "9.39.4",
     "@types/jsonwebtoken": "9.0.10",
-    "@types/node": "25.5.0",
+    "@types/node": "24.13.2",
     "@types/supertest": "7.2.0",
     "@typescript-eslint/eslint-plugin": "8.57.2",
     "@typescript-eslint/parser": "8.57.2",
@@ -52,6 +70,8 @@
     "aws-sdk-client-mock": "3.1.0",
     "eslint": "9.39.4",
     "globals": "17.4.0",
+    "jscpd": "5.0.12",
+    "knip": "6.27.0",
     "prettier": "3.8.1",
     "supertest": "7.2.2",
     "tsx": "4.21.0",

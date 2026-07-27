@@ -1,3 +1,4 @@
+# Performs the scheduled and manually dispatchable dependency vulnerability audit.
 name: Security Audit
 
 on:

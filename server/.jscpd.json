@@ -1,0 +1,9 @@
+{
+  "threshold": 0,
+  "minTokens": 50,
+  "minLines": 5,
+  "mode": "strict",
+  "format": ["typescript", "swift"],
+  "reporters": ["console", "threshold"],
+  "ignore": ["**/node_modules/**", "**/.build/**", "**/Generated/**"]
+}

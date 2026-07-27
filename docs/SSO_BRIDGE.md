@@ -1,143 +1,150 @@
-# Production SSO Bridge — Deployment Guide
+# OpenID Connect configuration
 
-This document explains how to wire up the Resonance backend to your university's Single Sign-On (SSO) system for production use.
+Production authentication uses OpenID Connect authorization code flow. A
+SAML-only identity provider requires an operator-managed SAML-to-OIDC bridge.
+The repository does not include or validate such a bridge.
 
-Resonance uses **OpenID Connect (OIDC)** for production authentication. Most modern Shibboleth deployments support OIDC via a proxy (e.g. [SATOSA](https://github.com/IdentityPython/SATOSA)) or natively. If your university only exposes SAML, you will need a SAML-to-OIDC bridge.
+## Authentication flow
 
----
-
-## Overview
-
-The production auth flow:
-
-```
-iOS app (ASWebAuthenticationSession)
-  ↓  opens https://<api>/auth/oidc/login
-API server
-  ↓  redirects to university IdP (OIDC authorization endpoint)
-University IdP
-  ↓  user authenticates (Shibboleth / LDAP / etc.)
-  ↓  redirects back to https://<api>/auth/oidc/callback?code=...&state=...
-API server
-  ↓  exchanges code for ID token, validates claims
-  ↓  creates or updates the Resonance user in the database
-  ↓  issues a short-lived internal auth code
-  ↓  redirects to resonance://auth-callback?code=<internal-code>
-iOS app (ASWebAuthenticationSession captures the resonance:// redirect)
-  ↓  POST /auth/session { code: <internal-code> }
-API server
-  ↓  issues JWT access token + refresh token
+```text
+iOS app
+  GET /auth/login
+API
+  redirect to /auth/oidc/login
+Identity provider
+  authenticate user and redirect to /auth/oidc/callback
+API
+  validate state, exchange the provider code, and map the user
+  redirect to resonance://auth-callback with a one-time internal code
+iOS app
+  POST /auth/session with the internal code
+API
+  return access token, refresh token, and user
 ```
 
-After token issuance the flow is identical to development mode.
+The iOS app uses `ASWebAuthenticationSession`. The API stores only SHA-256
+hashes of OpenID Connect state values and internal application codes in
+PostgreSQL. State values expire after 10 minutes. Internal codes are single-use
+and expire after 5 minutes.
 
----
+## Required configuration
 
-## Environment Variables
+Production startup requires:
 
-Set the following in your production environment (do **not** put these in `server/.env.example` with real values):
+| Variable | Requirement |
+| --- | --- |
+| `AUTH_MODE` | Set to `prod`. |
+| `HOST` | Explicit listener host or address without a URL scheme. |
+| `CORS_ORIGINS` | At least one exact allowed origin. |
+| `OIDC_DISCOVERY_URL` | URL passed to `openid-client` discovery. |
+| `OIDC_CLIENT_ID` | Confidential client identifier registered with the provider. |
+| `OIDC_CLIENT_SECRET` | Client secret registered with the provider. |
+| `OIDC_REDIRECT_URI` | Exact HTTPS callback URI registered with the provider. |
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `AUTH_MODE` | ✅ | Must be `prod` |
-| `OIDC_DISCOVERY_URL` | ✅ | OIDC issuer URL. The server will fetch `<url>/.well-known/openid-configuration` on first use. |
-| `OIDC_CLIENT_ID` | ✅ | OAuth2 client ID registered with your IdP. |
-| `OIDC_CLIENT_SECRET` | ✅ | OAuth2 client secret. Treat as a high-value secret. |
-| `OIDC_REDIRECT_URI` | ✅ | Must match the redirect URI registered in the IdP exactly. Usually `https://<api-domain>/auth/oidc/callback`. |
-| `OIDC_ROLE_CLAIM` | ☑️ optional | Name of the OIDC claim that carries the user's role. Default: `role`. |
-| `OIDC_TEACHER_VALUE` | ☑️ optional | Value of `OIDC_ROLE_CLAIM` that means "teacher". Default: `teacher`. All other values are mapped to `student`. |
+Optional claim mapping:
 
-All other required variables (`JWT_SECRET`, `DATABASE_URL`, `S3_*`, `CORS_ORIGINS`) must also be set. See `server/.env.example`.
+| Variable | Default | Behavior |
+| --- | --- | --- |
+| `OIDC_ROLE_CLAIM` | `role` | String claim inspected for the teacher value. |
+| `OIDC_TEACHER_VALUE` | `teacher` | Exact value mapped to the teacher role. |
 
-### Example
+All other claim values map to the student role. Array-valued group claims and
+multi-role policies are not supported by the current equality check.
 
-```bash
+The backend also requires `DATABASE_URL`, `JWT_SECRET`, the required `S3_*`
+settings, and the remaining production values described in the
+[README](../README.md#configuration).
+
+Example shape:
+
+```text
 AUTH_MODE=prod
-CORS_ORIGINS=https://api.university.de
-
-OIDC_DISCOVERY_URL=https://sso.university.de/.well-known/openid-configuration
-OIDC_CLIENT_ID=resonance-prod
-OIDC_CLIENT_SECRET=<your-client-secret>
-OIDC_REDIRECT_URI=https://api.university.de/auth/oidc/callback
-
-# Role mapping (adjust to match your IdP's claim structure)
-OIDC_ROLE_CLAIM=eduPersonAffiliation
-OIDC_TEACHER_VALUE=staff
+HOST=0.0.0.0
+CORS_ORIGINS=https://portal.example.edu
+OIDC_DISCOVERY_URL=https://identity.example.edu
+OIDC_CLIENT_ID=resonance
+OIDC_CLIENT_SECRET=<secret-from-provider>
+OIDC_REDIRECT_URI=https://api.example.edu/auth/oidc/callback
+OIDC_ROLE_CLAIM=role
+OIDC_TEACHER_VALUE=teacher
 ```
 
----
+Do not copy placeholder values into an operating environment.
 
-## IdP Registration
+## Provider registration
 
-Register a new OAuth2/OIDC client in your university's IdP console with:
+Register a confidential OpenID Connect client with:
 
-- **Client type:** Confidential
-- **Allowed grant types:** Authorization Code
-- **Redirect URI:** `https://<api-domain>/auth/oidc/callback`
-- **Requested scopes:** `openid profile email` (plus any custom scopes for role claims)
-- **Response types:** `code`
+- authorization code flow;
+- redirect URI matching `OIDC_REDIRECT_URI` exactly;
+- response type `code`;
+- scopes `openid profile email`;
+- a string claim suitable for student and teacher mapping.
 
----
+If the role claim requires an additional scope, the current fixed scope list in
+`server/src/config.ts` must be changed and tested. The configuration does not
+currently provide an environment variable for extra scopes.
 
-## Role Mapping
+## User mapping
 
-Resonance recognises two roles: `student` and `teacher`.
+The backend derives the local user identifier from the provider's stable `sub`
+claim:
 
-By default the server reads the `role` claim from the OIDC ID token. If its value matches `OIDC_TEACHER_VALUE` (default: `teacher`), the user is assigned the `teacher` role; otherwise `student`.
+```text
+sso:<sub>
+```
 
-### Common Shibboleth / university scenarios
+On each login, it updates the display name and global role. Display name lookup
+uses the first nonempty string from `name`, `preferred_username`, `email`, and
+`sub`.
 
-| IdP claim | Example value | Recommended config |
-|-----------|--------------|-------------------|
-| `role` | `teacher` | Default (no config needed) |
-| `eduPersonAffiliation` | `staff` | `OIDC_ROLE_CLAIM=eduPersonAffiliation`, `OIDC_TEACHER_VALUE=staff` |
-| `groups` (array) | `["lecturers"]` | Not directly supported by the current claim matcher (string comparison). See *Custom role logic* below. |
+The global role comes from exact string comparison between
+`OIDC_ROLE_CLAIM` and `OIDC_TEACHER_VALUE`. Course membership still controls
+course-specific actions. A global teacher role alone does not grant access to
+a course.
 
-### Custom role logic
+## Validation procedure
 
-If your IdP encodes roles as a JSON array or requires more complex logic, edit `server/src/oidc.ts` → `roleFromClaims()`. The function receives the full set of OIDC claims as a plain object and must return `'student' | 'teacher'`.
+No live provider is configured in the repository. Validate an integration in a
+disposable environment:
 
----
+1. provision PostgreSQL and the S3-compatible object store;
+2. set all production configuration;
+3. register the exact HTTPS callback URI;
+4. start the compiled API behind TLS;
+5. open `/auth/login` through the public API origin;
+6. complete provider authentication;
+7. confirm the app receives `resonance://auth-callback`;
+8. exchange the internal code once through `POST /auth/session`;
+9. verify student and teacher claim mappings with synthetic accounts;
+10. verify refresh rotation, logout, expiry, invalid state, and denied course
+    access.
 
-## User Identity
-
-Each user is stored in the database with an `id` of the form `sso:<oidc-sub-claim>`. The `sub` claim is stable per user per IdP and is used for upsert on every login — display name and role are refreshed on each login from current IdP claims.
-
----
-
-## CORS
-
-Set `CORS_ORIGINS` to your app's origin. For an iOS-only app with no web frontend, you may leave this empty if the server is never accessed from a browser; however the production check enforces at least one origin is set. If needed, add `resonance://` as an allowed origin pattern or remove the CORS check for the app scheme.
-
----
-
-## Testing the OIDC Integration
-
-1. Start the server with all `OIDC_*` variables set and `AUTH_MODE=prod`.
-2. Open `https://<api>/auth/oidc/login` in a browser — you should be redirected to the university IdP.
-3. After authentication the browser will attempt to redirect to `resonance://auth-callback?code=...`. The browser cannot open this URL (it's an app scheme), but the redirect appearing in the browser's address bar or network log confirms the flow works.
-4. From iOS, use `ASWebAuthenticationSession` to open `/auth/oidc/login`. The session will capture the `resonance://` redirect and close automatically.
-
----
+Browser observation alone does not prove that the iOS callback, token
+persistence, course authorization, or logout path works.
 
 ## Troubleshooting
 
-| Symptom | Likely cause |
-|---------|-------------|
-| Server refuses to start with OIDC error | One or more `OIDC_*` env vars missing while `AUTH_MODE=prod` |
-| `/auth/oidc/login` returns 501 | `AUTH_MODE` is not `prod` or OIDC vars are not set |
-| `/auth/oidc/callback` returns `INVALID_CODE` | OIDC token exchange failed; check IdP logs and redirect URI exact match |
-| `/auth/oidc/callback` returns `VALIDATION_ERROR` (state) | State expired (>10 min) or state parameter was modified in transit |
-| User always gets `student` role | `OIDC_ROLE_CLAIM` / `OIDC_TEACHER_VALUE` do not match the claim the IdP sends; inspect the ID token claims with a JWT decoder |
-| Display name is "Unknown User" | ID token is missing `name`, `preferred_username`, `email`, and `sub` claims |
+| Symptom | Check |
+| --- | --- |
+| Server exits during startup | Confirm all four `OIDC_*` values, `HOST`, and `CORS_ORIGINS` are set in production. |
+| `/auth/oidc/login` returns 501 | OIDC configuration is incomplete. In development mode the route also returns 501 when OIDC is omitted. |
+| Callback returns `VALIDATION_ERROR` | State is missing, expired, already used, or changed. |
+| Callback returns `INVALID_CODE` | Provider code exchange failed. Check provider logs, client credentials, issuer metadata, and exact redirect URI. |
+| User maps to student | Confirm the configured claim exists as a string and exactly matches `OIDC_TEACHER_VALUE`. |
+| Display name is `Unknown User` | The token contains no nonempty string for `name`, `preferred_username`, `email`, or `sub`; a missing `sub` is rejected earlier. |
+| Login works on one API process only | Confirm all replicas use the same PostgreSQL database. State and internal codes are database-backed. |
 
----
+## Security requirements
 
-## Security Notes
-
-- The OIDC `state` parameter is validated on every callback to prevent CSRF attacks.
-- The internal auth code issued after successful OIDC authentication is single-use and expires after 5 minutes.
-- OIDC state and internal auth codes are stored only as short-lived SHA-256 hashes in PostgreSQL, so single-use consumption remains correct across multiple API replicas.
-- `redirectUri` in `POST /auth/session` is validated against the registered OIDC callback URI in production mode.
-- Dev auth endpoints (`/dev/*`) return 404 in `AUTH_MODE=prod` — they are not accessible.
-- Keep `OIDC_CLIENT_SECRET` and `JWT_SECRET` in a secrets manager (e.g. AWS Secrets Manager, HashiCorp Vault) and inject them as environment variables at runtime.
+- Store the OpenID Connect client secret and JWT secrets in an
+  operator-managed secret store.
+- Use HTTPS for the provider callback and external API traffic.
+- Keep provider redirect URIs exact and minimal.
+- Do not log provider tokens, internal codes, application tokens, or callback
+  URLs containing codes.
+- Test role mapping with accounts that should and should not receive teacher
+  access.
+- Rotate client and JWT secrets after suspected disclosure.
+- Configure PostgreSQL retention and backup procedures for authentication and
+  application records.

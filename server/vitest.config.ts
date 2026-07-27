@@ -1,3 +1,4 @@
+/** Default unit/integration Vitest configuration, excluding service E2E tests. */
 import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({

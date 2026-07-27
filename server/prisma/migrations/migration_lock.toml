@@ -1,1 +1,2 @@
+# Records the Prisma migration provider so tooling cannot apply this history to another database.
 provider = "postgresql"

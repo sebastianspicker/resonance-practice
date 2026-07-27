@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Guard destructive setup by test database/schema identity while allowing explicit remote test hosts.
 import { pathToFileURL } from "node:url";
 
 const REQUIRED_TEST_DATABASE = "resonance_test";

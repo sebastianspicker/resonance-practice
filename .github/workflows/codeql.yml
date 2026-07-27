@@ -1,3 +1,4 @@
+# Runs GitHub's semantic security analysis for the repository's compiled languages.
 name: CodeQL
 
 on:

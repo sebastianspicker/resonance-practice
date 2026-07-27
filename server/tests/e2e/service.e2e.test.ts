@@ -1,3 +1,4 @@
+// Spawns the compiled API and exercises the real HTTP, PostgreSQL, and object-storage workflow.
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
@@ -5,7 +6,7 @@ import net from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { assertTestDatabaseUrl } from '../databaseSafety.js';
+import { assertTestDatabaseUrl } from '../support/databaseSafety.js';
 
 const prisma = new PrismaClient();
 const serverLogs: string[] = [];
@@ -127,6 +128,21 @@ async function requestJson<T>(
   return { response: { status }, body };
 }
 
+type ArtifactSessionResponse = {
+  sessionId: string;
+  uploadUrl: string;
+  requiredHeaders: Record<string, string>;
+  artifact: { id: string; uploadState: string };
+};
+
+function requestArtifactSession(token: string, body: Record<string, unknown>) {
+  return requestJson<ArtifactSessionResponse>('/api/v1/artifact-sessions', {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  });
+}
+
 async function issueSession(userId: string): Promise<string> {
   const issue = await requestJson<{ code: string }>('/dev/issue', {
     method: 'POST',
@@ -218,49 +234,34 @@ describe('process-level service E2E', () => {
     ).toBe(201);
     expect(entry.body.status).toBe('draft');
 
-    const artifact = await requestJson<{ id: string; uploadState: string }>(
-      '/entries/e2e-entry-1/artifacts',
-      {
-        method: 'POST',
-        headers: authHeaders(studentToken),
-        body: JSON.stringify({
-          id: 'e2e-artifact-1',
-          type: 'audio',
-          durationSeconds: 120,
-          sizeBytes: 4,
-        }),
-      }
-    );
-    expect(artifact.response.status).toBe(201);
-    expect(artifact.body.uploadState).toBe('pending');
-
-    const presign = await requestJson<{
-      uploadUrl: string;
-      storageKey: string;
-      requiredHeaders: Record<string, string>;
-    }>('/artifacts/e2e-artifact-1/presign', {
-      method: 'POST',
-      headers: authHeaders(studentToken),
+    const artifactSession = await requestArtifactSession(studentToken, {
+      operationId: 'e2e-artifact-upload',
+      entryId: 'e2e-entry-1',
+      artifactId: 'e2e-artifact-1',
+      type: 'audio',
+      durationSeconds: 120,
+      sizeBytes: 4,
+      baseVersion: 1,
     });
-    expect(presign.response.status).toBe(200);
-    expect(presign.body.storageKey).toMatch(/^artifacts\/e2e-entry-1\/e2e-artifact-1-/);
+    expect(artifactSession.response.status).toBe(200);
+    expect(artifactSession.body.artifact.uploadState).toBe('uploading');
 
-    const upload = await fetch(presign.body.uploadUrl, {
+    const upload = await fetch(artifactSession.body.uploadUrl, {
       method: 'PUT',
-      headers: presign.body.requiredHeaders,
+      headers: artifactSession.body.requiredHeaders,
       body: new Uint8Array([1, 2, 3, 4]),
     });
     expect(upload.ok).toBe(true);
 
-    const confirmed = await requestJson<{ uploadState: string }>(
-      '/artifacts/e2e-artifact-1/confirm',
+    const confirmed = await requestJson<{ artifact: { uploadState: string } }>(
+      `/api/v1/artifact-sessions/${artifactSession.body.sessionId}/complete`,
       {
         method: 'POST',
         headers: authHeaders(studentToken),
       }
     );
     expect(confirmed.response.status).toBe(200);
-    expect(confirmed.body.uploadState).toBe('uploaded');
+    expect(confirmed.body.artifact.uploadState).toBe('uploaded');
 
     const submitted = await requestJson<{ status: string }>('/entries/e2e-entry-1/submit', {
       method: 'POST',
@@ -278,8 +279,8 @@ describe('process-level service E2E', () => {
     expect(queue.body.nextCursor).toBeNull();
 
     const teacherDownload = await requestJson<{ downloadUrl: string; expiresInSeconds: number }>(
-      '/artifacts/e2e-artifact-1/download',
-      { headers: authHeaders(teacherToken) }
+      '/api/v1/artifacts/e2e-artifact-1/download-session',
+      { method: 'POST', headers: authHeaders(teacherToken) }
     );
     expect(teacherDownload.response.status).toBe(200);
     expect(teacherDownload.body.expiresInSeconds).toBeGreaterThan(0);
@@ -359,49 +360,34 @@ describe('process-level service E2E', () => {
     expect(lessonEntry.body.kind).toBe('teaching_lesson');
     expect(lessonEntry.body.captureProfile).toBe('teacher_learner');
 
-    const lessonArtifact = await requestJson<{ id: string; uploadState: string }>(
-      '/entries/e2e-teaching-1/artifacts',
-      {
-        method: 'POST',
-        headers: authHeaders(studentToken),
-        body: JSON.stringify({
-          id: 'e2e-video-1',
-          type: 'video',
-          durationSeconds: 90,
-          sizeBytes: 4,
-        }),
-      }
-    );
-    expect(lessonArtifact.response.status).toBe(201);
-    expect(lessonArtifact.body.uploadState).toBe('pending');
-
-    const lessonPresign = await requestJson<{
-      uploadUrl: string;
-      storageKey: string;
-      requiredHeaders: Record<string, string>;
-    }>('/artifacts/e2e-video-1/presign', {
-      method: 'POST',
-      headers: authHeaders(studentToken),
+    const lessonArtifactSession = await requestArtifactSession(studentToken, {
+      operationId: 'e2e-video-upload',
+      entryId: 'e2e-teaching-1',
+      artifactId: 'e2e-video-1',
+      type: 'video',
+      durationSeconds: 90,
+      sizeBytes: 4,
+      baseVersion: 1,
     });
-    expect(lessonPresign.response.status).toBe(200);
-    expect(lessonPresign.body.storageKey).toMatch(/^artifacts\/e2e-teaching-1\/e2e-video-1-/);
+    expect(lessonArtifactSession.response.status).toBe(200);
+    expect(lessonArtifactSession.body.artifact.uploadState).toBe('uploading');
 
-    const lessonUpload = await fetch(lessonPresign.body.uploadUrl, {
+    const lessonUpload = await fetch(lessonArtifactSession.body.uploadUrl, {
       method: 'PUT',
-      headers: lessonPresign.body.requiredHeaders,
+      headers: lessonArtifactSession.body.requiredHeaders,
       body: new Uint8Array([5, 6, 7, 8]),
     });
     expect(lessonUpload.ok).toBe(true);
 
-    const lessonConfirmed = await requestJson<{ uploadState: string }>(
-      '/artifacts/e2e-video-1/confirm',
+    const lessonConfirmed = await requestJson<{ artifact: { uploadState: string } }>(
+      `/api/v1/artifact-sessions/${lessonArtifactSession.body.sessionId}/complete`,
       {
         method: 'POST',
         headers: authHeaders(studentToken),
       }
     );
     expect(lessonConfirmed.response.status).toBe(200);
-    expect(lessonConfirmed.body.uploadState).toBe('uploaded');
+    expect(lessonConfirmed.body.artifact.uploadState).toBe('uploaded');
 
     const lessonMarkers = await requestJson<Array<{ id: string; kind: string }>>(
       '/entries/e2e-teaching-1/capture-markers',

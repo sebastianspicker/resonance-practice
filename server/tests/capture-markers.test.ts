@@ -1,19 +1,7 @@
+// Verifies teaching-lesson marker ownership, replacement, and video-only constraints.
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import {
-  app,
-  getAccessToken,
-  prisma,
-  resetDb,
-  seedBasic,
-  setupApp,
-  teardownApp,
-} from './testUtils.js';
-
-function login(role: 'student' | 'teacher') {
-  const userId = role === 'student' ? 'student-1' : 'teacher-1';
-  return getAccessToken(role, { userId });
-}
+import { describe, expect, it } from 'vitest';
+import { app, getReviewQueue, installBasicSuite, login, prisma } from './support/testUtils.js';
 
 async function seedTeachingLesson(status: 'draft' | 'submitted' | 'reviewed' = 'draft') {
   await prisma.practiceEntry.create({
@@ -43,18 +31,7 @@ async function seedTeachingLesson(status: 'draft' | 'submitted' | 'reviewed' = '
 }
 
 describe('capture marker sync', () => {
-  beforeAll(async () => {
-    await setupApp();
-  });
-
-  afterAll(async () => {
-    await teardownApp();
-  });
-
-  beforeEach(async () => {
-    await resetDb();
-    await seedBasic();
-  });
+  installBasicSuite();
 
   it('upserts capture markers for the owning student and returns them by time', async () => {
     await seedTeachingLesson();
@@ -175,9 +152,7 @@ describe('capture marker sync', () => {
     });
     const token = await login('teacher');
 
-    const res = await request(app.server)
-      .get('/courses/COURSE_TEST/review-queue')
-      .set('Authorization', `Bearer ${token}`);
+    const res = await getReviewQueue(token);
 
     expect(res.status).toBe(200);
     expect(res.body.items[0].captureProfile).toBe('teacher_learner');

@@ -1,7 +1,4 @@
-import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
+// Validates the deterministic public demo fixture through the same standalone script used by CI.
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
@@ -9,6 +6,7 @@ import {
   loadDemoFixture,
   resolveDemoFeedbackEntryId,
 } from '../prisma/demoFixture.js';
+import { expectUnsafeDatabaseUrlStopsScript } from './support/unsafeScriptHarness.js';
 
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -63,32 +61,12 @@ describe('demo fixture safety and feedback mapping', () => {
   });
 
   it('stops demo bootstrap before npm or migrations for an unsafe inherited URL', () => {
-    const temporaryBin = mkdtempSync(path.join(tmpdir(), 'resonance-demo-db-guard-'));
-    const sentinel = path.join(temporaryBin, 'npm-invoked');
-    const mockNpm = path.join(temporaryBin, 'npm');
-    writeFileSync(mockNpm, '#!/bin/sh\n: > "$NPM_SENTINEL"\nexit 99\n');
-    chmodSync(mockNpm, 0o755);
-
-    try {
-      const secret = 'must-not-appear';
-      const result = spawnSync('/bin/bash', ['scripts/demo/bootstrap-local-demo.sh'], {
-        cwd: repositoryRoot,
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          DATABASE_URL: `postgresql://operator:${secret}@prod.example:5432/resonance`,
-          NPM_SENTINEL: sentinel,
-          PATH: `${temporaryBin}:${process.env.PATH ?? ''}`,
-        },
-      });
-
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain('Refusing demo database mutation');
-      expect(result.stderr).not.toContain(secret);
-      expect(existsSync(sentinel)).toBe(false);
-    } finally {
-      rmSync(temporaryBin, { recursive: true, force: true });
-    }
+    expectUnsafeDatabaseUrlStopsScript(
+      repositoryRoot,
+      'scripts/demo/bootstrap-local-demo.sh',
+      'Refusing demo database mutation',
+      'resonance-demo-db-guard-'
+    );
   });
 
   it('keeps feedback parents reviewed while retaining multiple submitted entries', async () => {

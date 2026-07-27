@@ -1,6 +1,8 @@
 import SwiftUI
 import SwiftData
 
+// Lets a learner select course activity and export it as a PDF summary.
+
 struct ExportView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var startDate = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
@@ -46,6 +48,8 @@ struct ExportView: View {
                     ShareLink("Share PDF", item: exportURL)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(AppTheme.workspaceBackground)
             .navigationTitle("Export")
             .alert("Export failed", isPresented: $showErrorAlert) {
                 Button("OK") { showErrorAlert = false; errorMessage = nil }

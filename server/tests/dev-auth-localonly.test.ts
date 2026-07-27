@@ -1,5 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+// Proves development authentication rejects non-loopback callers even when explicitly enabled.
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PrismaClient } from '@prisma/client';
+import { buildIsolatedServer } from './support/isolatedServerHarness.js';
 
 describe('dev auth localhost restriction', () => {
   let app: any;
@@ -13,12 +15,7 @@ describe('dev auth localhost restriction', () => {
     process.env.AUTH_MODE = 'dev';
     process.env.DEV_UNIVERSITY_NAME = `T&T <Studio> "North" 'A'`;
 
-    vi.resetModules();
-    const { buildServer } = await import('../src/server.js');
-
-    prisma = new PrismaClient();
-    app = buildServer(prisma, {} as any);
-    await app.ready();
+    ({ app, prisma } = await buildIsolatedServer());
   });
 
   afterAll(async () => {

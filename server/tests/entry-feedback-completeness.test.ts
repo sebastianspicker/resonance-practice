@@ -1,28 +1,10 @@
+// Verifies entry reads include both entry-level and artifact-level feedback exactly once.
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import {
-  app,
-  getAccessToken,
-  prisma,
-  resetDb,
-  seedBasic,
-  setupApp,
-  teardownApp,
-} from './testUtils.js';
+import { describe, expect, it } from 'vitest';
+import { app, getAccessToken, prisma, installBasicSuite } from './support/testUtils.js';
 
 describe('GET /entries/:entryId/feedback completeness', () => {
-  beforeAll(async () => {
-    await setupApp();
-  });
-
-  afterAll(async () => {
-    await teardownApp();
-  });
-
-  beforeEach(async () => {
-    await resetDb();
-    await seedBasic();
-  });
+  installBasicSuite();
 
   it('returns both entry-level and artifact-level feedback linked to the entry', async () => {
     await prisma.practiceEntry.create({

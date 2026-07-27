@@ -1,10 +1,8 @@
-import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+// Runs destructive-database guards in subprocesses to prove unsafe URLs fail before setup.
 import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { assertTestDatabaseUrl } from './databaseSafety.js';
+import { assertTestDatabaseUrl } from './support/databaseSafety.js';
+import { expectUnsafeDatabaseUrlStopsScript } from './support/unsafeScriptHarness.js';
 
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -38,31 +36,11 @@ describe('destructive test database guard', () => {
   });
 
   it('stops local CI before any npm migration command for an unsafe inherited URL', () => {
-    const temporaryBin = mkdtempSync(path.join(tmpdir(), 'resonance-db-guard-'));
-    const sentinel = path.join(temporaryBin, 'npm-invoked');
-    const mockNpm = path.join(temporaryBin, 'npm');
-    writeFileSync(mockNpm, '#!/bin/sh\n: > "$NPM_SENTINEL"\nexit 99\n');
-    chmodSync(mockNpm, 0o755);
-
-    try {
-      const secret = 'must-not-appear';
-      const result = spawnSync('/bin/bash', ['scripts/ci-local.sh'], {
-        cwd: repositoryRoot,
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          DATABASE_URL: `postgresql://operator:${secret}@prod.example:5432/resonance`,
-          NPM_SENTINEL: sentinel,
-          PATH: `${temporaryBin}:${process.env.PATH ?? ''}`,
-        },
-      });
-
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain('Refusing destructive test setup');
-      expect(result.stderr).not.toContain(secret);
-      expect(existsSync(sentinel)).toBe(false);
-    } finally {
-      rmSync(temporaryBin, { recursive: true, force: true });
-    }
+    expectUnsafeDatabaseUrlStopsScript(
+      repositoryRoot,
+      'scripts/ci-local.sh',
+      'Refusing destructive test setup',
+      'resonance-db-guard-'
+    );
   });
 });

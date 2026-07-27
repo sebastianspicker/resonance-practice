@@ -1,3 +1,4 @@
+/** CLI entry point for guarded removal of seeded demo records. */
 import { PrismaClient } from '@prisma/client';
 import { assertDemoDatabaseUrl, resetDemoData } from './demoFixture.js';
 

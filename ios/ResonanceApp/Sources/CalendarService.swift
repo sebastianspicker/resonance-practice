@@ -2,6 +2,8 @@ import Foundation
 import os
 import SwiftData
 
+// Downloads validated calendar subscriptions and replaces their locally derived events.
+
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "resonance", category: "CalendarService")
 
 enum CalendarError: LocalizedError, Equatable {
@@ -31,6 +33,7 @@ final class CalendarService: ObservableObject {
         self.session = session
     }
 
+    /// Replaces derived calendar events only after the remote feed passes all size and format checks.
     func refresh(from url: URL, modelContext: ModelContext) async throws {
         guard Self.isAllowedCalendarURL(url) else {
             throw CalendarError.invalidURL

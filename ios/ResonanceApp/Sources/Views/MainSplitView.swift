@@ -1,437 +1,54 @@
-import SwiftUI
 import SwiftData
+import SwiftUI
+
+// Owns split-view selection and presentation state for the authenticated application shell.
 
 struct MainSplitView: View {
-    let modelContext: ModelContext
-    @EnvironmentObject var appState: AppState
-    @EnvironmentObject var authManager: AuthManager
-    @EnvironmentObject var syncManager: SyncManager
-    @EnvironmentObject var networkMonitor: NetworkMonitor
-    @Query(sort: \LocalCourse.title) private var courses: [LocalCourse]
-    @Query(sort: \LocalPracticeEntry.practiceDate, order: .reverse) private var allEntries: [LocalPracticeEntry]
-    @State private var selectionId: String?
-    @State private var showCalendar = false
-    @State private var showExport = false
-    @State private var showSettings = false
-    @State private var showQueue = false
-    @State private var isRefreshing = false
-    @State private var didApplyScreenshotRoute = false
+  let modelContext: ModelContext
+  @EnvironmentObject var appState: AppState
+  @EnvironmentObject var authManager: AuthManager
+  @EnvironmentObject var syncManager: SyncManager
+  @EnvironmentObject var networkMonitor: NetworkMonitor
+  @Query(sort: \LocalCourse.title) var courses: [LocalCourse]
+  @Query(sort: \LocalPracticeEntry.practiceDate, order: .reverse) var allEntries:
+    [LocalPracticeEntry]
+  @State var selectionId: String?
+  @State var showCalendar = false
+  @State var showExport = false
+  @State var showSettings = false
+  @State var showQueue = false
+  @State var isRefreshing = false
+  @State var didApplyScreenshotRoute = false
 
-    var body: some View {
-        NavigationSplitView {
-            List(selection: $selectionId) {
-                Section("Courses") {
-                    ForEach(courses) { course in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(course.title).font(.headline).lineLimit(2)
-                            Text(course.roleInCourse == "teacher" ? "Teacher" : "Student")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 4)
-                        .tag(course.id)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel("\(course.title), role: \(course.roleInCourse)")
-                        .accessibilityHint("Opens the course")
-                    }
-                }
-                Section("Tools") {
-                    Button("Calendar", systemImage: "calendar") { showCalendar = true }
-                    if selectedCourse?.roleInCourse == "student" {
-                        Button("Export", systemImage: "square.and.arrow.up") { showExport = true }
-                    }
-                    Button("Sync status", systemImage: "arrow.triangle.2.circlepath") { showQueue = true }
-                    Button("Settings", systemImage: "gearshape") { showSettings = true }
-                }
-            }
-            .overlay { if isRefreshing { ProgressView("Refreshing…") } }
-            .navigationTitle("Courses")
-            .navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if ScreenshotScenario.current == nil {
-                    VStack(spacing: 0) {
-                        if !networkMonitor.isOnline {
-                            HStack(spacing: 6) {
-                                Image(systemName: "wifi.slash")
-                                    .font(.caption.weight(.bold))
-                                Text("You are offline. Changes are saved locally and will sync when reconnected.")
-                                    .font(.caption)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .foregroundStyle(.primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.orange.opacity(0.85))
-                            .accessibilityElement(children: .combine)
-                            .accessibilityLabel("Offline. Changes are saved locally and will sync when reconnected.")
-                        }
-                        VStack(spacing: 2) {
-                            HStack {
-                                Circle()
-                                    .fill(networkMonitor.isOnline ? Color.green : Color.red)
-                                    .frame(width: 8, height: 8)
-                                Text(networkMonitor.isOnline ? "Online" : "Offline")
-                                Spacer()
-                                if syncManager.failedQueueCount > 0 {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "exclamationmark.triangle.fill")
-                                            .font(.caption2)
-                                            .foregroundStyle(.orange)
-                                        Text("\(syncManager.failedQueueCount) failed")
-                                            .foregroundStyle(.orange)
-                                    }
-                                }
-                                if syncManager.pendingQueueCount > 0 {
-                                    Text("\(syncManager.pendingQueueCount) pending")
-                                }
-                            }
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .accessibilityElement(children: .combine)
-                            .accessibilityLabel("Network \(networkMonitor.isOnline ? "online" : "offline"), \(syncManager.pendingQueueCount) pending, \(syncManager.failedQueueCount) failed")
-                            if let lastSync = syncManager.lastSyncedAt {
-                                Text("Last synced \(lastSync, style: .relative) ago")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(.bar)
-                    }
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Sync") {
-                        Task {
-                            isRefreshing = true
-                            await refreshCourses()
-                            await syncManager.processQueue()
-                            isRefreshing = false
-                        }
-                    }
-                    .disabled(isRefreshing)
-                    .accessibilityLabel("Sync courses")
-                    .accessibilityHint("Double-tap to refresh courses and process the sync queue")
-                }
-                ToolbarItem(placement: .automatic) {
-                    Button("Retry failed", systemImage: "arrow.clockwise") {
-                        syncManager.retryFailedItems()
-                        Task { await syncManager.processQueue() }
-                    }
-                    .disabled(syncManager.failedQueueCount == 0)
-                }
-            }
-        } detail: {
-            detailPane
-        }
-        .sheet(isPresented: $showCalendar) {
-            CalendarView()
-        }
-        .sheet(isPresented: $showExport) {
-            ExportView()
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
-        }
-        .sheet(isPresented: $showQueue) {
-            SyncQueueView()
-        }
-        .onOpenURL { url in
-            if let courseId = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "courseId" })?.value {
-                Task {
-                    if courses.contains(where: { $0.id == courseId }) {
-                        selectionId = courseId
-                        return
-                    }
-                    await refreshCourses()
-                    if courses.contains(where: { $0.id == courseId }) {
-                        selectionId = courseId
-                    }
-                }
-            }
-        }
-        .task {
-            if courses.isEmpty {
-                await refreshCourses()
-            }
-            applyScreenshotRoutingIfNeeded()
-        }
-        .onChange(of: courses.count) { _, _ in
-            applyScreenshotRoutingIfNeeded()
-        }
+  var body: some View {
+    GeometryReader { proxy in
+      if usesTeacherWorkspace(at: proxy.size.width), let course = selectedCourse {
+        teacherWorkspace(course: course)
+      } else {
+        compactOrStandardSplitView
+      }
     }
-
-    private func refreshCourses() async {
-        guard let session = authManager.session else { return }
-        do {
-            let remoteCourses = try await appState.apiClient.fetchCourses(accessToken: session.accessToken)
-            let existing = (try? modelContext.fetch(FetchDescriptor<LocalCourse>())) ?? []
-            let existingMap = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
-            let remoteCourseIds = Set(remoteCourses.map(\.id))
-
-            for course in remoteCourses {
-                if let local = existingMap[course.id] {
-                    local.title = course.title
-                    local.roleInCourse = course.roleInCourse
-                } else {
-                    let record = LocalCourse(id: course.id, title: course.title, roleInCourse: course.roleInCourse)
-                    modelContext.insert(record)
-                }
-            }
-
-            for localCourse in existing where remoteCourseIds.contains(localCourse.id) == false {
-                modelContext.delete(localCourse)
-            }
-
-            try modelContext.save()
-
-            let reconciler = EntryReconciliationService(
-                modelContext: modelContext,
-                apiClient: appState.apiClient
-            )
-            for course in remoteCourses where course.roleInCourse == "student" {
-                try await reconciler.refresh(courseId: course.id, accessToken: session.accessToken)
-            }
-
-            if let selectionId, remoteCourseIds.contains(selectionId) == false {
-                self.selectionId = remoteCourses.first?.id
-            }
-        } catch {
-            appState.reportError(error)
-        }
+    .sheet(isPresented: $showCalendar) { CalendarView() }
+    .sheet(isPresented: $showExport) { ExportView() }
+    .sheet(isPresented: $showSettings) { SettingsView() }
+    .sheet(isPresented: $showQueue) { SyncQueueView() }
+    .onOpenURL(perform: handleOpenURL)
+    .task {
+      if courses.isEmpty { await refreshCourses() }
+      applyScreenshotRoutingIfNeeded()
     }
+    .onChange(of: courses.count) { _, _ in applyScreenshotRoutingIfNeeded() }
+  }
 
-    @ViewBuilder
-    private var detailPane: some View {
-        if let scenario = ScreenshotScenario.current, scenario.requiresAuthenticatedSession {
-            switch scenario.screen {
-            case .newEntry:
-                if let course = screenshotCourse {
-                    NewEntryView(
-                        courseId: course.id,
-                        initialContent: scenario.formContent,
-                        wrapsInNavigationStack: false
-                    )
-                } else {
-                    defaultDetailPane
-                }
-            case .entryDetail:
-                if let entry = screenshotPrimaryEntry {
-                    EntryDetailView(entry: entry, showsArtifacts: false)
-                } else {
-                    defaultDetailPane
-                }
-            case .teacherReviewQueue:
-                if let course = screenshotCourse {
-                    TeacherQueueView(courseId: course.id, screenshotQueue: screenshotReviewEntries)
-                } else {
-                    defaultDetailPane
-                }
-            case .submissionDetail:
-                if let reviewEntry = screenshotFeedbackEntry {
-                    SubmissionDetailView(entry: reviewEntry, onFeedbackQueued: {}, loadsRemoteMedia: false)
-                } else {
-                    defaultDetailPane
-                }
-            case .feedbackEditor:
-                if let reviewEntry = screenshotFeedbackEntry {
-                    FeedbackEditorView(entry: reviewEntry, initialContent: scenario.feedbackContent)
-                } else {
-                    defaultDetailPane
-                }
-            case .feedbackQueued:
-                if let course = screenshotCourse {
-                    TeacherQueueView(
-                        courseId: course.id,
-                        screenshotQueue: screenshotReviewEntries,
-                        initiallyQueuedFeedback: scenario.queuedFeedbackEntryIDs
-                    )
-                } else {
-                    defaultDetailPane
-                }
-            case .reviewedFeedback:
-                if let entry = screenshotPrimaryEntry {
-                    EntryDetailView(entry: entry, initialSection: scenario.startsAtFeedback ? "feedback" : nil)
-                } else {
-                    defaultDetailPane
-                }
-            default:
-                defaultDetailPane
-            }
-        } else {
-            defaultDetailPane
-        }
+  private var compactOrStandardSplitView: some View {
+    NavigationSplitView {
+      sidebar
+    } detail: {
+      detailPane
     }
+  }
 
-    @ViewBuilder
-    private var defaultDetailPane: some View {
-        if let selectionId, let course = courses.first(where: { $0.id == selectionId }) {
-            let initialTab = (ScreenshotScenario.current?.screen == .teacherReviewQueue) ? 1 : 0
-            CourseDetailView(course: course, initialTab: initialTab)
-        } else {
-            ContentUnavailableView {
-                Label("Select a course", systemImage: "music.note.list")
-                    .foregroundStyle(.primary)
-            } description: {
-                Text("Choose a course to begin.")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func applyScreenshotRoutingIfNeeded() {
-        guard let scenario = ScreenshotScenario.current, scenario.requiresAuthenticatedSession else {
-            return
-        }
-        guard !didApplyScreenshotRoute else {
-            return
-        }
-
-        let needsCourse = scenario.screen != .courses && scenario.screen != .login
-        if needsCourse, screenshotCourse == nil {
-            return
-        }
-
-        switch scenario.screen {
-        case .courses:
-            selectionId = nil
-        case .export:
-            selectionId = screenshotCourse?.id
-            showExport = true
-        case .settings:
-            selectionId = screenshotCourse?.id
-            showSettings = true
-        case .queue:
-            selectionId = screenshotCourse?.id
-            showQueue = true
-        default:
-            selectionId = screenshotCourse?.id
-        }
-
-        didApplyScreenshotRoute = true
-    }
-
-    private var screenshotCourse: LocalCourse? {
-        guard let scenario = ScreenshotScenario.current else {
-            return nil
-        }
-        if let fixedCourse = courses.first(where: { $0.id == AppConfig.screenshotPrimaryCourseId }) {
-            return fixedCourse
-        }
-        let preferredRole = scenario.roleInCourse
-        return courses.first(where: { $0.roleInCourse == preferredRole }) ?? courses.first
-    }
-
-    private var selectedCourse: LocalCourse? {
-        guard let selectionId else { return nil }
-        return courses.first { $0.id == selectionId }
-    }
-
-    private var screenshotPrimaryEntry: LocalPracticeEntry? {
-        guard let course = screenshotCourse, let scenario = ScreenshotScenario.current else {
-            return nil
-        }
-        let entriesInCourse = allEntries.filter { $0.courseId == course.id && $0.deletedAt == nil }
-        if let selectedEntryID = scenario.selectedEntryID,
-           let selectedEntry = entriesInCourse.first(where: { $0.id == selectedEntryID }) {
-            return selectedEntry
-        }
-        switch scenario.persona {
-        case .student:
-            if let currentUserId = authManager.session?.userId,
-               let ownEntry = entriesInCourse.first(where: { $0.studentId == currentUserId }) {
-                return ownEntry
-            }
-            return entriesInCourse.first
-        case .teacher:
-            if let submitted = entriesInCourse.first(where: { $0.status == .submitted }) {
-                return submitted
-            }
-            return entriesInCourse.first
-        }
-    }
-
-    private var screenshotFeedbackEntry: ReviewQueueEntry? {
-        guard let entry = screenshotPrimaryEntry else {
-            return nil
-        }
-        return ReviewQueueEntry(
-            id: entry.id,
-            courseId: entry.courseId,
-            studentId: entry.studentId,
-            studentName: displayName(for: entry.studentId),
-            kind: entry.kind.rawValue,
-            practiceDate: entry.practiceDate,
-            goalText: entry.goalText,
-            notes: entry.notes,
-            consentConfirmedAt: entry.consentConfirmedAt,
-            consentScope: entry.consentScope?.rawValue,
-            captureProfile: entry.captureProfile?.rawValue,
-            captureMarkerCount: entry.captureMarkers.count,
-            artifacts: entry.artifacts.map {
-                ArtifactResponse(
-                    id: $0.id,
-                    entryId: $0.entryId,
-                    type: $0.type.rawValue,
-                    durationSeconds: $0.durationSeconds,
-                    expectedSizeBytes: nil,
-                    uploadState: $0.uploadState.rawValue,
-                    storageKey: $0.storageKey,
-                    remoteUrl: $0.remoteUrl
-                )
-            }
-        )
-    }
-
-    private var screenshotReviewEntries: [ReviewQueueEntry] {
-        guard let course = screenshotCourse else { return [] }
-        return allEntries
-            .filter { $0.courseId == course.id && $0.status == .submitted && $0.deletedAt == nil }
-            .sorted { $0.practiceDate > $1.practiceDate }
-            .map(makeReviewQueueEntry)
-    }
-
-    private func makeReviewQueueEntry(_ entry: LocalPracticeEntry) -> ReviewQueueEntry {
-        ReviewQueueEntry(
-            id: entry.id,
-            courseId: entry.courseId,
-            studentId: entry.studentId,
-            studentName: displayName(for: entry.studentId),
-            kind: entry.kind.rawValue,
-            practiceDate: entry.practiceDate,
-            goalText: entry.goalText,
-            notes: entry.notes,
-            consentConfirmedAt: entry.consentConfirmedAt,
-            consentScope: entry.consentScope?.rawValue,
-            captureProfile: entry.captureProfile?.rawValue,
-            captureMarkerCount: entry.captureMarkers.count,
-            artifacts: entry.artifacts.map {
-                ArtifactResponse(
-                    id: $0.id,
-                    entryId: $0.entryId,
-                    type: $0.type.rawValue,
-                    durationSeconds: $0.durationSeconds,
-                    expectedSizeBytes: nil,
-                    uploadState: $0.uploadState.rawValue,
-                    storageKey: $0.storageKey,
-                    remoteUrl: $0.remoteUrl
-                )
-            }
-        )
-    }
-
-    private func displayName(for studentId: String) -> String {
-        switch studentId {
-        case "demo_student_lea":
-            return "Lea Sommer"
-        case "demo_student_noah":
-            return "Noah Keller"
-        default:
-            return studentId
-        }
-    }
+  private func usesTeacherWorkspace(at width: CGFloat) -> Bool {
+    width >= AppTheme.compactBreakpoint && selectedCourse?.roleInCourse == "teacher"
+  }
 }

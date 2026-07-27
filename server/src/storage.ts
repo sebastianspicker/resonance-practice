@@ -1,3 +1,4 @@
+/** S3 client construction and bucket initialization with bounded remote calls. */
 import {
   S3Client,
   HeadBucketCommand,
@@ -8,6 +9,7 @@ import {
 import { config } from './config.js';
 import { withDeadline } from './services/deadline.js';
 
+/** Keep endpoint, region, and path-style configuration at one S3 construction seam. */
 export function createS3Client() {
   return new S3Client({
     region: config.s3.region,
@@ -39,6 +41,7 @@ export async function checkBucketAvailable(
   );
 }
 
+/** Create only a confirmed-missing bucket; all remote calls honor the dependency deadline. */
 export async function ensureBucket(s3: S3Client, timeoutMs = config.dependencyTimeoutMs) {
   try {
     await checkBucketAvailable(s3, timeoutMs);

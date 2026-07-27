@@ -1,75 +1,93 @@
+// Covers refresh-token rotation, replay containment, and transactional revocation behavior.
 import { describe, expect, it, vi } from 'vitest';
 import jwt from 'jsonwebtoken';
-import { User } from '@prisma/client';
 import { ApiError } from '../src/errors.js';
 import { rotateRefreshToken, signRefreshToken, hashToken } from '../src/auth.js';
 import { config } from '../src/config.js';
+import { makeUser } from './support/authTestUtils.js';
 
-/**
- * Unit tests for rotateRefreshToken covering specific uncovered branches:
- * - Missing tokenId or userId in JWT payload
- * - Expired refresh token record (expiresAt in the past)
- * - Hash mismatch (timing-safe comparison fails)
- * - User deleted between token lookup and reissue
- */
+// Exercise malformed claims, expiry, hash mismatch, replay, and deleted users.
 
-function makeUser(overrides?: Partial<User>): User {
-  return {
-    id: 'user-1',
-    displayName: 'Test User',
-    globalRole: 'student',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    ...overrides,
-  } as User;
+function signManualRefreshToken(payload: object) {
+  return jwt.sign(payload, config.jwtRefreshSecret, {
+    expiresIn: 3600,
+    issuer: 'resonance-api',
+    audience: 'resonance-app',
+    algorithm: 'HS256',
+  });
 }
 
-describe('rotateRefreshToken branch coverage', () => {
+function transactionalPrisma(mockTx: object) {
+  return {
+    $transaction: vi.fn(async (operation: (tx: object) => unknown) => operation(mockTx)),
+  } as any;
+}
+
+function refreshTokenTransaction(
+  user: ReturnType<typeof makeUser>,
+  record: unknown,
+  refreshTokenOverrides: Record<string, unknown> = {}
+): any {
+  return {
+    $queryRaw: vi.fn().mockResolvedValue([user]),
+    refreshToken: {
+      findUnique: vi.fn().mockResolvedValue(record),
+      ...refreshTokenOverrides,
+    },
+  };
+}
+
+function refreshTokenRecord(
+  user: ReturnType<typeof makeUser>,
+  tokenId: string,
+  token: string,
+  overrides: Record<string, unknown> = {}
+) {
+  return {
+    id: tokenId,
+    userId: user.id,
+    tokenHash: hashToken(token),
+    expiresAt: new Date(Date.now() + 86_400_000),
+    revokedAt: null,
+    ...overrides,
+  };
+}
+
+async function expectRefreshError(operation: Promise<unknown>, code: string, message?: string) {
+  try {
+    await operation;
+    expect.unreachable('should have thrown');
+  } catch (error) {
+    const refreshError = error as ApiError;
+    expect(refreshError).toBeInstanceOf(ApiError);
+    expect(refreshError.statusCode).toBe(401);
+    expect(refreshError.code).toBe(code);
+    if (message) expect(refreshError.message).toBe(message);
+  }
+}
+
+describe('refresh-token rotation errors', () => {
   // ── Missing tokenId in JWT payload ──
   it('throws INVALID_REFRESH when JWT payload has no jti (tokenId)', async () => {
     // Sign a JWT manually without jti using the refresh secret
-    const token = jwt.sign({ sub: 'user-1' }, config.jwtRefreshSecret, {
-      expiresIn: 3600,
-      issuer: 'resonance-api',
-      audience: 'resonance-app',
-      algorithm: 'HS256',
-    });
+    const token = signManualRefreshToken({ sub: 'user-1' });
 
-    const mockPrisma = {} as any;
-
-    try {
-      await rotateRefreshToken(mockPrisma, token);
-      expect.unreachable('should have thrown');
-    } catch (e) {
-      const err = e as ApiError;
-      expect(err).toBeInstanceOf(ApiError);
-      expect(err.statusCode).toBe(401);
-      expect(err.code).toBe('INVALID_REFRESH');
-      expect(err.message).toBe('Invalid refresh token payload');
-    }
+    await expectRefreshError(
+      rotateRefreshToken({} as any, token),
+      'INVALID_REFRESH',
+      'Invalid refresh token payload'
+    );
   });
 
   // ── Missing userId in JWT payload ──
   it('throws INVALID_REFRESH when JWT payload has no sub (userId)', async () => {
-    const token = jwt.sign({ jti: 'rt_test123' }, config.jwtRefreshSecret, {
-      expiresIn: 3600,
-      issuer: 'resonance-api',
-      audience: 'resonance-app',
-      algorithm: 'HS256',
-    });
+    const token = signManualRefreshToken({ jti: 'rt_test123' });
 
-    const mockPrisma = {} as any;
-
-    try {
-      await rotateRefreshToken(mockPrisma, token);
-      expect.unreachable('should have thrown');
-    } catch (e) {
-      const err = e as ApiError;
-      expect(err).toBeInstanceOf(ApiError);
-      expect(err.statusCode).toBe(401);
-      expect(err.code).toBe('INVALID_REFRESH');
-      expect(err.message).toBe('Invalid refresh token payload');
-    }
+    await expectRefreshError(
+      rotateRefreshToken({} as any, token),
+      'INVALID_REFRESH',
+      'Invalid refresh token payload'
+    );
   });
 
   // ── Expired refresh token record (expiresAt in the past) ──
@@ -79,36 +97,21 @@ describe('rotateRefreshToken branch coverage', () => {
     const token = signRefreshToken(user, tokenId);
 
     const mockTx = {
-      $queryRaw: vi.fn().mockResolvedValue([user]),
-      refreshToken: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: tokenId,
-          userId: user.id,
-          tokenHash: hashToken(token),
-          expiresAt: new Date(Date.now() - 1000), // expired 1 second ago
-          revokedAt: null,
-        }),
-        updateMany: vi.fn(),
-      },
+      ...refreshTokenTransaction(
+        user,
+        refreshTokenRecord(user, tokenId, token, { expiresAt: new Date(Date.now() - 1_000) }),
+        { updateMany: vi.fn() }
+      ),
       user: {
         findUnique: vi.fn(),
       },
     };
 
-    const mockPrisma = {
-      $transaction: vi.fn(async (fn: (tx: any) => any) => fn(mockTx)),
-    } as any;
-
-    try {
-      await rotateRefreshToken(mockPrisma, token);
-      expect.unreachable('should have thrown');
-    } catch (e) {
-      const err = e as ApiError;
-      expect(err).toBeInstanceOf(ApiError);
-      expect(err.statusCode).toBe(401);
-      expect(err.code).toBe('REFRESH_REVOKED');
-      expect(err.message).toBe('Refresh token is invalid or expired');
-    }
+    await expectRefreshError(
+      rotateRefreshToken(transactionalPrisma(mockTx), token),
+      'REFRESH_REVOKED',
+      'Refresh token is invalid or expired'
+    );
   });
 
   // ── Token record not found (null) ──
@@ -124,19 +127,10 @@ describe('rotateRefreshToken branch coverage', () => {
       },
     };
 
-    const mockPrisma = {
-      $transaction: vi.fn(async (fn: (tx: any) => any) => fn(mockTx)),
-    } as any;
-
-    try {
-      await rotateRefreshToken(mockPrisma, token);
-      expect.unreachable('should have thrown');
-    } catch (e) {
-      const err = e as ApiError;
-      expect(err).toBeInstanceOf(ApiError);
-      expect(err.statusCode).toBe(401);
-      expect(err.code).toBe('REFRESH_REVOKED');
-    }
+    await expectRefreshError(
+      rotateRefreshToken(transactionalPrisma(mockTx), token),
+      'REFRESH_REVOKED'
+    );
   });
 
   // ── Hash mismatch (timing-safe comparison fails) ──
@@ -145,33 +139,18 @@ describe('rotateRefreshToken branch coverage', () => {
     const tokenId = 'rt_hash-mismatch';
     const token = signRefreshToken(user, tokenId);
 
-    const mockTx = {
-      $queryRaw: vi.fn().mockResolvedValue([user]),
-      refreshToken: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: tokenId,
-          userId: user.id,
-          tokenHash: hashToken('completely-different-token'), // wrong hash
-          expiresAt: new Date(Date.now() + 86400000), // valid, not expired
-          revokedAt: null,
-        }),
-      },
-    };
+    const mockTx = refreshTokenTransaction(
+      user,
+      refreshTokenRecord(user, tokenId, token, {
+        tokenHash: hashToken('completely-different-token'),
+      })
+    );
 
-    const mockPrisma = {
-      $transaction: vi.fn(async (fn: (tx: any) => any) => fn(mockTx)),
-    } as any;
-
-    try {
-      await rotateRefreshToken(mockPrisma, token);
-      expect.unreachable('should have thrown');
-    } catch (e) {
-      const err = e as ApiError;
-      expect(err).toBeInstanceOf(ApiError);
-      expect(err.statusCode).toBe(401);
-      expect(err.code).toBe('REFRESH_MISMATCH');
-      expect(err.message).toBe('Refresh token mismatch');
-    }
+    await expectRefreshError(
+      rotateRefreshToken(transactionalPrisma(mockTx), token),
+      'REFRESH_MISMATCH',
+      'Refresh token mismatch'
+    );
   });
 
   // ── User deleted between token lookup and reissue ──
@@ -183,13 +162,7 @@ describe('rotateRefreshToken branch coverage', () => {
     const mockTx = {
       $queryRaw: vi.fn().mockResolvedValue([]),
       refreshToken: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: tokenId,
-          userId: user.id,
-          tokenHash: hashToken(token),
-          expiresAt: new Date(Date.now() + 86400000),
-          revokedAt: null,
-        }),
+        findUnique: vi.fn().mockResolvedValue(refreshTokenRecord(user, tokenId, token)),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }), // token revoked successfully
         create: vi.fn(),
       },
@@ -198,20 +171,11 @@ describe('rotateRefreshToken branch coverage', () => {
       },
     };
 
-    const mockPrisma = {
-      $transaction: vi.fn(async (fn: (tx: any) => any) => fn(mockTx)),
-    } as any;
-
-    try {
-      await rotateRefreshToken(mockPrisma, token);
-      expect.unreachable('should have thrown');
-    } catch (e) {
-      const err = e as ApiError;
-      expect(err).toBeInstanceOf(ApiError);
-      expect(err.statusCode).toBe(401);
-      expect(err.code).toBe('USER_NOT_FOUND');
-      expect(err.message).toBe('User not found');
-    }
+    await expectRefreshError(
+      rotateRefreshToken(transactionalPrisma(mockTx), token),
+      'USER_NOT_FOUND',
+      'User not found'
+    );
   });
 
   // ── Race condition: token already used (updateMany returns 0) ──
@@ -221,20 +185,11 @@ describe('rotateRefreshToken branch coverage', () => {
     const familyId = 'rt_family-1';
     const token = signRefreshToken(user, tokenId);
 
-    const mockTx = {
-      $queryRaw: vi.fn().mockResolvedValue([user]),
-      refreshToken: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: tokenId,
-          userId: user.id,
-          familyId,
-          tokenHash: hashToken(token),
-          expiresAt: new Date(Date.now() + 86400000),
-          revokedAt: null,
-        }),
-        updateMany: vi.fn().mockResolvedValue({ count: 0 }), // already revoked
-      },
-    };
+    const mockTx = refreshTokenTransaction(
+      user,
+      refreshTokenRecord(user, tokenId, token, { familyId }),
+      { updateMany: vi.fn().mockResolvedValue({ count: 0 }) }
+    );
 
     let transactionCommitted = false;
     const mockPrisma = {
@@ -245,15 +200,7 @@ describe('rotateRefreshToken branch coverage', () => {
       }),
     } as any;
 
-    try {
-      await rotateRefreshToken(mockPrisma, token);
-      expect.unreachable('should have thrown');
-    } catch (e) {
-      const err = e as ApiError;
-      expect(err).toBeInstanceOf(ApiError);
-      expect(err.statusCode).toBe(401);
-      expect(err.code).toBe('REFRESH_ALREADY_USED');
-    }
+    await expectRefreshError(rotateRefreshToken(mockPrisma, token), 'REFRESH_ALREADY_USED');
     expect(transactionCommitted).toBe(true);
     expect(mockTx.refreshToken.updateMany).toHaveBeenNthCalledWith(2, {
       where: { userId: user.id, familyId, revokedAt: null },
@@ -268,27 +215,13 @@ describe('rotateRefreshToken branch coverage', () => {
     const token = signRefreshToken(user, tokenId);
     const create = vi.fn().mockResolvedValue({});
 
-    const mockTx = {
-      $queryRaw: vi.fn().mockResolvedValue([user]),
-      refreshToken: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: tokenId,
-          userId: user.id,
-          familyId,
-          tokenHash: hashToken(token),
-          expiresAt: new Date(Date.now() + 86400000),
-          revokedAt: null,
-        }),
-        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        create,
-      },
-    };
+    const mockTx = refreshTokenTransaction(
+      user,
+      refreshTokenRecord(user, tokenId, token, { familyId }),
+      { updateMany: vi.fn().mockResolvedValue({ count: 1 }), create }
+    );
 
-    const mockPrisma = {
-      $transaction: vi.fn(async (fn: (tx: any) => any) => fn(mockTx)),
-    } as any;
-
-    const result = await rotateRefreshToken(mockPrisma, token);
+    const result = await rotateRefreshToken(transactionalPrisma(mockTx), token);
 
     expect(result.accessToken).toEqual(expect.any(String));
     expect(result.refreshToken).toEqual(expect.any(String));

@@ -1,11 +1,14 @@
+// Unit-tests transactional entry deletion, tombstones, and durable storage cleanup races.
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { mockClient } from 'aws-sdk-client-mock';
 import {
   cascadeDeleteEntry,
+  cleanupFailedArtifacts,
   expireStaleArtifactUploads,
   retryStorageDeletionJobs,
 } from '../src/services/entryCascade.js';
+import { artifactCompletionClaimLeaseMs } from '../src/services/entryTransaction.js';
 import { ApiError } from '../src/errors.js';
 
 /**
@@ -15,6 +18,70 @@ import { ApiError } from '../src/errors.js';
  */
 
 const s3Mock = mockClient(S3Client);
+
+function staleArtifactPrisma(tx: object, candidate: { id: string; entryId: string }) {
+  return {
+    artifact: {
+      findMany: vi.fn().mockResolvedValue([candidate]),
+    },
+    $transaction: vi.fn(async (operation: (client: object) => unknown) => operation(tx)),
+  } as any;
+}
+
+function emptyCascadeTransaction(
+  entryId: string,
+  entryDelete: ReturnType<typeof vi.fn> = vi.fn().mockResolvedValue({ id: entryId })
+) {
+  const artifactDelete = vi.fn();
+  return {
+    artifactDelete,
+    tx: {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: entryId }]),
+      artifact: { findMany: vi.fn().mockResolvedValue([]), deleteMany: artifactDelete },
+      feedback: { findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn() },
+      marker: { deleteMany: vi.fn() },
+      practiceEntry: {
+        findUnique: vi.fn().mockResolvedValue({ id: entryId }),
+        delete: entryDelete,
+      },
+      storageDeletionJob: { createMany: vi.fn() },
+      deletedEntryTombstone: { upsert: vi.fn().mockResolvedValue({ id: entryId }) },
+    },
+  };
+}
+
+function staleUploadTransaction(
+  now: Date,
+  update: ReturnType<typeof vi.fn>,
+  upsert: ReturnType<typeof vi.fn>,
+  options: {
+    storageKey: string;
+    uploadExpiresAt: Date | null;
+    createdAt?: Date;
+    artifactUploadSession: Record<string, unknown>;
+  }
+) {
+  return {
+    $queryRaw: vi.fn().mockResolvedValue([{ id: 'entry-expired' }]),
+    practiceEntry: {
+      findUnique: vi.fn().mockResolvedValue({ id: 'entry-expired', deletedAt: null }),
+      update: vi.fn().mockResolvedValue({}),
+    },
+    artifact: {
+      findUnique: vi.fn().mockResolvedValue({
+        id: 'artifact-expired',
+        entryId: 'entry-expired',
+        uploadState: 'uploading',
+        storageKey: options.storageKey,
+        uploadExpiresAt: options.uploadExpiresAt,
+        createdAt: options.createdAt ?? now,
+      }),
+      update,
+    },
+    storageDeletionJob: { findUnique: vi.fn().mockResolvedValue(null), upsert },
+    artifactUploadSession: options.artifactUploadSession,
+  };
+}
 
 describe('entryCascade', () => {
   beforeEach(() => {
@@ -121,42 +188,42 @@ describe('entryCascade', () => {
       expect(update).not.toHaveBeenCalled();
     });
 
-    it('queues the old key before resetting a legacy upload slot with no expiry', async () => {
+    it('queues the old key and retains the session through the cleanup grace period', async () => {
       const now = new Date('2026-07-15T12:00:00.000Z');
       const upsert = vi.fn().mockResolvedValue({ id: 'job-1' });
       const update = vi.fn().mockResolvedValue({ id: 'artifact-expired' });
-      const tx = {
-        $queryRaw: vi.fn().mockResolvedValue([{ id: 'entry-expired' }]),
-        practiceEntry: {
-          findUnique: vi.fn().mockResolvedValue({ id: 'entry-expired', deletedAt: null }),
+      const tx = staleUploadTransaction(now, update, upsert, {
+        storageKey: 'artifacts/expired-key',
+        uploadExpiresAt: null,
+        artifactUploadSession: {
+          findMany: vi.fn().mockResolvedValue([]),
+          deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
-        artifact: {
-          findUnique: vi.fn().mockResolvedValue({
-            id: 'artifact-expired',
-            entryId: 'entry-expired',
-            uploadState: 'uploading',
-            storageKey: 'artifacts/expired-key',
-            uploadExpiresAt: null,
-          }),
-          update,
-        },
-        storageDeletionJob: { upsert },
-      };
-      const prisma = {
-        artifact: {
-          findMany: vi
-            .fn()
-            .mockResolvedValue([{ id: 'artifact-expired', entryId: 'entry-expired' }]),
-        },
-        $transaction: vi.fn(async (operation: (client: typeof tx) => unknown) => operation(tx)),
-      } as any;
+      });
+      const prisma = staleArtifactPrisma(tx, {
+        id: 'artifact-expired',
+        entryId: 'entry-expired',
+      });
 
-      await expect(expireStaleArtifactUploads(prisma, { now })).resolves.toBe(1);
+      await expect(expireStaleArtifactUploads(prisma, { now })).resolves.toBe(0);
       expect(upsert).toHaveBeenCalledWith({
         where: { storageKey: 'artifacts/expired-key' },
-        create: { entryId: 'entry-expired', storageKey: 'artifacts/expired-key' },
-        update: {},
+        create: {
+          entryId: 'entry-expired',
+          storageKey: 'artifacts/expired-key',
+          nextAttemptAt: new Date('2026-07-15T12:05:00.000Z'),
+        },
+        update: {
+          nextAttemptAt: new Date('2026-07-15T12:05:00.000Z'),
+        },
       });
+      expect(update).not.toHaveBeenCalled();
+
+      await expect(
+        expireStaleArtifactUploads(prisma, {
+          now: new Date('2026-07-15T12:05:00.000Z'),
+        })
+      ).resolves.toBe(1);
       expect(update).toHaveBeenCalledWith({
         where: { id: 'artifact-expired' },
         data: {
@@ -165,9 +232,94 @@ describe('entryCascade', () => {
           remoteUrl: null,
           uploadExpiresAt: null,
           confirmationToken: null,
+          failedAt: new Date('2026-07-15T12:05:00.000Z'),
         },
       });
       expect(upsert.mock.invocationCallOrder[0]).toBeLessThan(update.mock.invocationCallOrder[0]!);
+    });
+
+    it('keeps claim records and final-key cleanup dormant while CopyObject may be in flight', async () => {
+      const now = new Date('2026-07-15T12:00:00.000Z');
+      const claimedAt = new Date(now.getTime() - 1_000);
+      const expiresAt = new Date(now.getTime() - 500);
+      const finalKey = 'artifacts/final/entry-expired/artifact-expired-claim';
+      const deleteMany = vi.fn();
+      const upsert = vi.fn().mockResolvedValue({ id: 'job-copy' });
+      const tx = staleUploadTransaction(now, vi.fn(), upsert, {
+        storageKey: 'artifacts/staging/entry-expired/artifact-expired',
+        uploadExpiresAt: expiresAt,
+        createdAt: new Date(now.getTime() - 60_000),
+        artifactUploadSession: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              storageKey: 'artifacts/staging/entry-expired/artifact-expired',
+              expiresAt,
+              credentialExpiresAt: expiresAt,
+              completionFinalKey: finalKey,
+              completionClaimedAt: claimedAt,
+            },
+          ]),
+          deleteMany,
+        },
+      });
+      const prisma = staleArtifactPrisma(tx, {
+        id: 'artifact-expired',
+        entryId: 'entry-expired',
+      });
+
+      await expect(expireStaleArtifactUploads(prisma, { now })).resolves.toBe(0);
+      expect(deleteMany).not.toHaveBeenCalled();
+      const finalJob = upsert.mock.calls
+        .map(([call]) => call)
+        .find((call) => call.where.storageKey === finalKey);
+      expect(finalJob.create.nextAttemptAt).toEqual(
+        new Date(claimedAt.getTime() + artifactCompletionClaimLeaseMs() + 5 * 60_000)
+      );
+    });
+  });
+
+  describe('cleanupFailedArtifacts', () => {
+    it('retains failed artifacts for seven days, then deletes them in a bounded pass', async () => {
+      const failedAt = new Date('2026-07-01T12:00:00.000Z');
+      const candidate = { id: 'artifact-failed', entryId: 'entry-failed' };
+      const artifact = {
+        ...candidate,
+        uploadState: 'failed',
+        failedAt,
+      };
+      const findMany = vi.fn().mockImplementation(async ({ where }: any) => {
+        return where.failedAt.lte >= failedAt ? [candidate] : [];
+      });
+      const remove = vi.fn().mockResolvedValue(artifact);
+      const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([{ id: 'entry-failed' }]),
+        practiceEntry: {
+          findUnique: vi.fn().mockResolvedValue({ id: 'entry-failed', deletedAt: null }),
+          update: vi.fn().mockResolvedValue({}),
+        },
+        artifact: {
+          findUnique: vi.fn().mockResolvedValue(artifact),
+          delete: remove,
+        },
+      };
+      const prisma = {
+        artifact: { findMany },
+        $transaction: vi.fn(async (operation: (client: typeof tx) => unknown) => operation(tx)),
+      } as any;
+
+      await expect(
+        cleanupFailedArtifacts(prisma, {
+          now: new Date('2026-07-08T11:59:59.999Z'),
+        })
+      ).resolves.toBe(0);
+      expect(remove).not.toHaveBeenCalled();
+
+      await expect(
+        cleanupFailedArtifacts(prisma, {
+          now: new Date('2026-07-08T12:00:00.000Z'),
+        })
+      ).resolves.toBe(1);
+      expect(remove).toHaveBeenCalledWith({ where: { id: 'artifact-failed' } });
     });
   });
 
@@ -201,30 +353,14 @@ describe('entryCascade', () => {
         clientVersion: '5.0.0',
       });
 
+      const { tx: mockTx } = emptyCascadeTransaction(
+        'nonexistent-entry',
+        vi.fn().mockRejectedValue(p2025Error)
+      );
       const mockPrisma = {
-        $transaction: vi.fn(async (fn: (tx: any) => any) => {
-          const mockTx = {
-            $queryRaw: vi.fn().mockResolvedValue([{ id: 'nonexistent-entry' }]),
-            artifact: {
-              findMany: vi.fn().mockResolvedValue([]),
-              deleteMany: vi.fn(),
-            },
-            feedback: {
-              findMany: vi.fn().mockResolvedValue([]),
-              deleteMany: vi.fn(),
-            },
-            marker: {
-              deleteMany: vi.fn(),
-            },
-            practiceEntry: {
-              findUnique: vi.fn().mockResolvedValue({ id: 'nonexistent-entry' }),
-              delete: vi.fn().mockRejectedValue(p2025Error),
-            },
-            storageDeletionJob: { createMany: vi.fn() },
-            deletedEntryTombstone: { upsert: vi.fn().mockResolvedValue({}) },
-          };
-          return fn(mockTx);
-        }),
+        $transaction: vi.fn(async (operation: (client: typeof mockTx) => unknown) =>
+          operation(mockTx)
+        ),
       } as any;
 
       try {
@@ -292,8 +428,8 @@ describe('entryCascade', () => {
       expect(mockTx.artifact.deleteMany).toHaveBeenCalled();
       expect(mockTx.storageDeletionJob.createMany).toHaveBeenCalledWith({
         data: [
-          { entryId: 'entry-1', storageKey: 'artifacts/entry-1/art-1' },
-          { entryId: 'entry-1', storageKey: 'artifacts/entry-1/art-2' },
+          expect.objectContaining({ entryId: 'entry-1', storageKey: 'artifacts/entry-1/art-1' }),
+          expect.objectContaining({ entryId: 'entry-1', storageKey: 'artifacts/entry-1/art-2' }),
         ],
         skipDuplicates: true,
       });
@@ -305,29 +441,73 @@ describe('entryCascade', () => {
       expect(mockTx.practiceEntry.delete).toHaveBeenCalledWith({ where: { id: 'entry-1' } });
     });
 
-    it('handles entry with no artifacts', async () => {
+    it('deduplicates staging cleanup and keeps late PUT and copy grace periods', async () => {
+      const expiresAt = new Date(Date.now() + 4 * 60_000);
+      const credentialExpiresAt = new Date(Date.now() + 2 * 60_000);
+      const expectedCleanupAt = new Date(expiresAt.getTime() + 5 * 60_000);
       const mockTx = {
-        $queryRaw: vi.fn().mockResolvedValue([{ id: 'entry-no-arts' }]),
+        $queryRaw: vi.fn().mockResolvedValue([{ id: 'entry-with-active-upload' }]),
         artifact: {
-          findMany: vi.fn().mockResolvedValue([]),
-          deleteMany: vi.fn(),
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: 'artifact-uploading',
+              storageKey: 'artifacts/staging/entry/artifact',
+              uploadSessions: [
+                {
+                  storageKey: 'artifacts/staging/entry/artifact',
+                  completionFinalKey: 'artifacts/final/entry/artifact-session',
+                  completionClaimedAt: null,
+                  credentialExpiresAt,
+                  completedAt: null,
+                  expiresAt,
+                },
+              ],
+            },
+          ]),
+          deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
         feedback: {
           findMany: vi.fn().mockResolvedValue([]),
           deleteMany: vi.fn(),
         },
-        marker: {
-          deleteMany: vi.fn(),
-        },
+        marker: { deleteMany: vi.fn() },
         practiceEntry: {
-          findUnique: vi.fn().mockResolvedValue({ id: 'entry-no-arts' }),
-          delete: vi.fn().mockResolvedValue({ id: 'entry-no-arts' }),
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'entry-with-active-upload',
+            deletedAt: null,
+          }),
+          delete: vi.fn().mockResolvedValue({ id: 'entry-with-active-upload' }),
         },
-        storageDeletionJob: { createMany: vi.fn() },
-        deletedEntryTombstone: {
-          upsert: vi.fn().mockResolvedValue({ id: 'entry-no-arts' }),
-        },
+        storageDeletionJob: { createMany: vi.fn().mockResolvedValue({ count: 2 }) },
+        deletedEntryTombstone: { upsert: vi.fn().mockResolvedValue({}) },
       };
+      const prisma = {
+        $transaction: vi.fn(async (operation: (tx: typeof mockTx) => unknown) => operation(mockTx)),
+      } as any;
+
+      await expect(cascadeDeleteEntry(prisma, 'entry-with-active-upload')).resolves.toEqual([
+        'artifacts/staging/entry/artifact',
+        'artifacts/final/entry/artifact-session',
+      ]);
+      expect(mockTx.storageDeletionJob.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            entryId: 'entry-with-active-upload',
+            storageKey: 'artifacts/staging/entry/artifact',
+            nextAttemptAt: expectedCleanupAt,
+          },
+          {
+            entryId: 'entry-with-active-upload',
+            storageKey: 'artifacts/final/entry/artifact-session',
+            nextAttemptAt: expectedCleanupAt,
+          },
+        ],
+        skipDuplicates: true,
+      });
+    });
+
+    it('handles entry with no artifacts', async () => {
+      const { artifactDelete, tx: mockTx } = emptyCascadeTransaction('entry-no-arts');
 
       const mockPrisma = {
         $transaction: vi.fn(async (fn: (tx: any) => any) => fn(mockTx)),
@@ -336,7 +516,7 @@ describe('entryCascade', () => {
       const keys = await cascadeDeleteEntry(mockPrisma, 'entry-no-arts');
       expect(keys).toEqual([]);
       // Should not call artifact deleteMany since no artifacts
-      expect(mockTx.artifact.deleteMany).not.toHaveBeenCalled();
+      expect(artifactDelete).not.toHaveBeenCalled();
     });
 
     it('handles entry with artifacts that have feedback and markers', async () => {

@@ -1,11 +1,22 @@
 import SwiftUI
 import SwiftData
 
+// Composes the app's shared services, persistence container, and root scene.
+
 @main
 struct ResonanceApp: App {
     private let storageState: StorageState
 
     init() {
+#if RESONANCE_SCREENSHOTS
+        if ScreenshotScenario.current != nil {
+            // Deterministic capture builds must not read device credentials or
+            // mutate persistent profile data. DemoDataManager seeds this
+            // in-memory container after the validated scenario is selected.
+            self.storageState = .available(PersistenceController.createContainer(inMemory: true))
+            return
+        }
+#endif
         switch PersistenceController.shared {
         case .success(let container):
             self.storageState = .available(container)

@@ -2,6 +2,19 @@
 **/Thumbs.db
 node_modules/
 .claude/
+.agent/
+.agents/
+.continue/
+.opencode/
+.aider.conf.yml
+.aider.chat.history.md
+.aider.input.history
+.cursorrules
+.windsurfrules
+CLAUDE.md
+CODEX.md
+GEMINI.md
+.github/copilot-instructions.md
 .env
 .env.*
 *.log
@@ -36,52 +49,44 @@ pnpm-debug.log*
 .serena/
 .codegraph/
 
-# Local agent instructions and private working material
+# Local private workspace metadata
 AGENTS.md
-internal/
-private/
-privat/
+/internal/
+/private/
+/privat/
 
 # Local docs (findings/logs/decisions)
-DECISIONS.md
-FINDINGS.md
-LOG.md
-REFACTOR_PLAN.md
-RELEASE_STATUS.md
-REMEDIATION.md
-REMEDIATION_*.md
-*_REMEDIATION.md
-STATUS.md
-*_STATUS.md
-PLAN.md
-*_PLAN.md
-LEDGER.md
-*_LEDGER.md
-AGENT.md
-AGENT_*.md
-*_AGENT.md
-progress.md
-docs/*-audit.md
-docs/*-ledger.md
-docs/*-status.md
+/DECISIONS.md
+/FINDINGS.md
+/LOG.md
+/AUDIT.md
+/PUBLIC_ALPHA_AUDIT.md
+/REFACTOR_PLAN.md
+/RELEASE_STATUS.md
+/REMEDIATION.md
+/STATUS.md
+/PLAN.md
+/LEDGER.md
+/AGENT.md
+/progress.md
 docs/architecture-map.md
 docs/code-index.md
 docs/refactor-plan.md
 docs/verification-baseline.md
 docs/agent/
 docs/archive/
-plan.md
+/plan.md
 
 # Local and superseded visual evidence. Publish approved captures explicitly
 # under docs/assets/screenshots/approved/ only after review.
 docs/assets/screenshots/local/
 docs/assets/screenshots/rc/
 docs/assets/screenshots/retired/
-artifacts/screenshots/
+/artifacts/screenshots/
 
 # Xcode
 DerivedData/
-*.xcresult/
+*.xcresult
 *.xcworkspace
 *.xcodeproj/xcuserdata
 *.xcodeproj/project.xcworkspace
@@ -97,17 +102,22 @@ DerivedData/
 .swiftpm/xcode/package.xcworkspace
 
 # Prisma / SQLite
-server/prisma/dev.db
-*.db
-*.db-journal
-*.db-wal
-*.db-shm
+/server/prisma/dev.db
+/server/prisma/dev.db-journal
+/server/prisma/dev.db-wal
+/server/prisma/dev.db-shm
+/server/tests/fixtures/generated/**/*.db
+/server/tests/fixtures/generated/**/*.db-*
+/server/tests/fixtures/generated/**/*.sqlite
+/server/tests/fixtures/generated/**/*.sqlite-*
+/server/tests/fixtures/generated/**/*.sqlite3
+/server/tests/fixtures/generated/**/*.sqlite3-*
 
 # Screenshot capture output (copy selected release assets to docs/assets/ before committing)
-artifacts/
+/artifacts/
 
 # Internal audit/findings docs (may contain local paths or org-internal details)
-deprecated/
+/deprecated/
 
 # Coverage
 coverage/
@@ -115,12 +125,18 @@ coverage/
 test-results/
 junit.xml
 junit-*.xml
-reports/
+/reports/
+
+# Generated and machine-local test inputs
+/server/tests/fixtures/generated/
+/ios/ResonanceApp/Tests/GeneratedFixtures/
+/.test-environments/
+
 .cache/
 .tmp/
-scratch/
-tmp/
-temp/
+/scratch/
+/tmp/
+/temp/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -128,9 +144,6 @@ temp/
 *.bak
 *.orig
 *.rej
-*.patch
-*.jsonl
-*.sarif
 
 # Codacy local analysis output; keep checked-in config files visible.
 .codacy/.gitignore

@@ -1,34 +1,32 @@
-import request from 'supertest';
-import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
+// Covers empty and minimal payload boundaries that must fail or normalize predictably.
 import {
   app,
-  setupApp,
-  teardownApp,
-  resetDb,
-  seedBasic,
-  getAccessToken,
+  describe,
+  expect,
+  it,
+  login,
   prisma,
-  s3Mock,
-} from './testUtils.js';
+  request,
+  installEdgeCaseSuite,
+} from './support/edgeCaseTestHarness.js';
 
-function login(role: 'student' | 'teacher') {
-  const userId = role === 'student' ? 'student-1' : 'teacher-1';
-  return getAccessToken(role, { userId });
+installEdgeCaseSuite();
+
+async function createSubmittedEntry(id: string) {
+  await prisma.practiceEntry.create({
+    data: {
+      id,
+      courseId: 'COURSE_TEST',
+      studentId: 'student-1',
+      practiceDate: new Date(),
+      goalText: 'Feedback test',
+      tags: [],
+      status: 'submitted',
+    },
+  });
 }
+
 describe('edge cases', () => {
-  beforeAll(async () => {
-    await setupApp();
-  });
-
-  afterAll(async () => {
-    await teardownApp();
-  });
-
-  beforeEach(async () => {
-    s3Mock.reset();
-    await resetDb();
-    await seedBasic();
-  });
   // ═══════════════════════════════════════════════════════════════════
   // Category 1: Empty / Minimal Inputs
   // ═══════════════════════════════════════════════════════════════════
@@ -235,17 +233,7 @@ describe('edge cases', () => {
     describe('POST /feedback', () => {
       it('should accept feedback with empty markers array', async () => {
         const token = await login('teacher');
-        await prisma.practiceEntry.create({
-          data: {
-            id: 'entry-fb-empty-markers',
-            courseId: 'COURSE_TEST',
-            studentId: 'student-1',
-            practiceDate: new Date(),
-            goalText: 'Feedback test',
-            tags: [],
-            status: 'submitted',
-          },
-        });
+        await createSubmittedEntry('entry-fb-empty-markers');
         const res = await request(app.server)
           .post('/feedback')
           .set('Authorization', `Bearer ${token}`)
@@ -262,17 +250,7 @@ describe('edge cases', () => {
 
       it('should accept feedback when markers field is omitted (defaults to empty)', async () => {
         const token = await login('teacher');
-        await prisma.practiceEntry.create({
-          data: {
-            id: 'entry-fb-no-markers',
-            courseId: 'COURSE_TEST',
-            studentId: 'student-1',
-            practiceDate: new Date(),
-            goalText: 'Feedback test',
-            tags: [],
-            status: 'submitted',
-          },
-        });
+        await createSubmittedEntry('entry-fb-no-markers');
         const res = await request(app.server)
           .post('/feedback')
           .set('Authorization', `Bearer ${token}`)
@@ -288,17 +266,7 @@ describe('edge cases', () => {
 
       it('should accept minimal commentsText (single character)', async () => {
         const token = await login('teacher');
-        await prisma.practiceEntry.create({
-          data: {
-            id: 'entry-fb-min-comment',
-            courseId: 'COURSE_TEST',
-            studentId: 'student-1',
-            practiceDate: new Date(),
-            goalText: 'Feedback test',
-            tags: [],
-            status: 'submitted',
-          },
-        });
+        await createSubmittedEntry('entry-fb-min-comment');
         const res = await request(app.server)
           .post('/feedback')
           .set('Authorization', `Bearer ${token}`)

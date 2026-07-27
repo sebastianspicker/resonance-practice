@@ -1,3 +1,4 @@
+// Isolates environment-driven configuration loading so module caching cannot hide invalid values.
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'child_process';
 import path from 'path';
@@ -13,7 +14,9 @@ const serverDir = path.resolve(import.meta.dirname, '..');
 /** Base environment variables needed for config.ts to load */
 const baseEnv: Record<string, string> = {
   JWT_SECRET: 'test-secret-at-least-32-characters',
+  NODE_ENV: 'test',
   AUTH_MODE: 'dev',
+  HOST: '127.0.0.1',
   S3_ENDPOINT: 'http://localhost:9000',
   S3_BUCKET: 'test-bucket',
   S3_ACCESS_KEY: 'minioadmin',
@@ -31,7 +34,10 @@ const baseEnv: Record<string, string> = {
  * Try to import config.ts with the given env overrides in a subprocess.
  * Returns the stderr output.
  */
-function importConfigWithEnv(overrides: Record<string, string | undefined>): string {
+function runConfigWithEnv(
+  overrides: Record<string, string | undefined>,
+  script = `import '${serverDir}/src/config.ts'`
+): { stdout: string; stderr: string } {
   const env: Record<string, string> = { ...baseEnv };
   for (const [key, value] of Object.entries(overrides)) {
     if (value === undefined) {
@@ -43,20 +49,25 @@ function importConfigWithEnv(overrides: Record<string, string | undefined>): str
 
   // Load tsx through Node so this subprocess does not create the IPC listener
   // used by the tsx CLI. The test only needs TypeScript module loading.
-  const script = `import '${serverDir}/src/config.ts'`;
-
   try {
-    execFileSync(process.execPath, ['--import', 'tsx', '--eval', script], {
+    const stdout = execFileSync(process.execPath, ['--import', 'tsx', '--eval', script], {
       env,
       cwd: serverDir,
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 10000,
     });
-    return ''; // No error
+    return { stdout: stdout.toString(), stderr: '' };
   } catch (err: unknown) {
-    const execErr = err as { stderr?: Buffer };
-    return execErr.stderr?.toString() ?? (err as Error).message;
+    const execErr = err as { stdout?: Buffer; stderr?: Buffer };
+    return {
+      stdout: execErr.stdout?.toString() ?? '',
+      stderr: execErr.stderr?.toString() ?? (err as Error).message,
+    };
   }
+}
+
+function importConfigWithEnv(overrides: Record<string, string | undefined>): string {
+  return runConfigWithEnv(overrides).stderr;
 }
 
 describe('config top-level validation (subprocess)', () => {
@@ -136,6 +147,33 @@ describe('config top-level validation (subprocess)', () => {
     expect(stderr).toContain('AUTH_MODE must be "dev" or "prod"');
   });
 
+  it('rejects an external listener in development mode', () => {
+    const stderr = importConfigWithEnv({ HOST: '0.0.0.0' });
+    expect(stderr).toContain('AUTH_MODE=dev requires HOST to be a loopback address');
+  });
+
+  it('defaults an omitted development HOST to the IPv4 loopback address', () => {
+    const script =
+      `const { config } = await import('${serverDir}/src/config.ts'); ` +
+      'process.stdout.write(config.host)';
+    const result = runConfigWithEnv({ HOST: undefined }, script);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toBe('127.0.0.1');
+  });
+
+  it('requires an explicit production listener', () => {
+    const stderr = importConfigWithEnv({
+      AUTH_MODE: 'prod',
+      HOST: undefined,
+      CORS_ORIGINS: 'https://app.example.test',
+      OIDC_DISCOVERY_URL: 'https://idp.example.test/.well-known/openid-configuration',
+      OIDC_CLIENT_ID: 'client',
+      OIDC_CLIENT_SECRET: 'secret',
+      OIDC_REDIRECT_URI: 'https://api.example.test/auth/oidc/callback',
+    });
+    expect(stderr).toContain('AUTH_MODE=prod requires HOST to be set explicitly');
+  });
+
   it('rejects missing JWT_SECRET', () => {
     const stderr = importConfigWithEnv({ JWT_SECRET: undefined });
     expect(stderr).toContain('Missing environment variable: JWT_SECRET');
@@ -179,6 +217,7 @@ describe('config top-level validation (subprocess)', () => {
   it('rejects production mode without CORS_ORIGINS', () => {
     const stderr = importConfigWithEnv({
       AUTH_MODE: 'prod',
+      HOST: '0.0.0.0',
       CORS_ORIGINS: undefined,
       OIDC_DISCOVERY_URL: 'https://idp.example.test/.well-known/openid-configuration',
       OIDC_CLIENT_ID: 'client',
@@ -191,6 +230,7 @@ describe('config top-level validation (subprocess)', () => {
   it('rejects production mode without complete OIDC configuration', () => {
     const stderr = importConfigWithEnv({
       AUTH_MODE: 'prod',
+      HOST: '0.0.0.0',
       CORS_ORIGINS: 'https://app.example.test',
       OIDC_DISCOVERY_URL: 'https://idp.example.test/.well-known/openid-configuration',
       OIDC_CLIENT_ID: 'client',

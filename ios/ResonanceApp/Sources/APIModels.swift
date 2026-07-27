@@ -1,13 +1,32 @@
 import Foundation
 import SwiftData
 
+// Defines Codable server payloads and reconciliation support at the API-to-local-model boundary.
+
+/// Typed server error envelope used instead of exposing arbitrary response bodies.
 struct APIError: Error, Decodable {
     let error: APIErrorBody
 
     struct APIErrorBody: Decodable {
         let code: String
         let message: String
-        let details: [String: String]?
+        let details: [String: JSONValue]?
+        let requestId: String?
+        let currentVersion: Int?
+
+        init(
+            code: String,
+            message: String,
+            details: [String: JSONValue]? = nil,
+            requestId: String? = nil,
+            currentVersion: Int? = nil
+        ) {
+            self.code = code
+            self.message = message
+            self.details = details
+            self.requestId = requestId
+            self.currentVersion = currentVersion
+        }
     }
 }
 
@@ -29,6 +48,7 @@ struct CourseResponse: Decodable {
     let roleInCourse: String
 }
 
+/// Authoritative server entry projection used to reconcile local SwiftData state.
 struct EntryResponse: Decodable {
     let id: String
     let courseId: String
@@ -47,6 +67,143 @@ struct EntryResponse: Decodable {
     let artifacts: [ArtifactResponse]?
     let createdAt: Date?
     let updatedAt: Date?
+    let version: Int?
+}
+
+/// JSON carried by an offline command. Keeping this value typed and Codable
+/// prevents command payloads from crossing the persistence/network boundary as
+/// `[String: Any]`.
+enum JSONValue: Codable, Sendable, Equatable {
+    case string(String)
+    case integer(Int)
+    case boolean(Bool)
+    case null
+    case array([JSONValue])
+    case object([String: JSONValue])
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .boolean(value)
+        } else if let value = try? container.decode(Int.self) {
+            self = .integer(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([JSONValue].self) {
+            self = .array(value)
+        } else {
+            self = .object(try container.decode([String: JSONValue].self))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case let .string(value): try container.encode(value)
+        case let .integer(value): try container.encode(value)
+        case let .boolean(value): try container.encode(value)
+        case .null: try container.encodeNil()
+        case let .array(value): try container.encode(value)
+        case let .object(value): try container.encode(value)
+        }
+    }
+}
+
+/// Versioned mutation kinds accepted by the ordered command endpoint.
+enum SyncCommandKind: String, Codable, Sendable {
+    case createEntry
+    case updateEntry
+    case replaceCaptureMarkers
+    case submitEntry
+    case deleteEntry
+    case createFeedback
+}
+
+struct SyncCommand: Codable, Sendable {
+    let operationId: String
+    let entityId: String
+    let kind: SyncCommandKind
+    let baseVersion: Int?
+    let payload: JSONValue
+
+    init(
+        operationId: String = UUID().uuidString,
+        entityId: String,
+        kind: SyncCommandKind,
+        baseVersion: Int? = nil,
+        payload: JSONValue = .object([:])
+    ) {
+        self.operationId = operationId
+        self.entityId = entityId
+        self.kind = kind
+        self.baseVersion = baseVersion
+        self.payload = payload
+    }
+}
+
+/// A persisted, strongly typed description of work to be sent to the command
+/// endpoint. `command` remains the single wire representation.
+enum SyncWork: Codable, Sendable {
+    case command(SyncCommand)
+
+    var command: SyncCommand {
+        switch self {
+        case let .command(command): return command
+        }
+    }
+}
+
+enum SyncCommandResultStatus: String, Codable, Sendable {
+    case applied
+    case duplicate
+    case conflict
+    case rejected
+    case retryable
+}
+
+/// Per-command outcome; conflicts carry the server version/resource for recovery.
+struct SyncCommandResult: Decodable, Sendable {
+    let operationId: String
+    let entityId: String
+    let kind: SyncCommandKind
+    let status: SyncCommandResultStatus
+    let code: String?
+    let message: String?
+    let currentVersion: Int?
+    let resource: EntryResponse?
+}
+
+struct SyncCommandsResponse: Decodable, Sendable {
+    let results: [SyncCommandResult]
+}
+
+/// Server-issued upload-session details that must be completed before the artifact becomes available.
+struct ArtifactSessionCreateResponse: Decodable, Sendable {
+    let sessionId: String
+    let artifact: ArtifactResponse
+    /// Idempotent creation can return the already-completed result without a
+    /// presigned upload URL or completion call.
+    let completed: Bool?
+    let uploadUrl: String?
+    let requiredHeaders: [String: String]?
+    let expiresInSeconds: Int?
+    let currentVersion: Int
+}
+
+struct ArtifactSessionRequest {
+    let operationId: String
+    let entryId: String
+    let artifact: LocalArtifact
+    let sizeBytes: Int
+    let baseVersion: Int
+}
+
+/// Final artifact state returned after the server validates an upload session.
+struct ArtifactSessionCompletionResponse: Decodable, Sendable {
+    let artifact: ArtifactResponse
+    let currentVersion: Int
 }
 
 /// Generic paginated response envelope returned by cursor-based pagination endpoints.
@@ -80,13 +237,6 @@ struct ArtifactResponse: Decodable {
     let uploadState: String
     let storageKey: String?
     let remoteUrl: String?
-}
-
-struct PresignResponse: Decodable {
-    let uploadUrl: String
-    let storageKey: String
-    let expiresInSeconds: Int
-    let requiredHeaders: [String: String]?
 }
 
 struct ArtifactDownloadResponse: Decodable {
@@ -123,6 +273,7 @@ struct CaptureMarkerResponse: Decodable {
 }
 
 @MainActor
+/// Applies remote-wins course snapshots while preserving entries with pending local commands.
 final class EntryReconciliationService {
     private let modelContext: ModelContext
     private let apiClient: APIClient
@@ -132,6 +283,7 @@ final class EntryReconciliationService {
         self.apiClient = apiClient
     }
 
+    /// Fetches all cursor pages, upserts authoritative rows, and removes only safe stale rows.
     func refresh(courseId: String, accessToken: String) async throws {
         let responses = try await fetchAllEntries(courseId: courseId, accessToken: accessToken)
         let localEntries = try modelContext.fetch(
@@ -208,6 +360,7 @@ final class EntryReconciliationService {
             let remoteDate = response.updatedAt ?? response.createdAt ?? Date()
             inserted.remoteUpdatedAt = remoteDate
             inserted.updatedAt = remoteDate
+            inserted.serverVersion = response.version
             modelContext.insert(inserted)
             mergeArtifacts(response.artifacts ?? [], into: inserted)
             return
@@ -224,6 +377,7 @@ final class EntryReconciliationService {
         if preserveLocalChanges || local.remoteUpdatedAt.map({ local.updatedAt > $0 }) == true {
             local.status = EntryStatus(rawValue: response.status) ?? local.status
             local.remoteUpdatedAt = remoteDate
+            local.serverVersion = response.version
             mergeArtifacts(response.artifacts ?? [], into: local)
             return
         }
@@ -240,6 +394,7 @@ final class EntryReconciliationService {
         local.captureProfile = response.captureProfile.flatMap(CaptureProfile.init(rawValue:))
         local.remoteUpdatedAt = remoteDate
         local.updatedAt = remoteDate
+        local.serverVersion = response.version
         mergeArtifacts(response.artifacts ?? [], into: local)
     }
 

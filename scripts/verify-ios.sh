@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Verify the iOS app with its required Swift toolchain and shared Xcode scheme.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -38,14 +39,41 @@ fi
 DERIVED_DATA_PATH="$(mktemp -d "${TMPDIR:-/tmp}/resonance-ios-derived-data.XXXXXX")"
 trap 'rm -rf "$DERIVED_DATA_PATH"' EXIT
 
+TOOLCHAIN_ARGS=()
+SWIFT_VERSION_COMMAND=(xcrun swift --version)
+if [[ -n "${IOS_TOOLCHAIN:-}" ]]; then
+	# Swift.org toolchains need this flag to load Xcode SDK cross-import
+	# overlays such as the SwiftData and SwiftUI integration.
+	TOOLCHAIN_ARGS=(
+		-toolchain "$IOS_TOOLCHAIN"
+		"OTHER_SWIFT_FLAGS=\$(inherited) -Xfrontend -enable-cross-import-overlays"
+	)
+	SWIFT_VERSION_COMMAND=(xcrun --toolchain "$IOS_TOOLCHAIN" swift --version)
+fi
+
+if [[ -n "${IOS_EXPECTED_SWIFT_VERSION:-}" ]]; then
+	SWIFT_VERSION_OUTPUT="$("${SWIFT_VERSION_COMMAND[@]}")"
+	if ! grep -Fq "Swift version ${IOS_EXPECTED_SWIFT_VERSION}" <<<"$SWIFT_VERSION_OUTPUT"; then
+		echo "$SWIFT_VERSION_OUTPUT" >&2
+		fail "expected Swift ${IOS_EXPECTED_SWIFT_VERSION}."
+	fi
+fi
+
 echo "Running iOS XCTest via $PROJECT, scheme $SCHEME, destination $DESTINATION..."
-xcodebuild \
+XCODEBUILD_ARGS=(
 	-project "$PROJECT" \
 	-scheme "$SCHEME" \
 	-destination "$DESTINATION" \
 	-derivedDataPath "$DERIVED_DATA_PATH" \
 	-parallel-testing-enabled NO \
-	-quiet \
 	test
+)
+
+if [[ -n "${IOS_COMPILER_LOG_PATH:-}" ]]; then
+	mkdir -p "$(dirname "$IOS_COMPILER_LOG_PATH")"
+	xcodebuild "${TOOLCHAIN_ARGS[@]}" "${XCODEBUILD_ARGS[@]}" 2>&1 | tee "$IOS_COMPILER_LOG_PATH"
+else
+	xcodebuild "${TOOLCHAIN_ARGS[@]}" "${XCODEBUILD_ARGS[@]}" -quiet
+fi
 
 echo "iOS XCTest passed for $DESTINATION."

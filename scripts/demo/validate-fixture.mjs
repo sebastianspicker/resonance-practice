@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Verify that shared demo fixtures stay byte-for-byte aligned across clients.
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 

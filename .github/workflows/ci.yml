@@ -1,3 +1,4 @@
+# Verifies infrastructure, server, documentation, and both supported Swift toolchains.
 name: CI
 
 on:
@@ -30,7 +31,7 @@ jobs:
     timeout-minutes: 10
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18.4@sha256:c2d42a104eb6b37b286a2d9c5cf83f349de4d6516d513d00a2bd9610e2c2e5e4
         env:
           POSTGRES_USER: resonance
           POSTGRES_PASSWORD: resonance-${{ github.run_id }}-${{ github.run_attempt }}
@@ -48,7 +49,7 @@ jobs:
       AUTH_MODE: dev
       DEV_UNIVERSITY_NAME: Mock University Conservatory
       DEV_LOGIN_CALLBACK_URL: resonance://auth-callback
-      # CI-only local MinIO credentials — not used in production
+      # CI-only local MinIO credentials, not used in production
       S3_ENDPOINT: http://localhost:9000
       S3_REGION: us-east-1
       S3_BUCKET: resonance-dev
@@ -78,11 +79,17 @@ jobs:
           cache: "npm"
           cache-dependency-path: server/package-lock.json
 
+      - name: Verify Node runtime
+        run: node ./scripts/check-node-version.mjs
+
       - name: Validate demo fixture
         run: node ./scripts/demo/validate-fixture.mjs
 
       - name: Validate public documentation and screenshots
         run: node ./scripts/validate-public-docs.mjs
+
+      - name: Test repository policy scripts
+        run: node --test tests/repository/*.test.mjs
 
       - name: Validate destructive test database target
         run: node ./scripts/assert-test-database-url.mjs
@@ -98,6 +105,14 @@ jobs:
       - name: Lint
         working-directory: server
         run: npm run lint
+
+      - name: Dead-code check
+        working-directory: server
+        run: npm run quality:dead-code
+
+      - name: Duplication check
+        working-directory: server
+        run: npm run quality:duplicates
 
       - name: Format check
         working-directory: server
@@ -183,11 +198,33 @@ jobs:
 
   ios:
     name: iOS Build
-    runs-on: macos-15
-    timeout-minutes: 20
+    runs-on: macos-26
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Build iOS package for simulator
+      - name: Install pinned SwiftLint
+        run: |
+          brew install swiftlint
+          test "$(swiftlint version)" = "0.63.2"
+
+      - name: Lint Swift sources and tests
+        run: ./scripts/lint-swift.sh lint
+
+      - name: Build and test with Xcode-bundled Swift
+        env:
+          IOS_COMPILER_LOG_PATH: ${{ runner.temp }}/resonance-xcodebuild.log
+        run: ./scripts/verify-ios.sh
+
+      - name: Analyze compiled Swift
+        run: ./scripts/lint-swift.sh analyze "${{ runner.temp }}/resonance-xcodebuild.log"
+
+      - name: Install exact Swift 6.3.3 toolchain
+        run: ./scripts/install-swift-toolchain.sh
+
+      - name: Build and test with exact Swift 6.3.3
+        env:
+          IOS_TOOLCHAIN: swift
+          IOS_EXPECTED_SWIFT_VERSION: 6.3.3
         run: ./scripts/verify-ios.sh

@@ -1,8 +1,10 @@
+/** Course membership and teacher review-queue HTTP routes. */
 import type { Prisma, PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { ErrorCodes } from '../errorCodes.js';
 import { ApiError } from '../errors.js';
 import { requireCourseRole } from '../validation.js';
+import { toCursorPage } from './pagination.js';
 
 /** Pagination defaults for the review queue. */
 const REVIEW_QUEUE_DEFAULT_LIMIT = 20;
@@ -15,6 +17,13 @@ type ReviewQueueEntry = Prisma.PracticeEntryGetPayload<{
     _count: { select: { captureMarkers: true } };
   };
 }>;
+
+async function requireCourseRouteAccess(prisma: PrismaClient, request: FastifyRequest) {
+  const user = request.user!;
+  const courseId = (request.params as { courseId: string }).courseId;
+  const role = await requireCourseRole(prisma, user.id, courseId);
+  return { user, courseId, role };
+}
 
 function toReviewQueueEntry(entry: ReviewQueueEntry) {
   return {
@@ -125,9 +134,7 @@ export function registerCourseRoutes(
   // Course entries and review queue intentionally share the same paginated
   // envelope so clients can reuse cursor handling.
   app.get('/courses/:courseId/entries', { preHandler: requireAuth }, async (request) => {
-    const user = request.user!;
-    const courseId = (request.params as { courseId: string }).courseId;
-    const role = await requireCourseRole(prisma, user.id, courseId);
+    const { user, courseId, role } = await requireCourseRouteAccess(prisma, request);
 
     // Teacher default mirrors the review queue: show submitted work unless an
     // explicit status filter is requested. Students see only their own entries.
@@ -143,6 +150,13 @@ export function registerCourseRoutes(
       );
     }
     const statusFilter = queryStatus as ValidStatus | undefined;
+    if (role === 'teacher' && statusFilter === 'draft') {
+      throw new ApiError(
+        403,
+        ErrorCodes.ENTRY_ACCESS_DENIED,
+        'Draft entries are not visible to teachers'
+      );
+    }
 
     const limit = parseLimitParam(queryParams.limit, ENTRIES_DEFAULT_LIMIT, ENTRIES_MAX_LIMIT);
     const cursor = queryParams.cursor;
@@ -167,20 +181,13 @@ export function registerCourseRoutes(
       take: limit + 1,
     });
 
-    const hasMore = entries.length > limit;
-    const pageEntries = hasMore ? entries.slice(0, limit) : entries;
-    const lastEntry = pageEntries[pageEntries.length - 1];
-    const nextCursor = hasMore && lastEntry ? lastEntry.id : null;
-
-    return { items: pageEntries, nextCursor };
+    return toCursorPage(entries, limit);
   });
 
   // Review queue uses the same cursor contract as the entries list but is
   // teacher-only and always scoped to submitted work.
   app.get('/courses/:courseId/review-queue', { preHandler: requireAuth }, async (request) => {
-    const user = request.user!;
-    const courseId = (request.params as { courseId: string }).courseId;
-    const role = await requireCourseRole(prisma, user.id, courseId);
+    const { courseId, role } = await requireCourseRouteAccess(prisma, request);
     if (role !== 'teacher') {
       throw new ApiError(403, ErrorCodes.TEACHER_ONLY, 'Only teachers can access the review queue');
     }
@@ -212,14 +219,11 @@ export function registerCourseRoutes(
       take: limit + 1,
     });
 
-    const hasMore = entries.length > limit;
-    const pageEntries = hasMore ? entries.slice(0, limit) : entries;
-    const lastEntry = pageEntries[pageEntries.length - 1];
-    const nextCursor = hasMore && lastEntry ? lastEntry.id : null;
+    const page = toCursorPage(entries, limit);
 
     return {
-      items: pageEntries.map(toReviewQueueEntry),
-      nextCursor,
+      items: page.items.map(toReviewQueueEntry),
+      nextCursor: page.nextCursor,
     };
   });
 }

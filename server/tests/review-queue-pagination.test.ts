@@ -1,20 +1,7 @@
+// Covers deterministic teacher-review ordering and cursor pagination across equal timestamps.
 import request from 'supertest';
-import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
-import {
-  app,
-  setupApp,
-  teardownApp,
-  resetDb,
-  seedBasic,
-  getAccessToken,
-  prisma,
-  s3Mock,
-} from './testUtils.js';
-
-function login(role: 'student' | 'teacher') {
-  const userId = role === 'student' ? 'student-1' : 'teacher-1';
-  return getAccessToken(role, { userId });
-}
+import { describe, expect, it } from 'vitest';
+import { app, getReviewQueue, installBasicSuite, login, prisma } from './support/testUtils.js';
 
 /**
  * Helper: create N submitted entries with deterministic practice dates.
@@ -39,28 +26,23 @@ async function seedSubmittedEntries(count: number) {
   }
 }
 
+async function expectInvalidReviewCursor(cursor: string) {
+  const token = await login('teacher');
+  const res = await getReviewQueue(token, `/courses/COURSE_TEST/review-queue?cursor=${cursor}`);
+
+  expect(res.status).toBe(400);
+  expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  expect(res.body.error.message).toContain('cursor');
+}
+
 describe('GET /courses/:courseId/review-queue pagination', () => {
-  beforeAll(async () => {
-    await setupApp();
-  });
-
-  afterAll(async () => {
-    await teardownApp();
-  });
-
-  beforeEach(async () => {
-    s3Mock.reset();
-    await resetDb();
-    await seedBasic();
-  });
+  installBasicSuite({ resetS3: true });
 
   // ── Response shape ──
 
   it('returns { items, nextCursor } envelope', async () => {
     const token = await login('teacher');
-    const res = await request(app.server)
-      .get('/courses/COURSE_TEST/review-queue')
-      .set('Authorization', `Bearer ${token}`);
+    const res = await getReviewQueue(token);
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('items');
@@ -72,9 +54,7 @@ describe('GET /courses/:courseId/review-queue pagination', () => {
 
   it('returns empty items and null nextCursor when no entries exist', async () => {
     const token = await login('teacher');
-    const res = await request(app.server)
-      .get('/courses/COURSE_TEST/review-queue')
-      .set('Authorization', `Bearer ${token}`);
+    const res = await getReviewQueue(token);
 
     expect(res.status).toBe(200);
     expect(res.body.items).toEqual([]);
@@ -205,14 +185,7 @@ describe('GET /courses/:courseId/review-queue pagination', () => {
   });
 
   it('rejects invalid cursor (nonexistent entry ID)', async () => {
-    const token = await login('teacher');
-    const res = await request(app.server)
-      .get('/courses/COURSE_TEST/review-queue?cursor=nonexistent-id')
-      .set('Authorization', `Bearer ${token}`);
-
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
-    expect(res.body.error.message).toContain('cursor');
+    await expectInvalidReviewCursor('nonexistent-id');
   });
 
   it('rejects cursor ids outside the teacher review queue scope', async () => {
@@ -235,14 +208,7 @@ describe('GET /courses/:courseId/review-queue pagination', () => {
       },
     });
 
-    const token = await login('teacher');
-    const res = await request(app.server)
-      .get('/courses/COURSE_TEST/review-queue?cursor=foreign-review-cursor')
-      .set('Authorization', `Bearer ${token}`);
-
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
-    expect(res.body.error.message).toContain('cursor');
+    await expectInvalidReviewCursor('foreign-review-cursor');
   });
 
   // ── nextCursor is null when results fit in one page ──

@@ -1,3 +1,4 @@
+/** HTTP authentication flows, including refresh-family rotation boundaries. */
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import {
@@ -60,14 +61,7 @@ export function registerAuthRoutes(
   prisma: PrismaClient,
   requireAuth: (request: FastifyRequest) => Promise<void>
 ) {
-  const isLoopbackAddress = (ip: string | undefined) => {
-    if (!ip) {
-      return false;
-    }
-    return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
-  };
-
-  const requireLocalDevAuth = (request: FastifyRequest) => {
+  const requireLocalDevAuth = (request: FastifyRequest): void => {
     if (config.authMode !== 'dev') {
       throw new ApiError(404, ErrorCodes.NOT_FOUND, 'Not found');
     }
@@ -80,6 +74,20 @@ export function registerAuthRoutes(
     }
   };
 
+  registerLoginRoutes(app, prisma, requireLocalDevAuth);
+  registerOidcRoutes(app, prisma);
+  registerSessionRoutes(app, prisma, requireAuth);
+}
+
+function isLoopbackAddress(ip: string | undefined): boolean {
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
+function registerLoginRoutes(
+  app: FastifyInstance,
+  prisma: PrismaClient,
+  requireLocalDevAuth: (request: FastifyRequest) => void
+) {
   app.get('/auth/login', async (request, reply) => {
     // Keep the iOS app on one stable login URL. The server owns whether that
     // means localhost-only dev auth or the production OIDC redirect.
@@ -134,9 +142,9 @@ export function registerAuthRoutes(
     const code = issueDevAuthCode(user.id);
     return { code };
   });
+}
 
-  // ── OIDC routes (production only) ───────────────────────────────────────────
-
+function registerOidcRoutes(app: FastifyInstance, prisma: PrismaClient) {
   app.get('/auth/oidc/login', async (request, reply) => {
     if (!oidcConfig) {
       throw new ApiError(
@@ -206,9 +214,13 @@ export function registerAuthRoutes(
     appCallbackUrl.searchParams.set('code', code);
     reply.redirect(appCallbackUrl.toString());
   });
+}
 
-  // ── Session exchange ─────────────────────────────────────────────────────────
-
+function registerSessionRoutes(
+  app: FastifyInstance,
+  prisma: PrismaClient,
+  requireAuth: (request: FastifyRequest) => Promise<void>
+) {
   app.post(
     '/auth/session',
     {

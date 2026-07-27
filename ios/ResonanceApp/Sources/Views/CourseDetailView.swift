@@ -1,6 +1,8 @@
 import SwiftUI
 import SwiftData
 
+// Displays the selected course and switches between its student and teacher workflows.
+
 struct CourseDetailView: View {
     let course: LocalCourse
     @State private var selectedTab: Int
@@ -17,23 +19,28 @@ struct CourseDetailView: View {
         VStack {
             if course.roleInCourse == "teacher" {
                 Picker("View", selection: $selectedTab) {
-                    Text("Reviewed").tag(0)
-                    Text("To review").tag(1)
+                    Text("To review").tag(0)
+                    Text("Reviewed").tag(1)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
                 .accessibilityLabel("Course view")
-                .accessibilityHint("Switch between practice entries and the review queue")
+                .accessibilityHint("Switch between the review queue and reviewed submissions")
 
                 if selectedTab == 0 {
-                    ContentUnavailableView("Reviewed submissions", systemImage: "checkmark.circle", description: Text("Reviewed history will appear here."))
-                } else {
                     TeacherQueueView(courseId: course.id)
+                } else {
+                    ContentUnavailableView(
+                        "Reviewed submissions",
+                        systemImage: "checkmark.circle",
+                        description: Text("Submissions you have reviewed will appear here.")
+                    )
                 }
             } else {
                 EntryListView(courseId: course.id)
             }
         }
+        .background(AppTheme.workspaceBackground)
         .navigationTitle(course.title)
     }
 }

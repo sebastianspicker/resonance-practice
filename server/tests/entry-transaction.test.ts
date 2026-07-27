@@ -1,3 +1,4 @@
+// Uses real PostgreSQL sessions to prove advisory locks serialize conflicting entry work.
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { lockEntry, lockEntryIdentity, withLockedEntry } from '../src/services/entryTransaction.js';

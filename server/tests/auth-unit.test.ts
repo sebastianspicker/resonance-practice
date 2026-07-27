@@ -1,5 +1,5 @@
+// Unit-tests token hashing, JWT validation, and rotation helpers without starting Fastify.
 import { describe, expect, it, vi } from 'vitest';
-import { User } from '@prisma/client';
 import { ApiError } from '../src/errors.js';
 import {
   hashToken,
@@ -10,18 +10,7 @@ import {
   issueDevAuthCode,
   consumeDevAuthCode,
 } from '../src/auth.js';
-
-// A minimal User object for token signing
-function makeUser(overrides?: Partial<User>): User {
-  return {
-    id: 'user-1',
-    displayName: 'Test User',
-    globalRole: 'student',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    ...overrides,
-  } as User;
-}
+import { makeUser } from './support/authTestUtils.js';
 
 describe('auth (unit)', () => {
   // ── hashToken ──

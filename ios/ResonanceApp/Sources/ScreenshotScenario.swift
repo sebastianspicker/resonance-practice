@@ -1,5 +1,7 @@
 import Foundation
 
+// Defines validated debug-only personas, routes, and deterministic content for screenshot capture.
+
 enum ScreenshotPersona: String {
     case student
     case teacher
@@ -45,11 +47,12 @@ struct ScreenshotFeedbackContent: Equatable {
         commentsText: "The phrase is much more connected. Next, keep the release light before increasing the tempo.",
         markers: [
             MarkerDraft(time: "00:18", text: "Excellent voicing here."),
-            MarkerDraft(time: "00:41", text: "Keep the wrist relaxed through the release."),
+            MarkerDraft(time: "00:41", text: "Keep the wrist relaxed through the release.")
         ]
     )
 }
 
+/// Complete capture route derived only from explicitly enabled screenshot environment values.
 struct ScreenshotScenario {
     let persona: ScreenshotPersona
     let screen: ScreenshotScreen
@@ -95,6 +98,7 @@ struct ScreenshotScenario {
         from(environment: ProcessInfo.processInfo.environment)
     }
 
+    /// Returns a scenario only when capture mode and all required values pass strict validation.
     static func from(environment env: [String: String]) -> ScreenshotScenario? {
         guard env["RESONANCE_SCREENSHOT_MODE"] == "1" else {
             return nil

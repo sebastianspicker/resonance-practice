@@ -1,3 +1,4 @@
+// Covers single-entry projections and role-sensitive visibility through the HTTP API.
 import request from 'supertest';
 import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -8,11 +9,15 @@ import {
   seedBasic,
   getAccessToken,
   prisma,
-} from './testUtils.js';
+} from './support/testUtils.js';
 
 function login(role: 'student' | 'teacher') {
   const userId = role === 'student' ? 'student-1' : 'teacher-1';
   return getAccessToken(role, { userId });
+}
+
+function fetchEntry(token: string, entryId: string) {
+  return request(app.server).get(`/entries/${entryId}`).set('Authorization', `Bearer ${token}`);
 }
 
 describe('GET /entries/:entryId', () => {
@@ -47,9 +52,7 @@ describe('GET /entries/:entryId', () => {
 
   it('returns the entry with artifacts for the owning student', async () => {
     const token = await login('student');
-    const res = await request(app.server)
-      .get(`/entries/${entryId}`)
-      .set('Authorization', `Bearer ${token}`);
+    const res = await fetchEntry(token, entryId);
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(entryId);
     expect(res.body.courseId).toBe('COURSE_TEST');
@@ -67,9 +70,7 @@ describe('GET /entries/:entryId', () => {
       ],
     });
     const token = await login('student');
-    const res = await request(app.server)
-      .get(`/entries/${entryId}`)
-      .set('Authorization', `Bearer ${token}`);
+    const res = await fetchEntry(token, entryId);
     expect(res.status).toBe(200);
     expect(res.body.artifacts).toHaveLength(2);
     // Both artifacts should be present; order is createdAt asc (insertion order here)
@@ -80,9 +81,7 @@ describe('GET /entries/:entryId', () => {
 
   it('returns the entry for a teacher enrolled in the same course', async () => {
     const token = await login('teacher');
-    const res = await request(app.server)
-      .get(`/entries/${entryId}`)
-      .set('Authorization', `Bearer ${token}`);
+    const res = await fetchEntry(token, entryId);
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(entryId);
     expect(Array.isArray(res.body.artifacts)).toBe(true);
@@ -90,9 +89,7 @@ describe('GET /entries/:entryId', () => {
 
   it('returns 404 for a non-existent entry', async () => {
     const token = await login('student');
-    const res = await request(app.server)
-      .get('/entries/does-not-exist')
-      .set('Authorization', `Bearer ${token}`);
+    const res = await fetchEntry(token, 'does-not-exist');
     expect(res.status).toBe(404);
     expect(res.body.error?.code).toBe('ENTRY_NOT_FOUND');
   });
@@ -103,9 +100,7 @@ describe('GET /entries/:entryId', () => {
       data: { deletedAt: new Date() },
     });
     const token = await login('student');
-    const res = await request(app.server)
-      .get(`/entries/${entryId}`)
-      .set('Authorization', `Bearer ${token}`);
+    const res = await fetchEntry(token, entryId);
     expect(res.status).toBe(410);
     expect(res.body.error?.code).toBe('ENTRY_DELETED');
   });
@@ -118,9 +113,7 @@ describe('GET /entries/:entryId', () => {
       data: { userId: other.id, courseId: 'COURSE_TEST', roleInCourse: 'student' },
     });
     const token = await getAccessToken('student', { userId: other.id });
-    const res = await request(app.server)
-      .get(`/entries/${entryId}`)
-      .set('Authorization', `Bearer ${token}`);
+    const res = await fetchEntry(token, entryId);
     expect(res.status).toBe(403);
     expect(res.body.error?.code).toBe('ENTRY_ACCESS_DENIED');
   });
@@ -130,9 +123,7 @@ describe('GET /entries/:entryId', () => {
       data: { id: 'outsider-fetch', displayName: 'Outsider', globalRole: 'student' },
     });
     const token = await getAccessToken('student', { userId: outsider.id });
-    const res = await request(app.server)
-      .get(`/entries/${entryId}`)
-      .set('Authorization', `Bearer ${token}`);
+    const res = await fetchEntry(token, entryId);
     expect(res.status).toBe(403);
   });
 

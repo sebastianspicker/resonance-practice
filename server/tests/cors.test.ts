@@ -1,3 +1,4 @@
+// Verifies origin allowlisting and fail-closed CORS behavior with an in-process server.
 import { describe, expect, it, vi } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 

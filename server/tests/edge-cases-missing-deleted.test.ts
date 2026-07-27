@@ -1,34 +1,17 @@
-import request from 'supertest';
-import { beforeAll, afterAll, beforeEach, describe, expect, it } from 'vitest';
+// Verifies missing and tombstoned resources cannot be mutated or exposed through stale IDs.
 import {
   app,
-  setupApp,
-  teardownApp,
-  resetDb,
-  seedBasic,
-  getAccessToken,
+  describe,
+  expect,
+  it,
+  login,
   prisma,
-  s3Mock,
-} from './testUtils.js';
+  request,
+  installEdgeCaseSuite,
+} from './support/edgeCaseTestHarness.js';
 
-function login(role: 'student' | 'teacher') {
-  const userId = role === 'student' ? 'student-1' : 'teacher-1';
-  return getAccessToken(role, { userId });
-}
+installEdgeCaseSuite();
 describe('edge cases', () => {
-  beforeAll(async () => {
-    await setupApp();
-  });
-
-  afterAll(async () => {
-    await teardownApp();
-  });
-
-  beforeEach(async () => {
-    s3Mock.reset();
-    await resetDb();
-    await seedBasic();
-  });
   // ═══════════════════════════════════════════════════════════════════
   // Category 4: Missing / Deleted References
   // ═══════════════════════════════════════════════════════════════════
@@ -47,8 +30,8 @@ describe('edge cases', () => {
             commentsText: 'Feedback on nothing',
             markers: [],
           });
-        expect(res.status).toBe(404);
-        expect(res.body.error?.code).toBe('ENTRY_NOT_FOUND');
+        expect(res.status).toBe(410);
+        expect(res.body.error?.code).toBe('ENTRY_DELETED');
       });
 
       it('should return 404 when targeting a non-existent artifact ID', async () => {
@@ -123,60 +106,26 @@ describe('edge cases', () => {
       });
     });
 
-    describe('POST /artifacts/:artifactId/presign', () => {
-      it('should return 404 when presigning for a non-existent artifact', async () => {
-        const token = await login('student');
-        const res = await request(app.server)
-          .post('/artifacts/non-existent-artifact/presign')
-          .set('Authorization', `Bearer ${token}`)
-          .send();
-        expect(res.status).toBe(404);
-        expect(res.body.error?.code).toBe('ARTIFACT_NOT_FOUND');
-      });
-
-      it('should return 410 when presigning for an artifact whose entry was deleted', async () => {
-        const token = await login('student');
-        await prisma.practiceEntry.create({
-          data: {
-            id: 'entry-del-presign',
-            courseId: 'COURSE_TEST',
-            studentId: 'student-1',
-            practiceDate: new Date(),
-            goalText: 'Deleted entry',
-            tags: [],
-            status: 'draft',
-            deletedAt: new Date(),
-          },
-        });
-        await prisma.artifact.create({
-          data: {
-            id: 'art-orphaned',
-            entryId: 'entry-del-presign',
-            type: 'audio',
-            durationSeconds: 60,
-          },
-        });
-        const res = await request(app.server)
-          .post('/artifacts/art-orphaned/presign')
-          .set('Authorization', `Bearer ${token}`)
-          .send();
-        expect(res.status).toBe(410);
-        expect(res.body.error?.code).toBe('ENTRY_DELETED');
-      });
-    });
-
-    describe('POST /entries/:entryId/artifacts', () => {
+    describe('POST /api/v1/artifact-sessions', () => {
       it('should return 404 when creating artifact for a non-existent entry', async () => {
         const token = await login('student');
         const res = await request(app.server)
-          .post('/entries/does-not-exist/artifacts')
+          .post('/api/v1/artifact-sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ id: 'art-no-entry', type: 'audio', durationSeconds: 60 });
+          .send({
+            operationId: 'missing-entry-operation',
+            entryId: 'does-not-exist',
+            artifactId: 'art-no-entry',
+            type: 'audio',
+            durationSeconds: 60,
+            sizeBytes: 1,
+            baseVersion: 1,
+          });
         expect(res.status).toBe(404);
         expect(res.body.error?.code).toBe('ENTRY_NOT_FOUND');
       });
 
-      it('should return 404 when creating artifact for a deleted entry', async () => {
+      it('should return 410 when creating artifact for a deleted entry', async () => {
         const token = await login('student');
         await prisma.practiceEntry.create({
           data: {
@@ -191,11 +140,19 @@ describe('edge cases', () => {
           },
         });
         const res = await request(app.server)
-          .post('/entries/entry-deleted-art/artifacts')
+          .post('/api/v1/artifact-sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ id: 'art-for-deleted', type: 'audio', durationSeconds: 60 });
-        expect(res.status).toBe(404);
-        expect(res.body.error?.code).toBe('ENTRY_NOT_FOUND');
+          .send({
+            operationId: 'deleted-entry-operation',
+            entryId: 'entry-deleted-art',
+            artifactId: 'art-for-deleted',
+            type: 'audio',
+            durationSeconds: 60,
+            sizeBytes: 1,
+            baseVersion: 1,
+          });
+        expect(res.status).toBe(410);
+        expect(res.body.error?.code).toBe('ENTRY_DELETED');
       });
     });
 

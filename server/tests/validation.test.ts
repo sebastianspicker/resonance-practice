@@ -1,3 +1,4 @@
+// Unit-tests reusable parsing and authorization helpers at their failure boundaries.
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/errors.js';
 import {

@@ -1,11 +1,23 @@
 name: Feature request
-description: Propose an enhancement or new feature
+description: Propose an enhancement for the source-only public alpha
 title: "[Feature]: "
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
-      value: "Please describe the user need and expected impact."
+      value: "Please describe the user need and expected impact. Resonance is an early source alpha; proposals should preserve privacy, offline recovery, course-role boundaries, and explicit sync state."
+  - type: dropdown
+    id: user
+    attributes:
+      label: Primary user
+      options:
+        - Student
+        - Teacher
+        - Music-teacher-education student
+        - Developer or self-hosting evaluator
+        - Maintainer or operator
+    validations:
+      required: true
   - type: textarea
     id: problem
     attributes:
@@ -21,9 +33,23 @@ body:
     validations:
       required: true
   - type: textarea
+    id: success
+    attributes:
+      label: What would success look like?
+      description: Describe the observable user outcome, including offline or recovery behavior where relevant.
+    validations:
+      required: true
+  - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered
       description: Any other options or workarounds?
+    validations:
+      required: false
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Privacy, role, data, or deployment impact
+      description: Note any effect on consent, account ownership, course authorization, media, retention, signing, or external services.
     validations:
       required: false

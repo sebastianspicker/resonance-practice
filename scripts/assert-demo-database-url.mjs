@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Guard destructive demo mutations to the local public resonance database.
 import { pathToFileURL } from "node:url";
 
 /** Limit destructive demo setup to the local `resonance` database. */

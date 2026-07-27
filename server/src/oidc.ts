@@ -50,6 +50,10 @@ function hashAuthFlowToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
+/**
+ * Persist only a hash of a short-lived OIDC state or app code so any replica
+ * can validate it without storing the bearer value.
+ */
 async function createAuthFlowToken(
   prisma: PrismaClient,
   kind: AuthFlowTokenKind,
@@ -71,6 +75,7 @@ async function createAuthFlowToken(
   });
 }
 
+/** Atomically delete one matching unexpired token so concurrent consumers cannot replay it. */
 async function consumeAuthFlowToken(prisma: PrismaClient, kind: AuthFlowTokenKind, token: string) {
   const tokenHash = hashAuthFlowToken(token);
   const now = new Date();
@@ -118,7 +123,7 @@ export async function getOidcClient(): Promise<Client> {
   return _client;
 }
 
-/** Reset cached client — used in tests only. */
+/** Reset cached client for tests only. */
 export function _resetOidcClientForTesting() {
   _client = null;
 }
@@ -127,7 +132,7 @@ export function _resetOidcClientForTesting() {
 
 /**
  * Derives the Resonance user ID from an OIDC subject claim.
- * Format: `sso:<sub>` — ensures no collision with dev IDs.
+ * Format: `sso:<sub>`, which prevents collisions with dev IDs.
  */
 export function ssoUserId(sub: string): string {
   return `sso:${sub}`;

@@ -1,3 +1,4 @@
+/** Typed API errors and the single error-response translation boundary. */
 import { FastifyReply } from 'fastify';
 import { ErrorCodes } from './errorCodes.js';
 
@@ -19,7 +20,7 @@ export class ApiError extends Error {
   }
 }
 
-export function sendError(reply: FastifyReply, error: ApiError) {
+export function sendError(reply: FastifyReply, error: ApiError, requestId?: string) {
   // Only expose safe detail fields to the client
   const safeDetails: Record<string, unknown> = {};
   if (error.details) {
@@ -36,6 +37,10 @@ export function sendError(reply: FastifyReply, error: ApiError) {
       code: error.code,
       message: error.message,
       details: safeDetails,
+      ...(requestId ? { requestId } : {}),
+      ...(error.code === ErrorCodes.VERSION_CONFLICT && typeof safeDetails.actual === 'number'
+        ? { currentVersion: safeDetails.actual }
+        : {}),
     },
   });
 }

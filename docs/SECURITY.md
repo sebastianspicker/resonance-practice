@@ -1,73 +1,156 @@
-# Security & GDPR
+# Security and privacy model
 
-## Reporting a Vulnerability
+This document describes controls present in the source and obligations left to
+an operator. The source-only alpha is not evidence of a secure production
+deployment.
 
-Please do not open public issues for security vulnerabilities.
+## Vulnerability reporting
 
-Send a private report with details and reproduction steps through [GitHub private vulnerability reporting](https://github.com/sebastianspicker/resonance/security/advisories/new) for this repository.
+Report vulnerabilities through
+[GitHub private vulnerability reporting](https://github.com/sebastianspicker/resonance/security/advisories/new).
+Do not open a public issue.
 
-We will acknowledge receipt within 7 days and provide a remediation timeline.
+Use synthetic data and redacted logs. Do not include credentials, tokens,
+signed URLs, private recordings, student data, or environment files.
 
-## Project Status
+## Protected assets
 
-`v0.1.0-alpha.1` is a source-only public alpha, not a production deployment. Source controls are described below; operator, signing, and external-service requirements remain unverified until deployed and tested in the target environment.
-
-## Implemented Source Controls
-
-- Token-based auth with refresh rotation
-- Dev auth routes are disabled unless `AUTH_MODE=dev`
-- Secret scanning: `./scripts/secret-scan.sh`
-- Dependency-audit command in CI: `npm audit --audit-level=high`
-- SAST in CI: CodeQL (`.github/workflows/codeql.yml`)
-
-## Scope Notes
-
-- The source supports configured OIDC behind the app-facing `/auth/login` entrypoint. Configure `OIDC_DISCOVERY_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_REDIRECT_URI` to enable it; no live provider is proven by this repository. See [docs/SSO_BRIDGE.md](./SSO_BRIDGE.md).
-- Environment variables are required for secrets and must not be committed.
-
-## Threat Model (Alpha Source and Production-Pilot Target)
-
-### Assets
-
-- Student audio/video recordings and feedback.
+- Student audio and teaching-lesson video.
+- Practice entries, markers, and teacher feedback.
 - User identity and course membership.
-- Access/refresh tokens.
+- Access tokens, refresh tokens, OpenID Connect state, and application codes.
+- Calendar subscription URLs.
 
-### Intended Trust Boundaries
+## Trust boundaries
 
-- iOS client <-> API server (TLS is a deployment requirement)
-- API server <-> Postgres
-- API server <-> S3-compatible storage
-- External: configured OIDC provider and user-provided iCal feeds
+- iOS client to API. Production requires TLS.
+- API to PostgreSQL.
+- API to S3-compatible object storage.
+- API to the configured OpenID Connect provider.
+- iOS client to a user-provided iCalendar feed.
 
-### Threats & Mitigations
+The repository provides loopback development services. Production network,
+identity, database, storage, and key-management boundaries are supplied by the
+operator.
 
-- IDOR on course/entry IDs: server enforces membership checks on every request.
-- Artifact upload integrity: presign/confirm are restricted to the owning student of the artifact entry; the declared byte count is signed and verified exactly before the artifact becomes available.
-- Teaching-lesson consent: server blocks submission of `teaching_lesson` entries until consent metadata is present.
-- Teaching-lesson video requirement: server rejects teaching-lesson submission unless at least one uploaded video artifact is present.
-- Teaching-lesson camera guidance: overlays and contours are preview-only client aids; the app stores the raw video plus manual marker metadata, not automatic face/person/pose analysis.
-- Token theft: short-lived access tokens, refresh rotation, token hashes stored server-side, no tokens in logs.
-- Media exposure: upload URLs are owner-only; download URLs are restricted to the owner or a same-course teacher through entry ACLs. Both use short TTLs, download responses are `no-store`, signed URLs are never logged, object keys include an unguessable attempt suffix, and the server verifies uploads by HEAD. Expired uploads and deleted-entry objects enter a durable deletion queue that retries transient storage failures. Database and object-storage operations used by startup, readiness, confirmation, and cleanup have a validated bounded dependency timeout.
-- Offline device loss: iOS File Protection (`NSFileProtectionComplete`) for local media and exports; calendar subscription URLs are stored in Keychain instead of plain app defaults.
-- CSRF/redirect abuse in SSO: ASWebAuthenticationSession with strict callback URL scheme; `redirectUri` is validated in production mode against the registered OIDC callback URI and `resonance://` app scheme. OIDC state and app auth codes are single-use, short-lived hashes in PostgreSQL so validation works across API replicas. Dev auth flow intentionally skips `redirectUri` validation (localhost only).
-- **Dev auth:** Use `AUTH_MODE=dev` only on localhost. Dev routes (`/dev/*`) are restricted to loopback clients and must never be exposed in reachable environments.
+## Authentication and authorization
 
-## GDPR Controls
+- `AUTH_MODE=dev` enables unauthenticated development routes. The server
+  defaults to `127.0.0.1`, rejects explicit non-loopback development hosts,
+  and rejects non-loopback requests to `/dev/*`.
+- Production authentication uses configured OpenID Connect through
+  `/auth/login`. No live provider is validated by this repository. See
+  [OIDC configuration](./SSO_BRIDGE.md).
+- Access tokens are short-lived. Refresh tokens rotate, are stored as hashes,
+  and use family revocation to contain replay.
+- OpenID Connect state and internal application codes are single-use,
+  short-lived hashes stored in PostgreSQL.
+- Global student or teacher role does not grant course access. Route handlers
+  enforce course membership, course role, and entry ownership.
+- Teachers cannot list, fetch, or download student drafts.
 
-- Data minimization: store only `id`, `displayName`, and role. No analytics by default.
-- Deletion: the server hard-deletes entry content and relational metadata, retaining only the client-generated ID and deletion time as a replay-prevention tombstone. Object keys enter a durable asynchronous deletion queue with bounded retries.
-- Retention: suggested retention is 12 months after course end (configurable).
-- Logging: no media content; PII minimized and token values are redacted.
-- Refresh-token replay: rotations retain a server-side family identifier. Reuse commits revocation of that lineage before returning an error, containing a stolen-first rotation without invalidating unrelated device sessions.
-- Consent: teaching-lesson entries require explicit private course-review consent metadata before submission.
-- Local-first media: teaching-lesson video remains local until the student starts submission.
-- Account isolation: the app records the local-data owner and requires explicit local-profile deletion before another account can continue. Confirmed sign-out deletes SwiftData, media, calendar state, feedback, and queued work.
-- Lesson markers: capture markers are student-authored metadata tied to the entry/video artifact and remain inside the private course-review workflow.
+## Entry and synchronization integrity
 
-## Deployment Requirements
+- Mutating v1 commands carry a client operation identifier and optimistic entry
+  version.
+- Durable receipts bind successful operation identifiers to their payload and
+  user. Reusing an identifier with different work is rejected.
+- Commands are admitted in bounded batches and run in request order.
+- Conflicting versions return a conflict result instead of overwriting newer
+  server state.
+- Queue rows are bound to the local account owner. Synchronization requires the
+  authenticated session, local-data owner, and queue owner to match.
+- Account replacement cancels active synchronization and requires explicit
+  local-data deletion.
 
-- Terminate TLS for all production traffic; no production deployment is supplied by this repository.
-- CORS is fail-closed by default when `CORS_ORIGINS` is empty.
-- Configure PostgreSQL and object storage encryption, backup, access control, and retention in the target environment.
-- Environment variables for secrets; no secrets in repo.
+## Media controls
+
+- Teaching-lesson submission requires private-course-review consent and at
+  least one uploaded video artifact.
+- Camera overlays and markers are manual composition aids. The application does
+  not implement face, person, pose, or teaching analysis.
+- Upload sessions are restricted to the owning student and use staging-only
+  signed PUT URLs.
+- Completion verifies the expected object size and integrity metadata before
+  publishing an immutable final key.
+- Concurrent and repeated completion requests use a leased, idempotent claim
+  protocol.
+- Download sessions are limited to the student owner or a teacher in the same
+  course.
+- Signed URLs are short-lived, excluded from logs, and returned with
+  `Cache-Control: no-store`.
+- Expired staging objects and deleted-entry objects enter a durable deletion
+  queue after active credential and completion windows have ended.
+- Per-user artifact quotas and bounded failed-row retention limit abandoned
+  metadata.
+
+## Device data
+
+- Local media and exports use `NSFileProtectionComplete` and are excluded from
+  backups.
+- Access and refresh tokens, the local-data owner, and calendar subscription
+  values use device-only Keychain storage.
+- Teaching-lesson video remains local until the student begins submission.
+- Confirmed sign-out deletes SwiftData records, media, feedback, calendar
+  state, exports, and queued work.
+- Ambiguous existing data is preserved for recovery instead of being deleted
+  automatically.
+
+## API protections
+
+- Fastify logs redact authorization headers, passwords, tokens, and
+  authorization codes.
+- JSON request bodies are limited to 1 MiB.
+- Authentication endpoints are limited to 10 requests per minute. Other
+  routes default to 100 requests per minute.
+- CORS is disabled when no origins are configured and production startup
+  requires at least one exact origin.
+- Helmet applies API security headers. HSTS is enabled in production mode.
+- Dependency operations used by startup, readiness, artifact completion, and
+  object deletion use a validated bounded timeout.
+- Errors use stable codes and omit stack traces from client responses.
+
+## Privacy behavior
+
+- User records contain an identifier, display name, and global role.
+- The source does not enable analytics.
+- Entry deletion removes relational content and keeps only the client entry
+  identifier and deletion time as a replay-prevention tombstone.
+- The source does not implement an operator-configurable course or user-content
+  retention period.
+- Logs must not contain media content, signed URLs, calendar URLs, names, or
+  unnecessary identifiers.
+- Capture markers remain inside the private course-review workflow.
+
+## Operator obligations
+
+A production operator must:
+
+- terminate TLS for all external traffic;
+- inject secrets at runtime and rotate them after suspected disclosure;
+- configure explicit CORS origins;
+- use a supported and patched PostgreSQL service and S3-compatible object
+  store;
+- configure encryption at rest, network access control, backups, restoration,
+  retention, monitoring, and alerting;
+- validate OpenID Connect callback, state, role, refresh, logout, and denied
+  access behavior;
+- define deletion and retention policy for user content, tombstones, logs, and
+  backups;
+- test recovery from database, object-storage, and identity-provider failure;
+- review dependency audit and CodeQL results before deployment.
+
+The MinIO image and credentials in `infra/docker-compose.yml` are restricted to
+loopback development and CI. They are not a production storage configuration.
+
+## Repository checks
+
+```bash
+./scripts/secret-scan.sh
+./scripts/check-no-build-artifacts.sh
+cd server
+npm audit --audit-level=high --omit=dev
+```
+
+CI also runs CodeQL against `server/`. Environment-file contents are excluded
+from the repository secret scan and require manual review.
