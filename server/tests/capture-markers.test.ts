@@ -114,7 +114,7 @@ describe('capture marker sync', () => {
   });
 
   it('includes capture markers on entry detail reads', async () => {
-    await seedTeachingLesson();
+    await seedTeachingLesson('submitted');
     await prisma.captureMarker.create({
       data: {
         id: 'capture-marker-detail',

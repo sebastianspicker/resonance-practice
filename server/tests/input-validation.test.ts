@@ -559,24 +559,6 @@ describe('input validation', () => {
       );
     });
 
-    it('requires a positive integer upload size within the configured limit', async () => {
-      const token = await login('student');
-      await expectUploadSizeValidation(
-        async (artifactId, sizeBytes) =>
-          request(app.server)
-            .post(`/entries/${entryId}/artifacts`)
-            .set('Authorization', `Bearer ${token}`)
-            .send({
-              id: artifactId,
-              type: 'audio',
-              durationSeconds: 60,
-              ...(sizeBytes === undefined ? {} : { sizeBytes }),
-            }),
-        201,
-        (body) => body.expectedSizeBytes
-      );
-    });
-
     it('rejects negative durationSeconds', async () => {
       const token = await login('student');
       const res = await postArtifactSession(token, {

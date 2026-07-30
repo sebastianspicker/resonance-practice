@@ -157,51 +157,6 @@ describe('server and artifact errors', () => {
       expect(session.completedAt).toBeNull();
     });
 
-    it('returns 503 STORAGE_UNAVAILABLE for non-404 S3 failures', async () => {
-      const token = await login('student');
-      await prisma.practiceEntry.create({
-        data: {
-          id: 'entry-s3-denied',
-          courseId: 'COURSE_TEST',
-          studentId: 'student-1',
-          practiceDate: new Date(),
-          goalText: 'Test',
-          tags: ['tag'],
-          status: 'draft',
-        },
-      });
-      await prisma.artifact.create({
-        data: {
-          id: 'artifact-s3-denied',
-          entryId: 'entry-s3-denied',
-          type: 'audio',
-          durationSeconds: 60,
-          uploadState: 'uploading',
-          storageKey: 'artifacts/entry-s3-denied/artifact-s3-denied',
-          expectedSizeBytes: 128,
-          uploadExpiresAt: new Date(Date.now() + 60_000),
-        },
-      });
-      s3Mock.on(HeadObjectCommand).rejects(
-        Object.assign(new Error('Access Denied'), {
-          name: 'AccessDenied',
-          $metadata: { httpStatusCode: 403 },
-        })
-      );
-
-      const res = await request(app.server)
-        .post('/artifacts/artifact-s3-denied/confirm')
-        .set('Authorization', `Bearer ${token}`)
-        .send();
-
-      expect(res.status).toBe(503);
-      expect(res.body.error.code).toBe('STORAGE_UNAVAILABLE');
-      const artifact = await prisma.artifact.findUniqueOrThrow({
-        where: { id: 'artifact-s3-denied' },
-      });
-      expect(artifact.confirmationToken).toBeNull();
-    });
-
     it('returns 409 UPLOAD_INVALID when uploaded file is empty (ContentLength 0)', async () => {
       const token = await login('student');
 

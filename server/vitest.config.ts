@@ -12,7 +12,8 @@ export default defineConfig({
       reporter: ['text', 'text-summary', 'lcov'],
       reportsDirectory: './coverage',
       include: ['src/**/*.ts'],
-      exclude: ['src/types.ts'],
+      // The compiled entrypoint is exercised by CI's readiness probe and process-level E2E lane.
+      exclude: ['src/types.ts', 'src/index.ts'],
       thresholds: {
         statements: 85,
         branches: 75,

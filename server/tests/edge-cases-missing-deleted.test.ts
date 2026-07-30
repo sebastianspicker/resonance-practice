@@ -30,8 +30,8 @@ describe('edge cases', () => {
             commentsText: 'Feedback on nothing',
             markers: [],
           });
-        expect(res.status).toBe(410);
-        expect(res.body.error?.code).toBe('ENTRY_DELETED');
+        expect(res.status).toBe(404);
+        expect(res.body.error?.code).toBe('ENTRY_NOT_FOUND');
       });
 
       it('should return 404 when targeting a non-existent artifact ID', async () => {

@@ -80,6 +80,10 @@ describe('GET /entries/:entryId', () => {
   });
 
   it('returns the entry for a teacher enrolled in the same course', async () => {
+    await prisma.practiceEntry.update({
+      where: { id: entryId },
+      data: { status: 'submitted' },
+    });
     const token = await login('teacher');
     const res = await fetchEntry(token, entryId);
     expect(res.status).toBe(200);
