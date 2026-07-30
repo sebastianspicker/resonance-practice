@@ -2,6 +2,19 @@ import SwiftUI
 
 // Atelier media stage: progress-synced decorative bars, optional live level for record/play.
 
+enum WaveformPattern {
+    static let defaultHeights: [CGFloat] = [
+        0.14, 0.38, 0.68, 0.31, 0.16, 0.48, 0.83, 0.36, 0.12, 0.29, 0.57, 0.86, 0.44, 0.2,
+        0.16, 0.6, 0.92, 0.5, 0.24, 0.13, 0.35, 0.7, 0.42, 0.17, 0.49, 0.9, 0.56, 0.27,
+        0.12, 0.37, 0.74, 0.41, 0.18, 0.3, 0.64, 0.8, 0.34, 0.15, 0.55, 0.88, 0.44, 0.22
+    ]
+}
+
+private func waveformElapsedTimeLabel(_ seconds: TimeInterval) -> String {
+    let total = max(0, Int(seconds.rounded(.down)))
+    return String(format: "%d:%02d", total / 60, total % 60)
+}
+
 struct WaveformStageView: View {
     var progress: Double
     var isActive: Bool
@@ -16,11 +29,7 @@ struct WaveformStageView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var levelHistory: [CGFloat] = Array(repeating: 0.18, count: 42)
 
-    private let basePattern: [CGFloat] = [
-        0.14, 0.38, 0.68, 0.31, 0.16, 0.48, 0.83, 0.36, 0.12, 0.29, 0.57, 0.86, 0.44, 0.2,
-        0.16, 0.6, 0.92, 0.5, 0.24, 0.13, 0.35, 0.7, 0.42, 0.17, 0.49, 0.9, 0.56, 0.27,
-        0.12, 0.37, 0.74, 0.41, 0.18, 0.3, 0.64, 0.8, 0.34, 0.15, 0.55, 0.88, 0.44, 0.22
-    ]
+    private let basePattern = WaveformPattern.defaultHeights
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -149,17 +158,13 @@ struct LiveRecordingStage: View {
                 progress: isRecording ? min(duration / 600, 1) : 0,
                 isActive: isRecording,
                 liveLevel: isRecording ? averageLevel : nil,
-                currentTimeLabel: format(duration),
+                currentTimeLabel: waveformElapsedTimeLabel(duration),
                 durationLabel: isRecording ? "Recording" : "Ready",
                 accessibilitySummary: isRecording ? "Live recording waveform" : "Recording stage"
             )
         }
     }
 
-    private func format(_ seconds: TimeInterval) -> String {
-        let total = max(0, Int(seconds.rounded(.down)))
-        return String(format: "%d:%02d", total / 60, total % 60)
-    }
 }
 
 /// Playback stage driven by AudioPlayer progress and optional metering.
@@ -178,8 +183,8 @@ struct LivePlaybackStage: View {
                 progress: duration > 0 ? currentTime / duration : 0,
                 isActive: isPlaying,
                 liveLevel: isPlaying ? averageLevel : nil,
-                currentTimeLabel: format(currentTime),
-                durationLabel: format(duration),
+                currentTimeLabel: waveformElapsedTimeLabel(currentTime),
+                durationLabel: waveformElapsedTimeLabel(duration),
                 onSeek: { fraction in
                     onSeek(fraction * max(duration, 0.01))
                 },
@@ -188,8 +193,4 @@ struct LivePlaybackStage: View {
         }
     }
 
-    private func format(_ seconds: TimeInterval) -> String {
-        let total = max(0, Int(seconds.rounded(.down)))
-        return String(format: "%d:%02d", total / 60, total % 60)
-    }
 }

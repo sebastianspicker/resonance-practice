@@ -2,7 +2,7 @@
 import type { S3Client } from '@aws-sdk/client-s3';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import type { Artifact, ArtifactType, PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { config } from '../config.js';
 import { ErrorCodes } from '../errorCodes.js';
@@ -54,20 +54,4 @@ export function registerArtifactRoutes(
   app.post('/entries/:entryId/artifacts', { preHandler: requireAuth }, retired);
   app.post('/artifacts/:artifactId/presign', { preHandler: requireAuth }, retired);
   app.post('/artifacts/:artifactId/confirm', { preHandler: requireAuth }, retired);
-}
-
-async function releaseConfirmationClaim(
-  prisma: PrismaClient,
-  artifactId: string,
-  confirmationToken: string,
-  logger: { error: (obj: object, msg: string) => void }
-) {
-  try {
-    await prisma.artifact.updateMany({
-      where: { id: artifactId, confirmationToken },
-      data: { confirmationToken: null },
-    });
-  } catch (releaseErr) {
-    logger.error({ err: releaseErr, artifactId }, 'Failed to release artifact confirmation claim');
-  }
 }

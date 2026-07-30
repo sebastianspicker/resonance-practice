@@ -43,13 +43,6 @@ describe('auth', () => {
     const { session: independentSession } = await issueDevSession('student', {
       userId: session.body.user.id,
     });
-    const independentIssue = await request(app.server)
-      .post('/dev/issue')
-      .send({ role: 'student', userId: session.body.user.id });
-    const independentSession = await request(app.server).post('/auth/session').send({
-      code: independentIssue.body.code,
-      redirectUri: 'resonance://auth-callback',
-    });
 
     const refreshToken = session.body.refreshToken as string;
     const refreshed = await request(app.server).post('/auth/refresh').send({ refreshToken });

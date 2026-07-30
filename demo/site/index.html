@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="A static, simulated walkthrough of the Resonance practice evidence and private feedback workflow."
+    />
+    <link rel="canonical" href="https://sebastianspicker.github.io/resonance/" />
+    <title>Resonance static demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./demo.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#workspace">Skip to demo</a>
+    <header class="site-header">
+      <a class="brand" href="#" aria-label="Resonance demo home">
+        <svg class="brand-mark" viewBox="0 0 52 30" aria-hidden="true">
+          <rect x="1" y="11" width="4" height="8" rx="2"></rect>
+          <rect x="8" y="8" width="4" height="14" rx="2"></rect>
+          <rect x="15" y="4" width="4" height="22" rx="2"></rect>
+          <rect x="22" y="1" width="4" height="28" rx="2"></rect>
+          <rect x="29" y="5" width="4" height="20" rx="2"></rect>
+          <rect x="36" y="8" width="4" height="14" rx="2"></rect>
+          <rect x="43" y="11" width="4" height="8" rx="2"></rect>
+        </svg>
+        <span>Resonance</span>
+      </a>
+      <nav aria-label="Project links">
+        <a href="https://github.com/sebastianspicker/resonance">Source</a>
+        <a href="https://github.com/sebastianspicker/resonance/blob/main/docs/LOCAL_DEMO.md">Local demo</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="intro-title">
+        <div>
+          <p class="context">Static product walkthrough</p>
+          <h1 id="intro-title">Practice evidence, then private teacher feedback.</h1>
+          <p>
+            Follow one sanitized fixture through the student and teacher views. This page uses
+            Resonance's real workflow language and Atelier visual tokens, but it does not connect
+            to an account, API, database, microphone, camera, or storage service.
+          </p>
+        </div>
+        <aside class="simulation-note" aria-label="Simulation boundary">
+          <span class="simulation-dot" aria-hidden="true"></span>
+          <div>
+            <strong>Every command is simulated</strong>
+            <span>No data leaves this browser. Refresh to reset the walkthrough.</span>
+          </div>
+        </aside>
+      </section>
+
+      <section class="demo-frame" id="workspace" aria-labelledby="workspace-title">
+        <div class="demo-toolbar">
+          <div>
+            <span class="toolbar-label">Walkthrough</span>
+            <h2 id="workspace-title">Mock University · Piano Studio I</h2>
+          </div>
+          <div class="persona-switch" role="group" aria-label="Choose demo role">
+            <button class="persona-button is-active" type="button" data-role="student" aria-pressed="true">
+              Student
+            </button>
+            <button class="persona-button" type="button" data-role="teacher" aria-pressed="false">
+              Teacher
+            </button>
+          </div>
+        </div>
+
+        <div class="app-shell">
+          <aside class="sidebar" aria-label="Demo navigation">
+            <div class="sidebar-heading">
+              <div>
+                <span class="section-label">Signed in as</span>
+                <strong id="persona-name">Lea Sommer</strong>
+                <span id="persona-role">Student · simulated session</span>
+              </div>
+              <span class="online-state">Offline ready</span>
+            </div>
+
+            <nav id="sidebar-nav" aria-label="Product areas"></nav>
+
+            <div class="sync-strip">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 7h-5V2M4 17h5v5M19 12a7 7 0 0 0-12-5L4 10M5 12a7 7 0 0 0 12 5l3-3"></path>
+              </svg>
+              <div>
+                <strong id="sync-title">2 items waiting</strong>
+                <span id="sync-detail">One upload needs attention</span>
+              </div>
+            </div>
+          </aside>
+
+          <section class="content-panel" id="content-panel" aria-live="polite"></section>
+        </div>
+      </section>
+
+      <section class="evidence-boundary" aria-labelledby="boundary-title">
+        <h2 id="boundary-title">What this demo establishes</h2>
+        <div class="boundary-grid">
+          <p><strong>It shows</strong> the product structure, role boundary, lifecycle language, and a representative student-to-teacher path.</p>
+          <p><strong>It does not prove</strong> native interaction, networking, authorization, persistence, accessibility, localization, signing, or deployment.</p>
+          <p><strong>The data is sanitized</strong> from the repository's deterministic fixture. Operational IDs, paths, storage keys, and remote URLs are omitted.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Resonance v0.1.0-alpha.1 static demo</span>
+      <a href="https://github.com/sebastianspicker/resonance/blob/main/LICENSE">License</a>
+    </footer>
+  </body>
+</html>

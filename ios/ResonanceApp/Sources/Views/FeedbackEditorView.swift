@@ -13,6 +13,20 @@ enum FeedbackEditorPresentation: Equatable {
     case workspace
 }
 
+private struct DiscardFeedbackConfirmation: ViewModifier {
+    @Binding var isPresented: Bool
+    let dismiss: DismissAction
+
+    func body(content: Content) -> some View {
+        content.confirmationDialog("Discard unsent feedback?", isPresented: $isPresented) {
+            Button("Discard feedback", role: .destructive) { dismiss() }
+            Button("Keep editing", role: .cancel) {}
+        } message: {
+            Text("Your comments and markers have not been queued.")
+        }
+    }
+}
+
 struct FeedbackEditorView: View {
     let entry: ReviewQueueEntry
     var playbackTime: () -> TimeInterval = { 0 }
@@ -71,6 +85,7 @@ struct FeedbackEditorView: View {
                 formContent
             }
         }
+        .modifier(DiscardFeedbackConfirmation(isPresented: $confirmDiscard, dismiss: dismiss))
     }
 
     private var formContent: some View {
@@ -147,12 +162,6 @@ struct FeedbackEditorView: View {
                 Button("Done") { commentsFocused = false }
             }
         }
-        .confirmationDialog("Discard unsent feedback?", isPresented: $confirmDiscard) {
-            Button("Discard feedback", role: .destructive) { dismiss() }
-            Button("Keep editing", role: .cancel) {}
-        } message: {
-            Text("Your comments and markers have not been queued.")
-        }
     }
 
     private var workspaceContent: some View {
@@ -177,18 +186,11 @@ struct FeedbackEditorView: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         WorkspaceSectionLabel(title: "Feedback")
-                        TextField("Concrete feedback", text: $commentsText, axis: .vertical)
-                            .lineLimit(6...12)
-                            .focused($commentsFocused)
-                            .padding(12)
-                            .background(
-                                AppTheme.workspaceRaised,
-                                in: RoundedRectangle(cornerRadius: AppTheme.Radius.control, style: .continuous)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: AppTheme.Radius.control, style: .continuous)
-                                    .stroke(AppTheme.workspaceBorder)
-                            )
+                        workspaceRaisedCard(padding: 12) {
+                            TextField("Concrete feedback", text: $commentsText, axis: .vertical)
+                                .lineLimit(6...12)
+                                .focused($commentsFocused)
+                        }
                             .accessibilityLabel("Feedback")
                         HStack {
                             if let validationMessage {
@@ -205,26 +207,19 @@ struct FeedbackEditorView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         WorkspaceSectionLabel(title: "Markers")
                         ForEach($markers) { $marker in
-                            HStack(spacing: 8) {
-                                TextField("01:24", text: $marker.time)
-                                    .keyboardType(.numbersAndPunctuation)
-                                    .font(.subheadline.monospacedDigit())
-                                    .frame(width: 78)
-                                TextField("Note", text: $marker.text)
-                                Button("Delete marker", systemImage: "trash") {
-                                    markers.removeAll { $0.id == marker.id }
+                            workspaceRaisedCard(padding: 10) {
+                                HStack(spacing: 8) {
+                                    TextField("01:24", text: $marker.time)
+                                        .keyboardType(.numbersAndPunctuation)
+                                        .font(.subheadline.monospacedDigit())
+                                        .frame(width: 78)
+                                    TextField("Note", text: $marker.text)
+                                    Button("Delete marker", systemImage: "trash") {
+                                        markers.removeAll { $0.id == marker.id }
+                                    }
+                                    .labelStyle(.iconOnly).foregroundStyle(AppTheme.workspaceMuted)
                                 }
-                                .labelStyle(.iconOnly).foregroundStyle(AppTheme.workspaceMuted)
                             }
-                            .padding(10)
-                            .background(
-                                AppTheme.workspaceRaised,
-                                in: RoundedRectangle(cornerRadius: AppTheme.Radius.control, style: .continuous)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: AppTheme.Radius.control, style: .continuous)
-                                    .stroke(AppTheme.workspaceBorder)
-                            )
                         }
                         Button("Add marker at current position", systemImage: "plus") {
                             markers.append(MarkerDraft(time: Self.format(playbackTime()), text: ""))
@@ -261,12 +256,22 @@ struct FeedbackEditorView: View {
                 Button("Done") { commentsFocused = false }
             }
         }
-        .confirmationDialog("Discard unsent feedback?", isPresented: $confirmDiscard) {
-            Button("Discard feedback", role: .destructive) { dismiss() }
-            Button("Keep editing", role: .cancel) {}
-        } message: {
-            Text("Your comments and markers have not been queued.")
-        }
+    }
+
+    private func workspaceRaisedCard<Content: View>(
+        padding: CGFloat,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .padding(padding)
+            .background(
+                AppTheme.workspaceRaised,
+                in: RoundedRectangle(cornerRadius: AppTheme.Radius.control, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: AppTheme.Radius.control, style: .continuous)
+                    .stroke(AppTheme.workspaceBorder)
+            )
     }
 
     private func outcomeButton(_ title: String, status candidate: FeedbackStatus) -> some View {

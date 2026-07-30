@@ -328,22 +328,14 @@ struct WorkspaceReviewDetail: View {
     }
 
     private func loadSelectedArtifact() async {
-        guard let selectedArtifact,
-              let token = authManager.session?.accessToken else { return }
-        isLoadingMedia = true
-        playbackError = nil
-        player.pause()
-        isAudioPlaying = false
-        defer { isLoadingMedia = false }
-        do {
-            let response = try await appState.apiClient.fetchArtifactDownloadURL(
-                accessToken: token,
-                artifactId: selectedArtifact.id
-            )
-            player.replaceCurrentItem(with: AVPlayerItem(url: response.downloadUrl))
-        } catch {
-            player.replaceCurrentItem(with: nil)
-            playbackError = error.localizedDescription
-        }
+        await loadSecureReviewArtifact(
+            selectedArtifact,
+            accessToken: authManager.session?.accessToken,
+            appState: appState,
+            player: player,
+            isLoading: $isLoadingMedia,
+            playbackError: $playbackError,
+            beforeLoad: { isAudioPlaying = false }
+        )
     }
 }

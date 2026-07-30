@@ -49,9 +49,22 @@ if [[ "${#candidate_files[@]}" -eq 0 ]]; then
   exit 2
 fi
 
+if command -v rg >/dev/null 2>&1; then
+  scanner='rg'
+elif command -v grep >/dev/null 2>&1; then
+  scanner='grep'
+else
+  echo "Secret scan requires either rg or grep." >&2
+  exit 2
+fi
+
 for pattern in "${patterns[@]}"; do
   set +e
-  matches="$(rg --files-with-matches --regexp "$pattern" -- "${candidate_files[@]}" 2>&1)"
+  if [[ "$scanner" == 'rg' ]]; then
+    matches="$(rg --files-with-matches --regexp "$pattern" -- "${candidate_files[@]}" 2>&1)"
+  else
+    matches="$(grep --extended-regexp --binary-files=without-match --files-with-matches -- "$pattern" "${candidate_files[@]}" 2>&1)"
+  fi
   status=$?
   set -e
   case "$status" in

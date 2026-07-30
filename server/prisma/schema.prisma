@@ -267,30 +267,6 @@ model AuthFlowToken {
   @@index([kind, expiresAt])
 }
 
-model StorageDeletionJob {
-  id            String   @id @default(cuid())
-  entryId       String
-  storageKey    String   @unique
-  attemptCount  Int      @default(0)
-  lastError     String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  nextAttemptAt DateTime @default(now())
-
-  @@index([nextAttemptAt, createdAt])
-  @@index([entryId])
-}
-
-model AuthFlowToken {
-  tokenHash String            @id
-  kind      AuthFlowTokenKind
-  userId    String?
-  expiresAt DateTime
-  createdAt DateTime          @default(now())
-
-  @@index([kind, expiresAt])
-}
-
 model CaptureMarker {
   id          String            @id
   entryId     String

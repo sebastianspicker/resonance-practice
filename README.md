@@ -6,6 +6,10 @@ teaching-lesson entries, attach audio or consented video, submit entries to a
 course, and receive timestamped feedback. Teachers review submitted entries
 within their course memberships.
 
+[Open the static product walkthrough](https://sebastianspicker.github.io/resonance/).
+It uses sanitized fixture data and the app's visual system. Every command-capable
+action is marked as simulated, and the page does not connect to the API or store data.
+
 The repository contains a native SwiftUI client, a Fastify API, a PostgreSQL
 schema, and local development infrastructure. The current
 `v0.1.0-alpha.1` candidate is source-only. It does not include a signed app,

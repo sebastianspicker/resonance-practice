@@ -4,11 +4,6 @@ import SwiftUI
 
 struct WorkspaceWaveformPlayer: View {
     let duration: Int
-    private let heights: [CGFloat] = [
-        0.14, 0.38, 0.68, 0.31, 0.16, 0.48, 0.83, 0.36, 0.12, 0.29, 0.57, 0.86, 0.44, 0.2,
-        0.16, 0.6, 0.92, 0.5, 0.24, 0.13, 0.35, 0.7, 0.42, 0.17, 0.49, 0.9, 0.56, 0.27,
-        0.12, 0.37, 0.74, 0.41, 0.18, 0.3, 0.64, 0.8, 0.34, 0.15, 0.55, 0.88, 0.44, 0.22
-    ]
 
     var body: some View {
         VStack(spacing: 14) {
@@ -18,11 +13,11 @@ struct WorkspaceWaveformPlayer: View {
                     .foregroundStyle(AppTheme.workspaceMuted)
                 GeometryReader { proxy in
                     HStack(alignment: .center, spacing: 2) {
-                        ForEach(Array(heights.enumerated()), id: \.offset) { index, height in
+                        ForEach(Array(WaveformPattern.defaultHeights.enumerated()), id: \.offset) { index, height in
                             Capsule()
                                 .fill(barFill(for: index))
                                 .frame(
-                                    width: max(2, (proxy.size.width - 82) / CGFloat(heights.count)),
+                                    width: max(2, (proxy.size.width - 82) / CGFloat(WaveformPattern.defaultHeights.count)),
                                     height: max(4, proxy.size.height * height)
                                 )
                         }
@@ -82,7 +77,7 @@ struct WorkspaceWaveformPlayer: View {
 
     private func barFill(for index: Int) -> Color {
         // Soft accent gradient along the timeline; playhead sits slightly past start.
-        let progress = CGFloat(index) / CGFloat(max(heights.count - 1, 1))
+        let progress = CGFloat(index) / CGFloat(max(WaveformPattern.defaultHeights.count - 1, 1))
         if progress < 0.35 {
             return AppTheme.accent.opacity(0.55 + progress * 0.9)
         }

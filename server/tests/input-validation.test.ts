@@ -36,6 +36,39 @@ async function expectNullBodyRejected(method: 'post' | 'patch', path: string) {
   expect(response.body.error?.code).toBe('VALIDATION_ERROR');
 }
 
+type UploadSizeValidationResponse = {
+  status: number;
+  body: {
+    error?: { code?: string };
+    artifact?: { expectedSizeBytes?: number };
+    expectedSizeBytes?: number;
+  };
+};
+
+async function expectUploadSizeValidation(
+  submit: (artifactId: string, sizeBytes?: number) => Promise<UploadSizeValidationResponse>,
+  successStatus: number,
+  expectedSize: (body: UploadSizeValidationResponse['body']) => number | undefined
+) {
+  for (const [artifactId, sizeBytes] of [
+    ['artifact-size-zero', 0],
+    ['artifact-size-decimal', 1.5],
+    ['artifact-size-too-large', 104_857_601],
+  ] as const) {
+    const response = await submit(artifactId, sizeBytes);
+    expect(response.status).toBe(400);
+    expect(response.body.error?.code).toBe('VALIDATION_ERROR');
+  }
+
+  const missing = await submit('artifact-size-missing');
+  expect(missing.status).toBe(400);
+  expect(missing.body.error?.code).toBe('VALIDATION_ERROR');
+
+  const boundary = await submit('artifact-size-boundary', 104_857_600);
+  expect(boundary.status).toBe(successStatus);
+  expect(expectedSize(boundary.body)).toBe(104_857_600);
+}
+
 describe('input validation', () => {
   installBasicSuite();
 
@@ -510,90 +543,38 @@ describe('input validation', () => {
 
     it('requires a positive integer upload size within the configured limit', async () => {
       const token = await login('student');
-      for (const [id, sizeBytes] of [
-        ['artifact-size-zero', 0],
-        ['artifact-size-decimal', 1.5],
-        ['artifact-size-too-large', 104_857_601],
-      ] as const) {
-        const res = await request(app.server)
-          .post('/api/v1/artifact-sessions')
-          .set('Authorization', `Bearer ${token}`)
-          .send({
-            operationId: `operation-${id}`,
+      await expectUploadSizeValidation(
+        async (artifactId, sizeBytes) =>
+          postArtifactSession(token, {
+            operationId: `operation-${artifactId}`,
             entryId,
-            artifactId: id,
+            artifactId,
             type: 'audio',
             durationSeconds: 60,
-            sizeBytes,
+            ...(sizeBytes === undefined ? {} : { sizeBytes }),
             baseVersion: 1,
-          });
-        expect(res.status).toBe(400);
-        expect(res.body.error?.code).toBe('VALIDATION_ERROR');
-      }
-
-      const missing = await request(app.server)
-        .post('/api/v1/artifact-sessions')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          operationId: 'operation-size-missing',
-          entryId,
-          artifactId: 'artifact-size-missing',
-          type: 'audio',
-          durationSeconds: 60,
-          baseVersion: 1,
-        });
-      expect(missing.status).toBe(400);
-      expect(missing.body.error?.code).toBe('VALIDATION_ERROR');
-
-      const boundary = await request(app.server)
-        .post('/api/v1/artifact-sessions')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          operationId: 'operation-size-boundary',
-          entryId,
-          artifactId: 'artifact-size-boundary',
-          type: 'audio',
-          durationSeconds: 60,
-          sizeBytes: 104_857_600,
-          baseVersion: 1,
-        });
-      expect(boundary.status).toBe(200);
-      expect(boundary.body.artifact.expectedSizeBytes).toBe(104_857_600);
+          }),
+        200,
+        (body) => body.artifact.expectedSizeBytes
+      );
     });
 
     it('requires a positive integer upload size within the configured limit', async () => {
       const token = await login('student');
-      for (const [id, sizeBytes] of [
-        ['artifact-size-zero', 0],
-        ['artifact-size-decimal', 1.5],
-        ['artifact-size-too-large', 104_857_601],
-      ] as const) {
-        const res = await request(app.server)
-          .post(`/entries/${entryId}/artifacts`)
-          .set('Authorization', `Bearer ${token}`)
-          .send({ id, type: 'audio', durationSeconds: 60, sizeBytes });
-        expect(res.status).toBe(400);
-        expect(res.body.error?.code).toBe('VALIDATION_ERROR');
-      }
-
-      const missing = await request(app.server)
-        .post(`/entries/${entryId}/artifacts`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({ id: 'artifact-size-missing', type: 'audio', durationSeconds: 60 });
-      expect(missing.status).toBe(400);
-      expect(missing.body.error?.code).toBe('VALIDATION_ERROR');
-
-      const boundary = await request(app.server)
-        .post(`/entries/${entryId}/artifacts`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          id: 'artifact-size-boundary',
-          type: 'audio',
-          durationSeconds: 60,
-          sizeBytes: 104_857_600,
-        });
-      expect(boundary.status).toBe(201);
-      expect(boundary.body.expectedSizeBytes).toBe(104_857_600);
+      await expectUploadSizeValidation(
+        async (artifactId, sizeBytes) =>
+          request(app.server)
+            .post(`/entries/${entryId}/artifacts`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({
+              id: artifactId,
+              type: 'audio',
+              durationSeconds: 60,
+              ...(sizeBytes === undefined ? {} : { sizeBytes }),
+            }),
+        201,
+        (body) => body.expectedSizeBytes
+      );
     });
 
     it('rejects negative durationSeconds', async () => {

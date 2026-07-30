@@ -85,6 +85,9 @@ jobs:
       - name: Validate demo fixture
         run: node ./scripts/demo/validate-fixture.mjs
 
+      - name: Validate static Pages demo
+        run: node ./scripts/demo/validate-static-site.mjs
+
       - name: Validate public documentation and screenshots
         run: node ./scripts/validate-public-docs.mjs
 
@@ -128,7 +131,7 @@ jobs:
         run: docker run --rm -v "$PWD:/mnt" -w /mnt --entrypoint sh koalaman/shellcheck-alpine:stable -lc 'shellcheck -s bash scripts/*.sh scripts/demo/*.sh'
 
       - name: Lint GitHub Actions workflows
-        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12
 
       - name: Generate Prisma client
         working-directory: server
@@ -164,7 +167,6 @@ jobs:
         run: |
           node dist/index.js >/tmp/resonance-server.log 2>&1 &
           server_pid=$!
-          # shellcheck disable=SC2317 # Invoked indirectly by the EXIT trap.
           cleanup() {
             kill "$server_pid" >/dev/null 2>&1 || true
             # The server has three independent five-second shutdown budgets.
@@ -181,11 +183,15 @@ jobs:
           trap cleanup EXIT
           for _ in {1..30}; do
             if curl -fsS http://127.0.0.1:4000/ready >/dev/null; then
+              trap - EXIT
+              cleanup
               exit 0
             fi
             sleep 1
           done
           cat /tmp/resonance-server.log
+          trap - EXIT
+          cleanup
           exit 1
 
       - name: Test with coverage

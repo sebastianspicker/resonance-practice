@@ -79,9 +79,7 @@ extension EntryDetailView {
     guard entry.consentConfirmedAt == nil || entry.consentScope == nil else { return }
     entry.consentConfirmedAt = Date()
     entry.consentScope = .privateCourseReview
-    entry.updatedAt = Date()
-    guard saveEntryChanges() else { return }
-    syncManager.enqueue(type: .updateEntry, payload: ["entryId": entry.id])
+    persistEntryMetadataUpdate()
   }
 
   func updateGoalText(_ text: String) {
@@ -89,6 +87,11 @@ extension EntryDetailView {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, trimmed != entry.goalText else { return }
     entry.goalText = trimmed
+    persistEntryMetadataUpdate()
+  }
+
+  /// Persists locally changed entry metadata before placing its normal entry update on the sync queue.
+  private func persistEntryMetadataUpdate() {
     entry.updatedAt = Date()
     guard saveEntryChanges() else { return }
     syncManager.enqueue(type: .updateEntry, payload: ["entryId": entry.id])

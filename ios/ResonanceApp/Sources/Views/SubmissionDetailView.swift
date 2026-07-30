@@ -3,17 +3,57 @@ import SwiftUI
 
 // Sheet/detail presentation for a single queue entry with evidence + feedback.
 
+@MainActor
+func loadSecureReviewArtifact(
+    _ artifact: ArtifactResponse?,
+    accessToken: String?,
+    appState: AppState,
+    player: AVPlayer,
+    isLoading: Binding<Bool>,
+    playbackError: Binding<String?>,
+    beforeLoad: () -> Void = {}
+) async {
+    guard let artifact, let accessToken else { return }
+    isLoading.wrappedValue = true
+    playbackError.wrappedValue = nil
+    player.pause()
+    beforeLoad()
+    defer { isLoading.wrappedValue = false }
+    do {
+        let response = try await appState.apiClient.fetchArtifactDownloadURL(
+            accessToken: accessToken,
+            artifactId: artifact.id
+        )
+        player.replaceCurrentItem(with: AVPlayerItem(url: response.downloadUrl))
+    } catch {
+        player.replaceCurrentItem(with: nil)
+        playbackError.wrappedValue = error.localizedDescription
+    }
+}
+
 struct SubmissionDetailView: View {
     let entry: ReviewQueueEntry
     let onFeedbackQueued: () -> Void
-    var loadsRemoteMedia = true
-    var isFeedbackQueued = false
+    private let loadsRemoteMedia: Bool
+    private let isFeedbackQueued: Bool
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var authManager: AuthManager
     @State private var selectedArtifactId: String?
     @State private var player = AVPlayer()
     @State private var playbackError: String?
     @State private var isLoadingMedia = false
+
+    init(
+        entry: ReviewQueueEntry,
+        onFeedbackQueued: @escaping () -> Void,
+        loadsRemoteMedia: Bool = true,
+        isFeedbackQueued: Bool = false
+    ) {
+        self.entry = entry
+        self.onFeedbackQueued = onFeedbackQueued
+        self.loadsRemoteMedia = loadsRemoteMedia
+        self.isFeedbackQueued = isFeedbackQueued
+    }
 
     var body: some View {
         NavigationStack {
@@ -133,22 +173,13 @@ struct SubmissionDetailView: View {
     }
 
     private func loadSelectedArtifact() async {
-        guard let selectedArtifactId,
-              let artifact = entry.artifacts.first(where: { $0.id == selectedArtifactId }),
-              let token = authManager.session?.accessToken else { return }
-        isLoadingMedia = true
-        playbackError = nil
-        player.pause()
-        defer { isLoadingMedia = false }
-        do {
-            let response = try await appState.apiClient.fetchArtifactDownloadURL(
-                accessToken: token,
-                artifactId: artifact.id
-            )
-            player.replaceCurrentItem(with: AVPlayerItem(url: response.downloadUrl))
-        } catch {
-            player.replaceCurrentItem(with: nil)
-            playbackError = error.localizedDescription
-        }
+        await loadSecureReviewArtifact(
+            entry.artifacts.first(where: { $0.id == selectedArtifactId }),
+            accessToken: authManager.session?.accessToken,
+            appState: appState,
+            player: player,
+            isLoading: $isLoadingMedia,
+            playbackError: $playbackError
+        )
     }
 }

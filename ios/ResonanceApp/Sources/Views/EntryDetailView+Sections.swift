@@ -157,9 +157,27 @@ struct EntryActionsSection: View {
   let draftInstruction: String
   let submit: () -> Void
   let delete: () -> Void
-  var hasAudio: Bool = false
-  var retake: (() -> Void)? = nil
-  var editGoal: (() -> Void)? = nil
+  private let hasAudio: Bool
+  private let retake: (() -> Void)?
+  private let editGoal: (() -> Void)?
+
+  init(
+    entry: LocalPracticeEntry,
+    draftInstruction: String,
+    submit: @escaping () -> Void,
+    delete: @escaping () -> Void,
+    hasAudio: Bool = false,
+    retake: (() -> Void)? = nil,
+    editGoal: (() -> Void)? = nil
+  ) {
+    self.entry = entry
+    self.draftInstruction = draftInstruction
+    self.submit = submit
+    self.delete = delete
+    self.hasAudio = hasAudio
+    self.retake = retake
+    self.editGoal = editGoal
+  }
 
   var body: some View {
     VStack(spacing: 16) {

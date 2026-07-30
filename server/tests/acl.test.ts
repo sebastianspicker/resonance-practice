@@ -315,9 +315,6 @@ describe('acl', () => {
 
     const feedbackAfter = await prisma.feedback.findMany({ where: { targetId: entry.id } });
     const markerAfter = await prisma.marker.findUnique({ where: { id: 'mk_entry_1' } });
-    const tombstone = await prisma.deletedEntryTombstone.findUnique({ where: { id: entry.id } });
-    const deletionJobs = await prisma.storageDeletionJob.findMany({ where: { entryId: entry.id } });
-
     await expectDeletedEntryAndArtifacts(entry.id, [artifact.id], [artifact.storageKey]);
     expect(feedbackAfter.length).toBe(0);
     expect(markerAfter).toBeNull();
