@@ -94,6 +94,59 @@ function validatePublicationChanges(sourceCommit, manifestFile, release) {
   }
 }
 
+function recordMarkdownLink(
+  file,
+  absolute,
+  publicationCandidates,
+  imageReferences,
+  match,
+) {
+  const [, image, label, rawTarget] = match;
+  if (image && !label.trim()) fail(`${file}: image alt text is empty`);
+
+  let target = rawTarget.trim();
+  if (target.startsWith("<") && target.endsWith(">")) {
+    target = target.slice(1, -1);
+  }
+  target = target.split("#", 1)[0].split("?", 1)[0];
+  if (!target || /^(https?:|mailto:|tel:)/i.test(target)) return;
+
+  try {
+    target = decodeURIComponent(target);
+  } catch {
+    fail(`${file}: link target is not valid URI text: ${rawTarget}`);
+    return;
+  }
+
+  const resolvedTarget = resolve(dirname(absolute), target);
+  if (resolvedTarget !== root && !resolvedTarget.startsWith(`${root}/`)) {
+    fail(`${file}: local link escapes the repository: ${rawTarget}`);
+    return;
+  }
+  if (!existsSync(resolvedTarget)) {
+    fail(`${file}: local link does not resolve: ${rawTarget}`);
+    return;
+  }
+  const realTarget = realpathSync(resolvedTarget);
+  if (realTarget !== root && !realTarget.startsWith(`${root}/`)) {
+    fail(`${file}: local link escapes the repository: ${rawTarget}`);
+    return;
+  }
+  const repositoryPath = relative(root, resolvedTarget);
+  const realRepositoryPath = relative(root, realTarget);
+  if (!publicationCandidates.has(realRepositoryPath)) {
+    fail(
+      `${file}: local link does not resolve to a publication candidate: ${rawTarget}`,
+    );
+    return;
+  }
+  if (image && label.trim()) {
+    const references = imageReferences.get(repositoryPath) ?? [];
+    references.push(file);
+    imageReferences.set(repositoryPath, references);
+  }
+}
+
 function validateMarkdown() {
   const files = repositoryFiles("*.md");
   const publicationCandidates = new Set(repositoryFiles("."));
@@ -106,53 +159,14 @@ function validateMarkdown() {
     const inlineLink = /(!?)\[([^\]]*)\]\(([^)]+)\)/g;
 
     for (const match of content.matchAll(inlineLink)) {
-      const [, image, label, rawTarget] = match;
-      if (image) {
-        imageCount += 1;
-        if (!label.trim()) fail(`${file}: image alt text is empty`);
-      }
-
-      let target = rawTarget.trim();
-      if (target.startsWith("<") && target.endsWith(">")) {
-        target = target.slice(1, -1);
-      }
-      target = target.split("#", 1)[0].split("?", 1)[0];
-      if (!target || /^(https?:|mailto:|tel:)/i.test(target)) continue;
-
-      try {
-        target = decodeURIComponent(target);
-      } catch {
-        fail(`${file}: link target is not valid URI text: ${rawTarget}`);
-        continue;
-      }
-
-      const resolvedTarget = resolve(dirname(absolute), target);
-      if (resolvedTarget !== root && !resolvedTarget.startsWith(`${root}/`)) {
-        fail(`${file}: local link escapes the repository: ${rawTarget}`);
-        continue;
-      }
-      if (!existsSync(resolvedTarget)) {
-        fail(`${file}: local link does not resolve: ${rawTarget}`);
-        continue;
-      }
-      const realTarget = realpathSync(resolvedTarget);
-      if (realTarget !== root && !realTarget.startsWith(`${root}/`)) {
-        fail(`${file}: local link escapes the repository: ${rawTarget}`);
-        continue;
-      }
-      const repositoryPath = relative(root, resolvedTarget);
-      const realRepositoryPath = relative(root, realTarget);
-      if (!publicationCandidates.has(realRepositoryPath)) {
-        fail(
-          `${file}: local link does not resolve to a publication candidate: ${rawTarget}`,
-        );
-        continue;
-      }
-      if (image && label.trim()) {
-        const references = imageReferences.get(repositoryPath) ?? [];
-        references.push(file);
-        imageReferences.set(repositoryPath, references);
-      }
+      if (match[1]) imageCount += 1;
+      recordMarkdownLink(
+        file,
+        absolute,
+        publicationCandidates,
+        imageReferences,
+        match,
+      );
     }
   }
 

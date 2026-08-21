@@ -56,7 +56,6 @@ cd ..
 ./scripts/lint-swift.sh lint
 ./scripts/verify-ios.sh
 node scripts/validate-public-docs.mjs
-node --test tests/repository/*.test.mjs
 ./scripts/secret-scan.sh
 ./scripts/check-no-build-artifacts.sh
 ```

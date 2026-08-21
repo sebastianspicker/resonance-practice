@@ -13,7 +13,7 @@ commit.
 ## Capture and promotion policy
 
 1. Capture from a clean source-freeze commit after all required local gates pass.
-2. Keep unreviewed output in `artifacts/e2e-walkthrough/` or `docs/assets/screenshots/local/`; both are ignored.
+2. Keep unreviewed images outside the repository.
 3. Inspect every image for clipping, role correctness, debug content, private data, empty frames, and misleading state.
 4. Validate count, filename, PNG signature, dimensions, uniqueness, and manifest checksums.
 5. Publish only reviewed PNGs plus sanitized metadata under `docs/assets/screenshots/approved/<version>/`.

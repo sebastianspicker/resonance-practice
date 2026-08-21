@@ -147,8 +147,7 @@ Reset only those demo records:
 ```
 
 The reset guard accepts only the loopback database named `resonance`. See
-[Local demo](./LOCAL_DEMO.md) for the in-app workflow and screenshot capture
-path.
+[Local demo](./LOCAL_DEMO.md) for the in-app workflow.
 
 ## Backend tests
 
@@ -160,37 +159,9 @@ cd server
 npm test
 ```
 
-The default Vitest configuration excludes `tests/e2e/`. It runs serially and
-enforces these V8 coverage thresholds when coverage is enabled:
-
-| Metric | Threshold |
-| --- | ---: |
-| Statements | 85% |
-| Branches | 75% |
-| Functions | 90% |
-| Lines | 85% |
-
-Run coverage:
-
-```bash
-cd server
-npm run test:coverage
-```
-
-Process-level E2E tests require PostgreSQL and MinIO. The database must be named
-`resonance_test`:
-
-```bash
-docker compose -f infra/docker-compose.yml up -d
-cd server
-export DATABASE_URL=postgresql://resonance:resonance@localhost:5432/resonance_test
-node ../scripts/assert-test-database-url.mjs
-npm run prisma:migrate
-npm run test:e2e
-```
-
-The E2E suite builds and starts the API on a temporary loopback port and
-exercises the student-submission and teacher-feedback flow over HTTP.
+The Vitest configuration runs the deliberately small server boundary suite.
+The database must be named `resonance_test`; the destructive-target guard runs
+before migrations or tests.
 
 ## iOS tests
 
@@ -232,7 +203,6 @@ Additional repository checks:
 ```bash
 node scripts/demo/validate-fixture.mjs
 node scripts/validate-public-docs.mjs
-node --test tests/repository/*.test.mjs
 ./scripts/secret-scan.sh
 ./scripts/check-no-build-artifacts.sh
 ```
@@ -252,14 +222,14 @@ This command:
 
 1. checks the test database target and Node version;
 2. starts PostgreSQL and MinIO;
-3. validates Compose, fixtures, documentation, repository policy scripts, shell
+3. validates Compose, fixtures, documentation, shell
    scripts, and workflows;
 4. scans tracked and nonignored files for secrets and disallowed output;
 5. installs locked backend dependencies;
 6. runs backend lint, dead-code, duplicate, format, and dependency checks;
 7. generates Prisma, applies migrations, compiles TypeScript, and probes
    readiness;
-8. runs backend coverage and process E2E tests;
+8. runs the compact backend boundary suite;
 9. runs SwiftLint and iOS XCTest with both compiler paths.
 
 Docker must be running even without `--with-docker` because the script uses

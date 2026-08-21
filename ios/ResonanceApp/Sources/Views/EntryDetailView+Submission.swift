@@ -3,7 +3,7 @@ import SwiftData
 
 // Coordinates submission, teaching-lesson metadata, deletion, and feedback refresh actions.
 
-extension EntryDetailView {
+extension EntryDetailScreen {
   func submitEntry() {
     guard !entry.artifacts.isEmpty else {
       reportSubmissionError("At least one recording is required before submitting.")

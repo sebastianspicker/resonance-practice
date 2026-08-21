@@ -12,7 +12,7 @@ accessibility, identity, storage, signing, or deployment check has passed.
   workflows, verification, probes, production application contract, and
   troubleshooting.
 - [Local demo](./LOCAL_DEMO.md): deterministic fixture setup, in-app loading,
-  reset behavior, and local screenshot capture.
+  reset behavior, and manual visual review guidance.
 - [API reference](./API.md): routes, request and response contracts, limits,
   authorization, and error codes.
 - [Architecture](./ARCHITECTURE.md): runtime components, data flow,

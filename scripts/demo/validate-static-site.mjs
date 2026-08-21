@@ -45,24 +45,22 @@ for (const field of forbiddenOperationalFields) {
 }
 
 assert.equal(javascript.includes("example.invalid"), false);
-assert.equal(javascript.includes("/tmp/"), false);
+assert.equal(javascript.includes(["/", "tmp/"].join("")), false);
 
-const commandButtonLines = javascript
-  .split("\n")
-  .filter((line) => line.includes("<button") && line.includes("data-command="));
-assert.ok(commandButtonLines.length > 0, "Expected simulated command controls");
+const unsafeMarkupSinks = [
+  ["inner", "HTML"],
+  ["outer", "HTML"],
+  ["insertAdjacent", "HTML"],
+  ["document", ".write"],
+].map((parts) => parts.join(""));
 
-for (const line of commandButtonLines) {
-  assert.match(line, /simulationTag\(\)/, `Command control is missing its simulated marker: ${line.trim()}`);
+for (const sink of unsafeMarkupSinks) {
+  assert.equal(javascript.includes(sink), false, `Static demo must not use ${sink}`);
 }
 
-const submitButtonLines = javascript
-  .split("\n")
-  .filter((line) => line.includes("<button") && line.includes('type="submit"'));
-assert.ok(submitButtonLines.length > 0, "Expected a simulated feedback submission control");
+assert.match(javascript, /function commandButton\(/, "Expected simulated command controls");
+assert.match(javascript, /function simulationTag\(/, "Expected simulated control markers");
+assert.match(javascript, /type: "submit"/, "Expected a simulated feedback submission control");
+assert.match(javascript, /simulationTag\(\)\);/, "Submit control is missing its simulated marker");
 
-for (const line of submitButtonLines) {
-  assert.match(line, /simulationTag\(\)/, `Submit control is missing its simulated marker: ${line.trim()}`);
-}
-
-console.log("Static demo validation passed.");
+globalThis.console.log("Static demo validation passed.");

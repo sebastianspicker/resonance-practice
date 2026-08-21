@@ -59,20 +59,50 @@ enum AppTheme {
     static let statusDraftFill = Color(light: Color(red: 0.941, green: 0.941, blue: 0.953), dark: Color(white: 0.16))
     static let statusDraftForeground = Color(light: Color(red: 0.227, green: 0.216, blue: 0.282), dark: Color(white: 0.78))
 
-    static let statusLocalFill = Color(light: Color(red: 0.933, green: 0.949, blue: 1.0), dark: Color(red: 0.102, green: 0.133, blue: 0.251))
-    static let statusLocalForeground = Color(light: Color(red: 0.208, green: 0.345, blue: 0.780), dark: Color(red: 0.541, green: 0.643, blue: 1.0))
+    static let statusLocalFill = Color(
+        light: Color(red: 0.933, green: 0.949, blue: 1.0),
+        dark: Color(red: 0.102, green: 0.133, blue: 0.251)
+    )
+    static let statusLocalForeground = Color(
+        light: Color(red: 0.208, green: 0.345, blue: 0.780),
+        dark: Color(red: 0.541, green: 0.643, blue: 1.0)
+    )
 
-    static let statusQueuedFill = Color(light: Color(red: 1.0, green: 0.965, blue: 0.878), dark: Color(red: 0.180, green: 0.141, blue: 0.063))
-    static let statusQueuedForeground = Color(light: Color(red: 0.604, green: 0.404, blue: 0.0), dark: Color(red: 0.910, green: 0.722, blue: 0.290))
+    static let statusQueuedFill = Color(
+        light: Color(red: 1.0, green: 0.965, blue: 0.878),
+        dark: Color(red: 0.180, green: 0.141, blue: 0.063)
+    )
+    static let statusQueuedForeground = Color(
+        light: Color(red: 0.604, green: 0.404, blue: 0.0),
+        dark: Color(red: 0.910, green: 0.722, blue: 0.290)
+    )
 
-    static let statusSubmittedFill = Color(light: Color(red: 0.941, green: 0.929, blue: 1.0), dark: Color(red: 0.149, green: 0.129, blue: 0.227))
-    static let statusSubmittedForeground = Color(light: Color(red: 0.310, green: 0.208, blue: 0.678), dark: Color(red: 0.784, green: 0.737, blue: 1.0))
+    static let statusSubmittedFill = Color(
+        light: Color(red: 0.941, green: 0.929, blue: 1.0),
+        dark: Color(red: 0.149, green: 0.129, blue: 0.227)
+    )
+    static let statusSubmittedForeground = Color(
+        light: Color(red: 0.310, green: 0.208, blue: 0.678),
+        dark: Color(red: 0.784, green: 0.737, blue: 1.0)
+    )
 
-    static let statusReviewedFill = Color(light: Color(red: 0.910, green: 0.965, blue: 0.933), dark: Color(red: 0.082, green: 0.208, blue: 0.157))
-    static let statusReviewedForeground = Color(light: Color(red: 0.122, green: 0.478, blue: 0.298), dark: Color(red: 0.365, green: 0.792, blue: 0.627))
+    static let statusReviewedFill = Color(
+        light: Color(red: 0.910, green: 0.965, blue: 0.933),
+        dark: Color(red: 0.082, green: 0.208, blue: 0.157)
+    )
+    static let statusReviewedForeground = Color(
+        light: Color(red: 0.122, green: 0.478, blue: 0.298),
+        dark: Color(red: 0.365, green: 0.792, blue: 0.627)
+    )
 
-    static let statusFailedFill = Color(light: Color(red: 0.996, green: 0.953, blue: 0.949), dark: Color(red: 0.180, green: 0.082, blue: 0.078))
-    static let statusFailedForeground = Color(light: Color(red: 0.706, green: 0.137, blue: 0.094), dark: Color(red: 0.941, green: 0.443, blue: 0.404))
+    static let statusFailedFill = Color(
+        light: Color(red: 0.996, green: 0.953, blue: 0.949),
+        dark: Color(red: 0.180, green: 0.082, blue: 0.078)
+    )
+    static let statusFailedForeground = Color(
+        light: Color(red: 0.706, green: 0.137, blue: 0.094),
+        dark: Color(red: 0.941, green: 0.443, blue: 0.404)
+    )
 
     static let statusOfflineFill = Color(light: Color(red: 0.941, green: 0.941, blue: 0.953), dark: Color(white: 0.16))
     static let statusOfflineForeground = Color(light: Color(red: 0.227, green: 0.216, blue: 0.282), dark: Color(white: 0.78))

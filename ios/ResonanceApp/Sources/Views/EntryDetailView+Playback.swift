@@ -2,7 +2,7 @@ import SwiftUI
 
 // Manages artifact playback state and presentation helpers for an entry detail screen.
 
-extension EntryDetailView {
+extension EntryDetailScreen {
   func formatTime(_ seconds: TimeInterval) -> String {
     String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
   }

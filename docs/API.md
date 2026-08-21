@@ -19,11 +19,6 @@ Every response includes:
 - `GET /health` is a process-liveness probe and returns `{ "status": "ok" }` without querying dependencies.
 - `GET /ready` checks PostgreSQL and the configured object-storage bucket within the validated dependency deadline. It returns `{ "status": "ready" }` with `200`, or `{ "status": "unavailable" }` with `503`.
 
-## Service Probes
-
-- `GET /health` is a process-liveness probe and returns `{ "status": "ok" }` without querying dependencies.
-- `GET /ready` checks PostgreSQL and the configured object-storage bucket within the validated dependency deadline. It returns `{ "status": "ready" }` with `200`, or `{ "status": "unavailable" }` with `503`.
-
 ## Status Codes
 
 In addition to the error codes listed below, the API uses:

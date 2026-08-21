@@ -4,7 +4,7 @@ import SwiftUI
 
 // Implements recording, capture-profile, and server-conflict actions for an entry detail screen.
 
-extension EntryDetailView {
+extension EntryDetailScreen {
   var captureProfileSelection: Binding<CaptureProfile> {
     Binding(get: { entry.captureProfile ?? .teacherLearner }, set: { updateCaptureProfile($0) })
   }

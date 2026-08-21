@@ -161,8 +161,7 @@ The fixture can be validated without Docker:
 node scripts/demo/validate-fixture.mjs
 ```
 
-See [Local demo](docs/LOCAL_DEMO.md) for fixture loading, reset behavior, and
-the screenshot capture path.
+See [Local demo](docs/LOCAL_DEMO.md) for fixture loading and reset behavior.
 
 ## Repository structure
 
@@ -171,11 +170,10 @@ the screenshot capture path.
 | `ios/ResonanceApp/` | SwiftUI application, SwiftData models, networking, sync services, resources, Xcode project, and XCTest. |
 | `server/src/` | Fastify composition root, routes, authentication, validation, storage, and service logic. |
 | `server/prisma/` | Prisma schema, baseline migration, seed commands, and demo reset logic. |
-| `server/tests/` | Vitest suites, shared support modules, and process-level E2E tests. |
-| `tests/repository/` | Node test suites for repository policy scripts. |
+| `server/tests/` | Compact Vitest suites for database, auth, artifact, entry, and sync boundaries. |
 | `infra/` | Loopback-only PostgreSQL and MinIO Compose services. |
 | `demo/` | Deterministic mock-university fixture. |
-| `scripts/` | Verification, safety, local demo, and screenshot commands. |
+| `scripts/` | Verification, safety, and local demo commands. |
 | `docs/` | API, architecture, operations, security, product, and release documentation. |
 | `.github/` | CI, security analysis, issue forms, and contribution templates. |
 
@@ -210,8 +208,8 @@ The complete local CI-equivalent command is:
 
 It validates Compose, repository boundaries, fixtures, documentation, shell
 script contracts, workflows, backend lint and formatting, dependency audit, Prisma
-generation and migration, TypeScript compilation, server readiness, coverage,
-process-level E2E behavior, SwiftLint, and iOS XCTest with both supported Swift
+generation and migration, TypeScript compilation, server readiness, the compact
+backend suite, SwiftLint, and iOS XCTest with both supported Swift
 compiler paths.
 
 Focused checks:
@@ -220,9 +218,6 @@ Focused checks:
 # Backend tests. PostgreSQL must be available.
 cd server
 npm test
-
-# Process-level E2E. PostgreSQL and MinIO must be available.
-npm run test:e2e
 
 # iOS build and XCTest on an available Simulator.
 cd ..

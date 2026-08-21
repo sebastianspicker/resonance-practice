@@ -336,11 +336,19 @@ export async function finalizeArtifactCompletionClaim(
   return finalized;
 }
 
+async function lockAdvisoryIdentity(
+  tx: EntryTransaction,
+  identity: string,
+  seed: number
+): Promise<void> {
+  await tx.$queryRaw<Array<{ locked: string }>>`
+    SELECT pg_advisory_xact_lock(hashtextextended(${identity}, ${seed}))::text AS "locked"
+  `;
+}
+
 /** Serialize creation and deletion for one client-generated entry ID. */
 export async function lockEntryIdentity(tx: EntryTransaction, entryId: string): Promise<void> {
-  await tx.$queryRaw<Array<{ locked: string }>>`
-    SELECT pg_advisory_xact_lock(hashtextextended(${entryId}, 0))::text AS "locked"
-  `;
+  await lockAdvisoryIdentity(tx, entryId, 0);
 }
 
 /** Serialize one user's idempotency key before reading or writing its receipt. */
@@ -349,11 +357,7 @@ export async function lockOperationIdentity(
   userId: string,
   operationId: string
 ): Promise<void> {
-  await tx.$queryRaw<Array<{ locked: string }>>`
-    SELECT pg_advisory_xact_lock(
-      hashtextextended(${`${userId}:${operationId}`}, 1)
-    )::text AS "locked"
-  `;
+  await lockAdvisoryIdentity(tx, `${userId}:${operationId}`, 1);
 }
 
 /** Serialize finalization and rotation for one durable upload session. */
@@ -361,9 +365,7 @@ export async function lockArtifactSessionIdentity(
   tx: EntryTransaction,
   sessionId: string
 ): Promise<void> {
-  await tx.$queryRaw<Array<{ locked: string }>>`
-    SELECT pg_advisory_xact_lock(hashtextextended(${sessionId}, 2))::text AS "locked"
-  `;
+  await lockAdvisoryIdentity(tx, sessionId, 2);
 }
 
 /** Serialize durable artifact quota admission for one user. */
@@ -371,9 +373,7 @@ export async function lockArtifactQuotaIdentity(
   tx: EntryTransaction,
   userId: string
 ): Promise<void> {
-  await tx.$queryRaw<Array<{ locked: string }>>`
-    SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 3))::text AS "locked"
-  `;
+  await lockAdvisoryIdentity(tx, userId, 3);
 }
 
 /**

@@ -280,14 +280,17 @@ struct WorkspaceReviewDetail: View {
         .padding(.top, 6)
     }
 
-    private struct AudioSnapshot {
+}
+
+private extension WorkspaceReviewDetail {
+    struct AudioSnapshot {
         let currentTime: TimeInterval
         let duration: TimeInterval
         let isPlaying: Bool
         let decorativeLevel: Double
     }
 
-    private func audioSnapshot() -> AudioSnapshot {
+    func audioSnapshot() -> AudioSnapshot {
         let current = player.currentTime().seconds
         let safeCurrent = current.isFinite ? current : 0
         let itemDuration = player.currentItem?.duration.seconds ?? .nan
@@ -303,7 +306,7 @@ struct WorkspaceReviewDetail: View {
         )
     }
 
-    private func togglePlayPause() {
+    func togglePlayPause() {
         if isAudioPlaying {
             player.pause()
             isAudioPlaying = false
@@ -313,7 +316,7 @@ struct WorkspaceReviewDetail: View {
         }
     }
 
-    private func skip(by seconds: TimeInterval) {
+    func skip(by seconds: TimeInterval) {
         let current = player.currentTime().seconds
         let base = current.isFinite ? current : 0
         let itemDuration = player.currentItem?.duration.seconds ?? .nan
@@ -323,19 +326,21 @@ struct WorkspaceReviewDetail: View {
         seekAudio(to: target)
     }
 
-    private func seekAudio(to time: TimeInterval) {
+    func seekAudio(to time: TimeInterval) {
         player.seek(to: CMTime(seconds: max(0, time), preferredTimescale: 600))
     }
 
-    private func loadSelectedArtifact() async {
+    func loadSelectedArtifact() async {
         await loadSecureReviewArtifact(
             selectedArtifact,
             accessToken: authManager.session?.accessToken,
             appState: appState,
             player: player,
-            isLoading: $isLoadingMedia,
-            playbackError: $playbackError,
-            beforeLoad: { isAudioPlaying = false }
+            state: SecureReviewArtifactLoadState(
+                isLoading: $isLoadingMedia,
+                playbackError: $playbackError,
+                beforeLoad: { isAudioPlaying = false }
+            )
         )
     }
 }

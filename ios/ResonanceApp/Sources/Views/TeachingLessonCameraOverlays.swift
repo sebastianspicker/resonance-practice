@@ -106,56 +106,61 @@ struct CaptureOverlayView: View {
         ZStack {
             switch profile {
             case .roomOverview:
-                zone(
-                    rect: CGRect(x: size.width * 0.16, y: size.height * 0.22, width: size.width * 0.68, height: size.height * 0.48),
-                    color: .cyan
-                )
+                roomOverviewZone(in: size)
             case .teacherLearner:
-                zone(
-                    rect: CGRect(x: size.width * 0.18, y: size.height * 0.26, width: size.width * 0.22, height: size.height * 0.5),
-                    color: .cyan
-                )
-                zone(
-                    rect: CGRect(x: size.width * 0.48, y: size.height * 0.28, width: size.width * 0.36, height: size.height * 0.42),
-                    color: .yellow
-                )
+                teacherLearnerZones(in: size)
             case .instrumentCloseup:
-                zone(
-                    rect: CGRect(x: size.width * 0.28, y: size.height * 0.34, width: size.width * 0.44, height: size.height * 0.32),
-                    color: .orange
-                )
+                instrumentCloseupZone(in: size)
             case .ensembleGroup:
-                zone(
-                    rect: CGRect(x: size.width * 0.14, y: size.height * 0.36, width: size.width * 0.22, height: size.height * 0.32),
-                    color: .cyan
-                )
-                zone(
-                    rect: CGRect(x: size.width * 0.39, y: size.height * 0.30, width: size.width * 0.22, height: size.height * 0.38),
-                    color: .yellow
-                )
-                zone(
-                    rect: CGRect(x: size.width * 0.64, y: size.height * 0.36, width: size.width * 0.22, height: size.height * 0.32),
-                    color: .green
-                )
+                ensembleGroupZones(in: size)
             case .groupWork:
-                zone(
-                    rect: CGRect(x: size.width * 0.12, y: size.height * 0.25, width: size.width * 0.32, height: size.height * 0.24),
-                    color: .cyan
-                )
-                zone(
-                    rect: CGRect(x: size.width * 0.56, y: size.height * 0.25, width: size.width * 0.32, height: size.height * 0.24),
-                    color: .yellow
-                )
-                zone(
-                    rect: CGRect(x: size.width * 0.12, y: size.height * 0.58, width: size.width * 0.32, height: size.height * 0.24),
-                    color: .green
-                )
-                zone(
-                    rect: CGRect(x: size.width * 0.56, y: size.height * 0.58, width: size.width * 0.32, height: size.height * 0.24),
-                    color: .orange
-                )
+                groupWorkZones(in: size)
             }
         }
+    }
+
+    private func roomOverviewZone(in size: CGSize) -> some View {
+        zone(rect: CGRect(x: size.width * 0.16, y: size.height * 0.22, width: size.width * 0.68, height: size.height * 0.48), color: .cyan)
+    }
+
+    @ViewBuilder
+    private func teacherLearnerZones(in size: CGSize) -> some View {
+        zone(rect: CGRect(x: size.width * 0.18, y: size.height * 0.26, width: size.width * 0.22, height: size.height * 0.5), color: .cyan)
+        zone(
+            rect: CGRect(x: size.width * 0.48, y: size.height * 0.28, width: size.width * 0.36, height: size.height * 0.42),
+            color: .yellow
+        )
+    }
+
+    private func instrumentCloseupZone(in size: CGSize) -> some View {
+        zone(
+            rect: CGRect(x: size.width * 0.28, y: size.height * 0.34, width: size.width * 0.44, height: size.height * 0.32),
+            color: .orange
+        )
+    }
+
+    @ViewBuilder
+    private func ensembleGroupZones(in size: CGSize) -> some View {
+        zone(rect: CGRect(x: size.width * 0.14, y: size.height * 0.36, width: size.width * 0.22, height: size.height * 0.32), color: .cyan)
+        zone(
+            rect: CGRect(x: size.width * 0.39, y: size.height * 0.30, width: size.width * 0.22, height: size.height * 0.38),
+            color: .yellow
+        )
+        zone(rect: CGRect(x: size.width * 0.64, y: size.height * 0.36, width: size.width * 0.22, height: size.height * 0.32), color: .green)
+    }
+
+    @ViewBuilder
+    private func groupWorkZones(in size: CGSize) -> some View {
+        zone(rect: CGRect(x: size.width * 0.12, y: size.height * 0.25, width: size.width * 0.32, height: size.height * 0.24), color: .cyan)
+        zone(
+            rect: CGRect(x: size.width * 0.56, y: size.height * 0.25, width: size.width * 0.32, height: size.height * 0.24),
+            color: .yellow
+        )
+        zone(rect: CGRect(x: size.width * 0.12, y: size.height * 0.58, width: size.width * 0.32, height: size.height * 0.24), color: .green)
+        zone(
+            rect: CGRect(x: size.width * 0.56, y: size.height * 0.58, width: size.width * 0.32, height: size.height * 0.24),
+            color: .orange
+        )
     }
 
     private func noConsentZone(in size: CGSize) -> some View {

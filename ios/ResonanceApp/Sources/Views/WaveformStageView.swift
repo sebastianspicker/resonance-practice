@@ -175,7 +175,7 @@ struct LivePlaybackStage: View {
     let averageLevel: Double?
     let onSeek: (TimeInterval) -> Void
     var title: String = "Evidence · audio"
-    var status: LifecycleStatus? = nil
+    var status: LifecycleStatus?
 
     var body: some View {
         MediaStageCard(title: title, status: status) {

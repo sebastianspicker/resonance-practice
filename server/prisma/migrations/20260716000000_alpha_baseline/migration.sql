@@ -64,7 +64,7 @@ CREATE TABLE "PracticeEntry" (
     "practiceDate" TIMESTAMP(3) NOT NULL,
     "goalText" TEXT NOT NULL,
     "durationSeconds" INTEGER,
-    "tags" TEXT[] NOT NULL,
+    "tags" TEXT [] NOT NULL,
     "notes" TEXT,
     "status" "EntryStatus" NOT NULL DEFAULT 'draft',
     "consentConfirmedAt" TIMESTAMP(3),

@@ -35,9 +35,6 @@ pnpm-debug.log*
 .pnpm-store/
 .eslintcache
 .prettiercache
-.vitest/
-.vitest-attachments/
-.nyc_output/
 
 # IDE
 .vscode/
@@ -45,6 +42,7 @@ pnpm-debug.log*
 *.swp
 .cursor/
 .codex/
+/.mcp.json
 .kilo/
 .serena/
 .codegraph/
@@ -111,7 +109,6 @@ DerivedData/
 /server/tests/fixtures/generated/**/*.sqlite
 /server/tests/fixtures/generated/**/*.sqlite-*
 /server/tests/fixtures/generated/**/*.sqlite3
-/server/tests/fixtures/generated/**/*.sqlite3-*
 
 # Screenshot capture output (copy selected release assets to docs/assets/ before committing)
 /artifacts/
@@ -119,16 +116,6 @@ DerivedData/
 # Internal audit/findings docs (may contain local paths or org-internal details)
 /deprecated/
 
-# Coverage
-coverage/
-*.lcov
-test-results/
-junit.xml
-junit-*.xml
-/reports/
-
-# Generated and machine-local test inputs
-/server/tests/fixtures/generated/
 /ios/ResonanceApp/Tests/GeneratedFixtures/
 /.test-environments/
 
@@ -146,17 +133,10 @@ junit-*.xml
 *.rej
 
 # Codacy local analysis output; keep checked-in config files visible.
-.codacy/.gitignore
-.codacy/cli-config.yaml
-.codacy/codacy.yaml
-.codacy/codacy.config.json
-.codacy/configure-*.json
-.codacy/*-summary.json
-.codacy/tools-configs/
-.codacy/generated/
-.codacy/logs/
-.codacy/tmp/
-.codacy/cache/
+/.codacy/*
+!/.codacy/codacy.config.json
+!/.codacy/codacy.yaml
+!/.codacy/codacy.yml
 
 # MinIO
 infra/minio-data/
@@ -187,3 +167,43 @@ secrets.*
 !.secrets.example
 !secrets.example
 !secrets.*.example
+!.env.template
+.repowise/
+*.kdbx
+*.ppk
+secrets.local.*
+credentials.local.*
+.netrc
+.npmrc.local
+*.sarif
+target/
+*.local.db
+*.local.sqlite
+*.local.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+__pycache__/
+*.pyc
+*.pyo
+xcuserdata/
+*.db-wal
+*.db-shm
+!/RELEASE_STATUS.md
+/AUDIT_LEDGER.md
+/remediation-ledger.md
+
+# Generated test and coverage output (local only)
+/server/tests/fixtures/generated/
+/coverage/
+/htmlcov/
+/.coverage
+/.coverage.*
+/.pytest_cache/
+/test-results/
+/playwright-report/
+/blob-report/
+/coverage.xml
+/junit.xml
+/junit-*.xml

@@ -32,10 +32,10 @@ struct EntryDetailContent: View {
   let draftInstruction: String
   var isOnline: Bool = true
   var pendingSyncCount: Int = 0
-  var confirmConsent: (() -> Void)? = nil
+  var confirmConsent: (() -> Void)?
   var hasAudio: Bool = false
-  var retake: (() -> Void)? = nil
-  var editGoal: (() -> Void)? = nil
+  var retake: (() -> Void)?
+  var editGoal: (() -> Void)?
 
   var body: some View {
     ZStack {
@@ -121,7 +121,7 @@ struct EntryRecordingSection: View {
   let stopRecording: () -> Void
   @Binding var showVideoImporter: Bool
   @Binding var showCameraCapture: Bool
-  var confirmConsent: (() -> Void)? = nil
+  var confirmConsent: (() -> Void)?
 
   private var hasConsent: Bool {
     entry.consentConfirmedAt != nil && entry.consentScope != nil

@@ -4,7 +4,11 @@ import SwiftData
 // Executes queued API commands and applies their authoritative server results to local records.
 
 extension TaskExecutor {
-    // MARK: - Private helpers
+    /// Decodes one durable queue item and dispatches it through its task-specific retry contract.
+    func execute(item: SyncQueueItem, accessToken: String) async throws {
+        let (taskType, payload) = try taskTypeAndPayload(for: item)
+        try await execute(taskType: taskType, item: item, payload: payload, accessToken: accessToken)
+    }
 
     /// Keeps artifact uploads on their dedicated handshake while routing other task-specific work.
     func execute(
@@ -259,7 +263,7 @@ extension TaskExecutor {
         }
         let status = feedback.status
         let commentsText = feedback.commentsText
-        let markers = feedback.markers
+        let markers = feedback.chronologicallyOrderedMarkers
         _ = try await apiClient.createFeedback(
             accessToken: accessToken,
             submission: FeedbackSubmission(

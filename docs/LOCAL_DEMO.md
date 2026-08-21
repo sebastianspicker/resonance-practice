@@ -51,22 +51,12 @@ The loader derives the local course role from the active session. Load once per
 student or teacher persona. `Clear Mock Demo Data` removes fixture records from
 the app.
 
-## Capture a local walkthrough
+## Visual review
 
-First run the full source gate from a clean commit. Then:
-
-```bash
-./scripts/demo/capture-ios-screenshots.sh
-```
-
-The capture harness creates dedicated student and teacher Simulators, builds a Debug-only screenshot configuration, captures 12 deterministic English screens, and validates PNG format, portrait dimensions, uniqueness, hashes, and clean-source metadata. Its default output is `artifacts/e2e-walkthrough/`, which is ignored and may contain local build or service logs.
-
-Never publish the capture directory wholesale. Promote only visually reviewed PNGs and a sanitized manifest to a versioned directory under `docs/assets/screenshots/approved/`. The release process must exclude API logs, Xcode logs, derived data, local paths, tokens, and transient identifiers.
-
-See [Screenshot Evidence](./SCREENSHOTS.md) for the promotion rules and
-[Alpha Walkthrough](./ALPHA_WALKTHROUGH.md) for the exact scenarios that still
-require source-freeze capture. No approved public screenshot set currently
-exists.
+Inspect local Simulator behavior manually when changing the app UI. Never
+publish unreviewed images, logs, derived data, local paths, tokens, or transient
+identifiers. The repository retains historical screenshots as product records
+but does not automate UI capture.
 
 ## Acceptance checks
 

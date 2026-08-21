@@ -2,7 +2,7 @@ import SwiftUI
 
 // Workspace (iPad) presentation: queue pane + selected submission review.
 
-extension TeacherQueueView {
+extension TeacherQueueScreen {
     @ViewBuilder var workspaceBody: some View {
         if isLoading && queue.isEmpty {
             ProgressView("Loading submissions…")
@@ -93,7 +93,10 @@ extension TeacherQueueView {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(
-                            "\(entry.studentName), \(entry.goalText), \(isQueued ? LifecycleStatus.feedbackQueued.label : LifecycleStatus.submitted.label)"
+                            "\(entry.studentName), \(entry.goalText), "
+                                + (isQueued
+                                    ? LifecycleStatus.feedbackQueued.label
+                                    : LifecycleStatus.submitted.label)
                         )
                         .accessibilityValue(isSelected ? "Selected" : "")
                         .accessibilityHint("Opens the submission and feedback editor")

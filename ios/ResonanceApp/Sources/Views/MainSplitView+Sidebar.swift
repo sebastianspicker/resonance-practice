@@ -3,7 +3,7 @@ import SwiftUI
 
 // Builds the course sidebar and exposes refresh, retry, and utility navigation actions.
 
-extension MainSplitView {
+extension MainSplitScreen {
   func teacherWorkspace(course: LocalCourse) -> some View {
     HStack(spacing: 0) {
       WorkspaceAppRail(

@@ -1,0 +1,8 @@
+runtimes:
+    - node@22.2.0
+    - python@3.11.11
+tools:
+    - eslint@9.39.5
+    - lizard@1.23.0
+    - opengrep@1.26.0
+    - trivy@0.72.0

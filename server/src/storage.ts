@@ -46,26 +46,28 @@ export async function ensureBucket(s3: S3Client, timeoutMs = config.dependencyTi
   try {
     await checkBucketAvailable(s3, timeoutMs);
   } catch (err: unknown) {
-    if (isS3NotFoundError(err)) {
-      try {
-        await withDeadline(
-          (abortSignal) =>
-            s3.send(
-              new CreateBucketCommand(buildCreateBucketInput(config.s3.bucket, config.s3.region)),
-              { abortSignal }
-            ),
-          timeoutMs,
-          'S3 CreateBucket'
-        );
-      } catch (createErr) {
-        if (!isBucketAlreadyOwnedByYouError(createErr)) throw createErr;
-        // Another replica may have created this account-owned bucket after our
-        // 404. Re-check it rather than treating unrelated 409s as success.
-        await checkBucketAvailable(s3, timeoutMs);
-      }
-    } else {
-      throw err;
-    }
+    if (!isS3NotFoundError(err)) throw err;
+    await createConfirmedMissingBucket(s3, timeoutMs);
+  }
+}
+
+/** Create only after a confirmed miss; verify the account-owned race before accepting it. */
+async function createConfirmedMissingBucket(s3: S3Client, timeoutMs: number): Promise<void> {
+  try {
+    await withDeadline(
+      (abortSignal) =>
+        s3.send(
+          new CreateBucketCommand(buildCreateBucketInput(config.s3.bucket, config.s3.region)),
+          { abortSignal }
+        ),
+      timeoutMs,
+      'S3 CreateBucket'
+    );
+  } catch (createErr) {
+    if (!isBucketAlreadyOwnedByYouError(createErr)) throw createErr;
+    // Another replica may have created this account-owned bucket after our
+    // 404. Re-check it rather than treating unrelated 409s as success.
+    await checkBucketAvailable(s3, timeoutMs);
   }
 }
 

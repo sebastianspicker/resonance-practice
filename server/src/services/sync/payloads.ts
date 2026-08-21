@@ -71,6 +71,17 @@ export function parseEntryUpdatePayload(
   payload: Record<string, unknown>,
   entry: PracticeEntry
 ): Prisma.PracticeEntryUpdateInput {
+  const data = buildEntryUpdateData(payload, entry);
+  if (Object.keys(data).length === 0) {
+    throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Update payload is empty');
+  }
+  return data;
+}
+
+function buildEntryUpdateData(
+  payload: Record<string, unknown>,
+  entry: PracticeEntry
+): Prisma.PracticeEntryUpdateInput {
   const data: Prisma.PracticeEntryUpdateInput = {};
   if ('practiceDate' in payload) {
     data.practiceDate = requireValidDate(payload.practiceDate, 'payload.practiceDate');
@@ -103,9 +114,6 @@ export function parseEntryUpdatePayload(
   if ('consentConfirmedAt' in payload) data.consentConfirmedAt = consentConfirmedAt;
   if ('consentScope' in payload) data.consentScope = consentScope;
   if ('captureProfile' in payload) data.captureProfile = captureProfile;
-  if (Object.keys(data).length === 0) {
-    throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Update payload is empty');
-  }
   return data;
 }
 

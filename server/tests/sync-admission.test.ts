@@ -1,4 +1,4 @@
-// Verifies per-user request and command admission limits without a running server.
+// Rate admission is independent per user and receipt capacity never evicts an unexpired replay record.
 import { describe, expect, it } from 'vitest';
 import {
   createSyncAdmission,
@@ -10,29 +10,22 @@ import {
   MAX_SYNC_RECEIPTS_PER_USER,
 } from '../src/services/syncCommands.js';
 
-describe('sync route admission', () => {
-  it('bounds authenticated requests and commands independently per user', () => {
-    let clock = 0;
-    const admission = createSyncAdmission(() => clock);
-    for (let index = 0; index < MAX_SYNC_REQUESTS_PER_MINUTE; index += 1) {
-      admission.admitRequest('user-1');
-    }
-    expect(() => admission.admitRequest('user-1')).toThrow(/Too many sync requests/);
-    admission.admitRequest('user-2');
-
-    admission.admitCommands('user-2', MAX_SYNC_COMMANDS_PER_MINUTE);
-    expect(() => admission.admitCommands('user-2', 1)).toThrow(/Too many sync commands/);
-
-    clock += 60_000;
-    expect(() => admission.admitRequest('user-1')).not.toThrow();
+describe('sync admission and durable replay capacity', () => {
+  it('bounds requests and commands per user, then resets at the time window', () => {
+    let now = 0;
+    const admission = createSyncAdmission(() => now);
+    for (let index = 0; index < MAX_SYNC_REQUESTS_PER_MINUTE; index += 1)
+      admission.admitRequest('one');
+    expect(() => admission.admitRequest('one')).toThrow(/Too many sync requests/);
+    admission.admitRequest('two');
+    admission.admitCommands('two', MAX_SYNC_COMMANDS_PER_MINUTE);
+    expect(() => admission.admitCommands('two', 1)).toThrow(/Too many sync commands/);
+    now += 60_000;
+    expect(() => admission.admitRequest('one')).not.toThrow();
   });
-});
 
-describe('sync receipt quota', () => {
-  it('fails closed rather than evicting an unexpired idempotency receipt', () => {
+  it('fails closed instead of evicting an active command receipt', () => {
     expect(() => assertSyncReceiptCapacity(MAX_SYNC_RECEIPTS_PER_USER - 1)).not.toThrow();
-    expect(() => assertSyncReceiptCapacity(MAX_SYNC_RECEIPTS_PER_USER)).toThrow(
-      /Sync receipt quota reached/
-    );
+    expect(() => assertSyncReceiptCapacity(MAX_SYNC_RECEIPTS_PER_USER)).toThrow(/quota reached/);
   });
 });

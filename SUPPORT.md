@@ -33,4 +33,3 @@ The repository does not currently promise production hosting, live university
 SSO integration, data migration for deployed systems, TestFlight distribution,
 device signing, backup operations, or compatibility with real institutional
 data. Those remain deployment and pilot-validation work.
-

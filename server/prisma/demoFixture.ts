@@ -142,38 +142,61 @@ const validateFixtureArtifacts = (fixture: DemoFixture): void => {
   }
 };
 
-const validateArtifactStorageState = (artifact: DemoFixture['artifacts'][number]): void => {
+type DemoArtifact = DemoFixture['artifacts'][number];
+
+const validateArtifactStorageState = (artifact: DemoArtifact): void => {
   if (artifact.uploadState === 'uploaded') {
-    if (!artifact.storageKey || !artifact.remoteUrl) {
-      throw new Error(
-        `Invalid demo fixture: uploaded artifact requires storage metadata: ${artifact.id}`
-      );
-    }
-    if (artifact.uploadExpiresAt !== null || artifact.confirmationToken !== null) {
-      throw new Error(
-        `Invalid demo fixture: uploaded artifact has an active upload slot: ${artifact.id}`
-      );
-    }
+    validateUploadedArtifactStorageState(artifact);
     return;
   }
 
   if (artifact.uploadState === 'uploading') {
-    if (!artifact.storageKey || !artifact.uploadExpiresAt) {
-      throw new Error(
-        `Invalid demo fixture: uploading artifact requires an upload slot: ${artifact.id}`
-      );
-    }
+    validateUploadingArtifactStorageState(artifact);
     return;
   }
 
-  if (hasInactiveUploadMetadata(artifact)) {
+  validateInactiveArtifactStorageState(artifact);
+};
+
+const validateUploadedArtifactStorageState = (artifact: DemoArtifact): void => {
+  if (!hasUploadedStorageMetadata(artifact)) {
+    throw new Error(
+      `Invalid demo fixture: uploaded artifact requires storage metadata: ${artifact.id}`
+    );
+  }
+  if (hasActiveUploadSlot(artifact)) {
+    throw new Error(
+      `Invalid demo fixture: uploaded artifact has an active upload slot: ${artifact.id}`
+    );
+  }
+};
+
+const validateUploadingArtifactStorageState = (artifact: DemoArtifact): void => {
+  if (!hasActiveUploadSlotReservation(artifact)) {
+    throw new Error(
+      `Invalid demo fixture: uploading artifact requires an upload slot: ${artifact.id}`
+    );
+  }
+};
+
+const validateInactiveArtifactStorageState = (artifact: DemoArtifact): void => {
+  if (hasActiveUploadMetadata(artifact)) {
     throw new Error(
       `Invalid demo fixture: inactive artifact has active upload metadata: ${artifact.id}`
     );
   }
 };
 
-const hasInactiveUploadMetadata = (artifact: DemoFixture['artifacts'][number]): boolean =>
+const hasUploadedStorageMetadata = (artifact: DemoArtifact): boolean =>
+  Boolean(artifact.storageKey && artifact.remoteUrl);
+
+const hasActiveUploadSlot = (artifact: DemoArtifact): boolean =>
+  artifact.uploadExpiresAt !== null || artifact.confirmationToken !== null;
+
+const hasActiveUploadSlotReservation = (artifact: DemoArtifact): boolean =>
+  Boolean(artifact.storageKey && artifact.uploadExpiresAt);
+
+const hasActiveUploadMetadata = (artifact: DemoArtifact): boolean =>
   artifact.storageKey !== null ||
   artifact.remoteUrl !== null ||
   artifact.uploadExpiresAt !== null ||

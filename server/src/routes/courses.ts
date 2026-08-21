@@ -102,7 +102,7 @@ async function buildCursorWhere(
 
 // ────────────────────────────────────────────────────────────────────
 
-export function registerCourseRoutes(
+function registerCourseLookupRoutes(
   app: FastifyInstance,
   prisma: PrismaClient,
   requireAuth: (request: FastifyRequest) => Promise<void>
@@ -130,7 +130,13 @@ export function registerCourseRoutes(
     }
     return course;
   });
+}
 
+function registerCourseEntriesListRoute(
+  app: FastifyInstance,
+  prisma: PrismaClient,
+  requireAuth: (request: FastifyRequest) => Promise<void>
+) {
   // Course entries and review queue intentionally share the same paginated
   // envelope so clients can reuse cursor handling.
   app.get('/courses/:courseId/entries', { preHandler: requireAuth }, async (request) => {
@@ -183,7 +189,13 @@ export function registerCourseRoutes(
 
     return toCursorPage(entries, limit);
   });
+}
 
+function registerCourseReviewQueueRoute(
+  app: FastifyInstance,
+  prisma: PrismaClient,
+  requireAuth: (request: FastifyRequest) => Promise<void>
+) {
   // Review queue uses the same cursor contract as the entries list but is
   // teacher-only and always scoped to submitted work.
   app.get('/courses/:courseId/review-queue', { preHandler: requireAuth }, async (request) => {
@@ -226,4 +238,14 @@ export function registerCourseRoutes(
       nextCursor: page.nextCursor,
     };
   });
+}
+
+export function registerCourseRoutes(
+  app: FastifyInstance,
+  prisma: PrismaClient,
+  requireAuth: (request: FastifyRequest) => Promise<void>
+) {
+  registerCourseLookupRoutes(app, prisma, requireAuth);
+  registerCourseEntriesListRoute(app, prisma, requireAuth);
+  registerCourseReviewQueueRoute(app, prisma, requireAuth);
 }

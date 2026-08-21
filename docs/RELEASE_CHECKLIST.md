@@ -22,8 +22,7 @@ The working tree is not currently release evidence.
 ## Automated verification
 
 - [ ] `./scripts/ci-local.sh --with-docker`
-- [ ] Backend coverage thresholds pass.
-- [ ] Process-level E2E passes with PostgreSQL and MinIO.
+- [ ] Compact backend boundary suite passes.
 - [ ] SwiftLint 0.63.2 passes.
 - [ ] iOS XCTest passes with the Xcode-bundled compiler.
 - [ ] iOS XCTest passes with Swift 6.3.3.

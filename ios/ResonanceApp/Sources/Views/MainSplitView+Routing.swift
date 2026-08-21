@@ -2,7 +2,7 @@ import SwiftUI
 
 // Routes normal deep links and deterministic screenshot scenarios through the app split view.
 
-extension MainSplitView {
+extension MainSplitScreen {
   @ViewBuilder var detailPane: some View {
     if let scenario = ScreenshotScenario.current, scenario.requiresAuthenticatedSession {
       screenshotDetailPane(for: scenario)

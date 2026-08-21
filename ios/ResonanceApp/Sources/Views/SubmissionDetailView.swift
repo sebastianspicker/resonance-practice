@@ -4,21 +4,26 @@ import SwiftUI
 // Sheet/detail presentation for a single queue entry with evidence + feedback.
 
 @MainActor
+struct SecureReviewArtifactLoadState {
+    let isLoading: Binding<Bool>
+    let playbackError: Binding<String?>
+    let beforeLoad: () -> Void
+}
+
+@MainActor
 func loadSecureReviewArtifact(
     _ artifact: ArtifactResponse?,
     accessToken: String?,
     appState: AppState,
     player: AVPlayer,
-    isLoading: Binding<Bool>,
-    playbackError: Binding<String?>,
-    beforeLoad: () -> Void = {}
+    state: SecureReviewArtifactLoadState
 ) async {
     guard let artifact, let accessToken else { return }
-    isLoading.wrappedValue = true
-    playbackError.wrappedValue = nil
+    state.isLoading.wrappedValue = true
+    state.playbackError.wrappedValue = nil
     player.pause()
-    beforeLoad()
-    defer { isLoading.wrappedValue = false }
+    state.beforeLoad()
+    defer { state.isLoading.wrappedValue = false }
     do {
         let response = try await appState.apiClient.fetchArtifactDownloadURL(
             accessToken: accessToken,
@@ -27,7 +32,7 @@ func loadSecureReviewArtifact(
         player.replaceCurrentItem(with: AVPlayerItem(url: response.downloadUrl))
     } catch {
         player.replaceCurrentItem(with: nil)
-        playbackError.wrappedValue = error.localizedDescription
+        state.playbackError.wrappedValue = error.localizedDescription
     }
 }
 
@@ -178,8 +183,11 @@ struct SubmissionDetailView: View {
             accessToken: authManager.session?.accessToken,
             appState: appState,
             player: player,
-            isLoading: $isLoadingMedia,
-            playbackError: $playbackError
+            state: SecureReviewArtifactLoadState(
+                isLoading: $isLoadingMedia,
+                playbackError: $playbackError,
+                beforeLoad: {}
+            )
         )
     }
 }

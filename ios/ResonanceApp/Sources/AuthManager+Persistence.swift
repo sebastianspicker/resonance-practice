@@ -1,8 +1,25 @@
 import Foundation
+import os
 
 // Implements fail-closed keychain persistence and recovery for authenticated sessions.
 
 extension AuthManager {
+  static let logger = Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "resonance", category: "AuthManager")
+  static let legacySessionKeys = [
+    "accessToken", "refreshToken", "userId", "displayName", "globalRole"
+  ]
+
+  static func clearPersistedSessionForLocalReset() throws {
+    try removeDefaultSessionData()
+    try AuthSessionPersistenceSupport.setDefaultSessionPersistenceUncertain(false)
+    guard try KeychainStore.readData("authSession") == nil,
+      try !AuthSessionPersistenceSupport.isDefaultSessionPersistenceUncertain()
+    else {
+      throw AuthSessionPersistenceError.uncertaintySentinelVerificationFailed
+    }
+  }
+
   /// Commits session credentials atomically enough to detect and recover a partial keychain write.
   func persistSession(_ session: AuthSession) throws {
     try clearUncertainSessionPersistence()

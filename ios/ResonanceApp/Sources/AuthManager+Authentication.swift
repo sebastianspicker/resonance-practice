@@ -1,4 +1,5 @@
 import AuthenticationServices
+import UIKit
 
 // Implements authorization-browser flow, callback validation, and local session loading.
 
@@ -155,5 +156,12 @@ extension AuthManager {
         }
       }
     }
+  }
+}
+
+extension AuthManager: ASWebAuthenticationPresentationContextProviding {
+  func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+    UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+      .first { $0.isKeyWindow } ?? ASPresentationAnchor()
   }
 }

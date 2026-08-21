@@ -1,76 +1,36 @@
 "use strict";
 
+const document = globalThis.document;
+
 const presentationFixture = Object.freeze({
   course: "Mock University · Piano Studio I",
   student: "Lea Sommer",
   teacher: "Prof. Anna Berg",
   entries: [
-    {
-      key: "draft",
-      goal: "Draft: octaves warmup pattern",
-      detailGoal: "Octaves warmup pattern",
-      date: "23 February 2026",
-      duration: "6 min",
-      notes: "Still experimenting with fingering.",
-      status: "Draft",
-    },
-    {
-      key: "submitted",
-      goal: "Improve legato transitions in Chopin Nocturne",
-      detailGoal: "Improve legato transitions in Chopin Nocturne",
-      date: "20 February 2026",
-      duration: "15 min",
-      notes: "Left hand balance and softer pedal.",
-      status: "Submitted",
-    },
-    {
-      key: "reviewed",
-      goal: "Phrase shaping in Debussy prelude",
-      detailGoal: "Phrase shaping in Debussy prelude",
-      date: "18 February 2026",
-      duration: "14 min",
-      notes: "Try broader dynamic contrast.",
-      status: "Reviewed",
-    },
+    { key: "draft", goal: "Draft: octaves warmup pattern", detailGoal: "Octaves warmup pattern", date: "23 February 2026", duration: "6 min", notes: "Still experimenting with fingering.", status: "Draft" },
+    { key: "submitted", goal: "Improve legato transitions in Chopin Nocturne", detailGoal: "Improve legato transitions in Chopin Nocturne", date: "20 February 2026", duration: "15 min", notes: "Left hand balance and softer pedal.", status: "Submitted" },
+    { key: "reviewed", goal: "Phrase shaping in Debussy prelude", detailGoal: "Phrase shaping in Debussy prelude", date: "18 February 2026", duration: "14 min", notes: "Try broader dynamic contrast.", status: "Reviewed" },
   ],
   reviewQueue: [
-    {
-      key: "lea",
-      student: "Lea Sommer",
-      goal: "Improve legato transitions in Chopin Nocturne",
-      date: "20 February 2026",
-      duration: "15 min",
-      notes: "Left hand balance and softer pedal.",
-      status: "Submitted",
-    },
-    {
-      key: "noah",
-      student: "Noah Keller",
-      goal: "Stabilize tempo in Bach invention, hands together",
-      date: "21 February 2026",
-      duration: "12 min",
-      notes: "Focus on metronome consistency.",
-      status: "Submitted",
-    },
+    { key: "lea", student: "Lea Sommer", goal: "Improve legato transitions in Chopin Nocturne", date: "20 February 2026", duration: "15 min", notes: "Left hand balance and softer pedal.", status: "Submitted" },
+    { key: "noah", student: "Noah Keller", goal: "Stabilize tempo in Bach invention, hands together", date: "21 February 2026", duration: "12 min", notes: "Focus on metronome consistency.", status: "Submitted" },
   ],
   feedback: {
     outcome: "Next goal",
     comments: "Great color palette. Next step: slower transitions before full tempo.",
-    markers: [
-      { time: "00:18", text: "Excellent voicing here." },
-      { time: "00:41", text: "Keep wrist relaxed in this passage." },
-    ],
+    markers: [{ time: "00:18", text: "Excellent voicing here." }, { time: "00:41", text: "Keep wrist relaxed in this passage." }],
   },
 });
 
-const icons = {
-  courses: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5zM4 5.5v16M8 7h8M8 11h8"></path></svg>',
-  entries: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM14 3v4h4M9 11h6M9 15h6"></path></svg>',
-  review: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM8 9h8M8 13h5"></path></svg>',
-  calendar: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v14H4zM8 3v6M16 3v6M4 10h16"></path></svg>',
-  sync: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-5V2M4 17h5v5M19 12a7 7 0 0 0-12-5L4 10M5 12a7 7 0 0 0 12 5l3-3"></path></svg>',
-  settings: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1A8 8 0 0 0 15 6.2L14.7 3h-4L10 6.2a8 8 0 0 0-1.5.9l-2.4-1-2 3.4L6.1 11a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 1.5.9l.7 3.2h4l.3-3.2a8 8 0 0 0 1.5-.9l2.4 1 2-3.4-2-1.5a7 7 0 0 0 .1-1z"></path></svg>',
-};
+const svgNamespace = "http://www.w3.org/2000/svg";
+const icons = new Map([
+  ["courses", [{ name: "path", attributes: { d: "M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5zM4 5.5v16M8 7h8M8 11h8" } }]],
+  ["entries", [{ name: "path", attributes: { d: "M6 3h9l3 3v15H6zM14 3v4h4M9 11h6M9 15h6" } }]],
+  ["review", [{ name: "path", attributes: { d: "M4 5h16v14H4zM8 9h8M8 13h5" } }]],
+  ["calendar", [{ name: "path", attributes: { d: "M4 6h16v14H4zM8 3v6M16 3v6M4 10h16" } }]],
+  ["sync", [{ name: "path", attributes: { d: "M20 7h-5V2M4 17h5v5M19 12a7 7 0 0 0-12-5L4 10M5 12a7 7 0 0 0 12 5l3-3" } }]],
+  ["settings", [{ name: "circle", attributes: { cx: "12", cy: "12", r: "3" } }, { name: "path", attributes: { d: "M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1A8 8 0 0 0 15 6.2L14.7 3h-4L10 6.2a8 8 0 0 0-1.5.9l-2.4-1-2 3.4L6.1 11a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 1.5-.9l2.4 1 2-3.4-2-1.5a7 7 0 0 0 .1-1z" } }]],
+]);
 
 const state = {
   role: "student",
@@ -79,6 +39,12 @@ const state = {
   queued: false,
 };
 
+const roleConfigurations = new Map([
+  ["student", { name: presentationFixture.student, label: "Student", waiting: "2 items waiting", queuedWaiting: "3 items waiting", detail: "One upload needs attention", items: [["entries", "Practice entries", "entries"], ["reviewed", "Reviewed feedback", "review"]] }],
+  ["teacher", { name: presentationFixture.teacher, label: "Teacher", waiting: "Feedback queue ready", queuedWaiting: "Feedback queue ready", detail: "No command sent", items: [["review", "To review", "review"], ["reviewed-list", "Reviewed", "entries"]] }],
+]);
+const toolNavigationItems = [["calendar", "Calendar", "calendar"], ["sync", "Sync status", "sync"], ["settings", "Settings", "settings"]];
+
 const contentPanel = document.querySelector("#content-panel");
 const sidebarNav = document.querySelector("#sidebar-nav");
 const personaName = document.querySelector("#persona-name");
@@ -86,228 +52,415 @@ const personaRole = document.querySelector("#persona-role");
 const syncTitle = document.querySelector("#sync-title");
 const syncDetail = document.querySelector("#sync-detail");
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+function element(name, { attributes = {}, className, text } = {}) {
+  const node = document.createElement(name);
+  if (className) {
+    node.className = className;
+  }
+  if (text !== undefined) {
+    node.textContent = text;
+  }
+  for (const [attribute, value] of Object.entries(attributes)) {
+    node.setAttribute(attribute, value);
+  }
+  return node;
+}
+
+function append(parent, ...children) {
+  parent.append(...children.filter(Boolean));
+  return parent;
+}
+
+function icon(name) {
+  const definitions = icons.get(name);
+  const svg = document.createElementNS(svgNamespace, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  for (const definition of definitions) {
+    const child = document.createElementNS(svgNamespace, definition.name);
+    for (const [attribute, value] of Object.entries(definition.attributes)) {
+      child.setAttribute(attribute, value);
+    }
+    svg.append(child);
+  }
+  return svg;
 }
 
 function simulationTag() {
-  return '<span class="simulation-tag">Simulated</span>';
+  return element("span", { className: "simulation-tag", text: "Simulated" });
 }
 
 function statusPill(status) {
-  return `<span class="status-pill status-${status.toLowerCase()}">${escapeHtml(status)}</span>`;
+  return element("span", {
+    className: "status-pill status-" + status.toLowerCase(),
+    text: status,
+  });
 }
 
 function waveform() {
-  return '<div class="waveform" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>';
+  const waveformNode = element("div", {
+    className: "waveform",
+    attributes: { "aria-hidden": "true" },
+  });
+  for (let index = 0; index < 9; index += 1) {
+    waveformNode.append(element("span"));
+  }
+  return waveformNode;
+}
+
+function button(className, text, attributes = {}, simulated = false) {
+  const node = element("button", {
+    className,
+    attributes: { type: "button", ...attributes },
+  });
+  node.append(document.createTextNode(text));
+  if (simulated) {
+    node.append(simulationTag());
+  }
+  return node;
+}
+
+function commandButton(text, command) {
+  return button("command-button", text, { "data-command": command }, true);
+}
+
+function buttonRow(...buttons) {
+  return append(element("div", { className: "button-row" }), ...buttons);
+}
+
+function markerNode(marker) {
+  return append(
+    element("div", { className: "feedback-marker" }),
+    element("time", { text: marker.time }),
+    element("p", { text: marker.text }),
+  );
+}
+
+function metadataList(rows) {
+  const list = element("dl", { className: "metadata-list" });
+  for (const [label, value] of rows) {
+    list.append(
+      append(
+        element("div"),
+        element("dt", { text: label }),
+        element("dd", { text: value }),
+      ),
+    );
+  }
+  return list;
+}
+
+function contentHeader(label, title, description, trailing) {
+  const heading = append(
+    element("div"),
+    element("span", { className: "section-label", text: label }),
+    element("h3", { text: title }),
+    element("p", { text: description }),
+  );
+  return append(element("header", { className: "content-header" }), heading, trailing);
+}
+
+function mediaStage(primary, secondary, control) {
+  return append(
+    element("section", { className: "media-stage" }),
+    waveform(),
+    element("strong", { text: primary }),
+    element("span", { className: "muted", text: secondary }),
+    buttonRow(control),
+  );
+}
+
+function entryRow(entry) {
+  const status = entry.key === "draft" && state.queued ? "Queued" : entry.status;
+  const leading = append(
+    element("span"),
+    element("strong", { text: entry.goal }),
+    element("small", { text: entry.date + " · " + entry.duration }),
+  );
+  const meta = append(
+    element("span", { className: "row-meta" }),
+    statusPill(status),
+    element("span", { className: "row-arrow", attributes: { "aria-hidden": "true" }, text: "›" }),
+  );
+  return append(
+    button("entry-row", "", { "data-entry": entry.key }),
+    leading,
+    meta,
+  );
+}
+
+function reviewRow(entry) {
+  const leading = append(
+    element("span"),
+    element("strong", { text: entry.student }),
+    element("small", { text: entry.goal + " · " + entry.date }),
+  );
+  const meta = append(
+    element("span", { className: "row-meta" }),
+    statusPill(entry.status),
+    element("span", { className: "row-arrow", attributes: { "aria-hidden": "true" }, text: "›" }),
+  );
+  return append(button("entry-row", "", { "data-review": entry.key }), leading, meta);
+}
+
+function navigationButton(view, label, iconName, active) {
+  return append(
+    button("nav-button" + (active ? " is-active" : ""), "", { "data-view": view }),
+    icon(iconName),
+    element("span", { text: label }),
+  );
 }
 
 function renderSidebar() {
-  const isStudent = state.role === "student";
-  personaName.textContent = isStudent ? presentationFixture.student : presentationFixture.teacher;
-  personaRole.textContent = `${isStudent ? "Student" : "Teacher"} · simulated session`;
-  syncTitle.textContent = isStudent ? (state.queued ? "3 items waiting" : "2 items waiting") : "Feedback queue ready";
-  syncDetail.textContent = isStudent ? "One upload needs attention" : "No command sent";
-
-  const items = isStudent
-    ? [
-        ["entries", "Practice entries", icons.entries],
-        ["reviewed", "Reviewed feedback", icons.review],
-      ]
-    : [
-        ["review", "To review", icons.review],
-        ["reviewed-list", "Reviewed", icons.entries],
-      ];
-
-  sidebarNav.innerHTML = `
-    <span class="nav-section-label">${escapeHtml(presentationFixture.course)}</span>
-    ${items
-      .map(
-        ([view, label, icon]) => `
-          <button class="nav-button ${state.view === view ? "is-active" : ""}" type="button" data-view="${view}">
-            ${icon}<span>${escapeHtml(label)}</span>
-          </button>`,
-      )
-      .join("")}
-    <span class="nav-section-label">Tools</span>
-    <button class="nav-button" type="button" data-view="calendar">${icons.calendar}<span>Calendar</span></button>
-    <button class="nav-button" type="button" data-view="sync">${icons.sync}<span>Sync status</span></button>
-    <button class="nav-button" type="button" data-view="settings">${icons.settings}<span>Settings</span></button>
-  `;
-}
-
-function contentHeader(label, title, description, trailing = "") {
-  return `
-    <header class="content-header">
-      <div><span class="section-label">${escapeHtml(label)}</span><h3>${escapeHtml(title)}</h3><p>${escapeHtml(description)}</p></div>
-      ${trailing}
-    </header>`;
+  const role = roleConfigurations.get(state.role);
+  personaName.textContent = role.name;
+  personaRole.textContent = role.label + " · simulated session";
+  syncTitle.textContent = state.queued ? role.queuedWaiting : role.waiting;
+  syncDetail.textContent = role.detail;
+  const navigation = [
+    element("span", { className: "nav-section-label", text: presentationFixture.course }),
+    ...role.items.map(([view, label, iconName]) => navigationButton(view, label, iconName, state.view === view)),
+    element("span", { className: "nav-section-label", text: "Tools" }),
+    ...toolNavigationItems.map(([view, label, iconName]) => navigationButton(view, label, iconName, false)),
+  ];
+  sidebarNav.replaceChildren(...navigation);
 }
 
 function renderStudentEntries() {
-  contentPanel.innerHTML = `
-    ${contentHeader("Student workspace", "Practice entries", "Evidence stays explicit from local draft through reviewed feedback.")}
-    <div class="list-surface">
-      ${presentationFixture.entries
-        .map(
-          (entry) => `
-            <button class="entry-row" type="button" data-entry="${entry.key}">
-              <span><strong>${escapeHtml(entry.goal)}</strong><small>${escapeHtml(entry.date)} · ${escapeHtml(entry.duration)}</small></span>
-              <span class="row-meta">${statusPill(entry.key === "draft" && state.queued ? "Queued" : entry.status)}<span class="row-arrow" aria-hidden="true">›</span></span>
-            </button>`,
-        )
-        .join("")}
-    </div>`;
+  const list = element("div", { className: "list-surface" });
+  list.append(...presentationFixture.entries.map(entryRow));
+  contentPanel.replaceChildren(
+    contentHeader(
+      "Student workspace",
+      "Practice entries",
+      "Evidence stays explicit from local draft through reviewed feedback.",
+    ),
+    list,
+  );
+}
+
+function feedbackSection(entry) {
+  const section = append(element("section", { className: "grouped-section" }), element("h4", { text: "Teacher feedback" }));
+  if (entry.key === "reviewed") {
+    section.append(element("p", { text: presentationFixture.feedback.comments }));
+    section.append(...presentationFixture.feedback.markers.map(markerNode));
+  } else {
+    section.append(
+      element("p", {
+        className: "muted",
+        text: "No feedback yet. Submit the entry so your teacher can review it.",
+      }),
+    );
+  }
+  return section;
 }
 
 function renderStudentDetail() {
   const entry = presentationFixture.entries.find((candidate) => candidate.key === state.selectedEntry);
   const status = entry.key === "draft" && state.queued ? "Queued" : entry.status;
-  const feedbackSection = entry.key === "reviewed"
-    ? `<section class="grouped-section"><h4>Teacher feedback</h4><p>${escapeHtml(presentationFixture.feedback.comments)}</p>${presentationFixture.feedback.markers.map((marker) => `<div class="feedback-marker"><time>${marker.time}</time><p>${escapeHtml(marker.text)}</p></div>`).join("")}</section>`
-    : '<section class="grouped-section"><h4>Teacher feedback</h4><p class="muted">No feedback yet. Submit the entry so your teacher can review it.</p></section>';
-
-  contentPanel.innerHTML = `
-    ${contentHeader("Practice entry", entry.detailGoal, `${entry.date} · ${entry.duration}`, statusPill(status))}
-    <div class="detail-grid">
-      <div>
-        <section class="media-stage">
-          ${waveform()}
-          <strong>${entry.key === "draft" ? "Practice audio not recorded" : "Practice audio · 01:05"}</strong>
-          <span class="muted">${entry.key === "draft" ? "Microphone access is never requested by this page." : "Playback is visual only in this static demo."}</span>
-          <div class="button-row">
-            <button class="command-button" type="button" data-command="play">${entry.key === "draft" ? "Record audio" : "Play evidence"}${simulationTag()}</button>
-          </div>
-        </section>
-        <div class="button-row">
-          ${entry.key === "draft" ? `<button class="command-button" type="button" data-command="submit">Submit for review${simulationTag()}</button>` : ""}
-          <button class="secondary-button" type="button" data-view="entries">Back to entries</button>
-        </div>
-        <p class="simulation-disclosure">Command-capable controls change this page's local display only. No recording, upload, submission, playback request, or sync command is sent.</p>
-      </div>
-      <div>
-        <section class="grouped-section">
-          <h4>Entry details</h4>
-          <dl class="metadata-list">
-            <div><dt>Status</dt><dd>${escapeHtml(status)}</dd></div>
-            <div><dt>Reflection</dt><dd>${escapeHtml(entry.notes)}</dd></div>
-            <div><dt>Privacy</dt><dd>Private course review</dd></div>
-          </dl>
-        </section>
-        ${feedbackSection}
-      </div>
-    </div>`;
+  const controls = [
+    entry.key === "draft" ? commandButton("Submit for review", "submit") : null,
+    button("secondary-button", "Back to entries", { "data-view": "entries" }),
+  ];
+  const media = mediaStage(
+    entry.key === "draft" ? "Practice audio not recorded" : "Practice audio · 01:05",
+    entry.key === "draft"
+      ? "Microphone access is never requested by this page."
+      : "Playback is visual only in this static demo.",
+    commandButton(entry.key === "draft" ? "Record audio" : "Play evidence", "play"),
+  );
+  const details = append(
+    element("section", { className: "grouped-section" }),
+    element("h4", { text: "Entry details" }),
+    metadataList([
+      ["Status", status],
+      ["Reflection", entry.notes],
+      ["Privacy", "Private course review"],
+    ]),
+  );
+  const left = append(
+    element("div"),
+    media,
+    buttonRow(...controls),
+    element("p", {
+      className: "simulation-disclosure",
+      text: "Command-capable controls change this page's local display only. No recording, upload, submission, playback request, or sync command is sent.",
+    }),
+  );
+  contentPanel.replaceChildren(
+    contentHeader("Practice entry", entry.detailGoal, entry.date + " · " + entry.duration, statusPill(status)),
+    append(element("div", { className: "detail-grid" }), left, append(element("div"), details, feedbackSection(entry))),
+  );
 }
 
 function renderReviewedFeedback() {
   const entry = presentationFixture.entries.find((candidate) => candidate.key === "reviewed");
-  contentPanel.innerHTML = `
-    ${contentHeader("Student workspace", "Reviewed feedback", "Feedback is attached to the submitted practice evidence.", statusPill("Reviewed"))}
-    <div class="detail-grid">
-      <section class="media-stage">${waveform()}<strong>${escapeHtml(entry.detailGoal)}</strong><span class="muted">Practice audio · 01:12</span><div class="button-row"><button class="command-button" type="button" data-command="play">Play evidence${simulationTag()}</button></div></section>
-      <section class="grouped-section">
-        <h4>${escapeHtml(presentationFixture.feedback.outcome)}</h4>
-        <p>${escapeHtml(presentationFixture.feedback.comments)}</p>
-        ${presentationFixture.feedback.markers.map((marker) => `<div class="feedback-marker"><time>${marker.time}</time><p>${escapeHtml(marker.text)}</p></div>`).join("")}
-      </section>
-    </div>
-    <p class="simulation-disclosure">Playback is simulated. This page does not request or cache private media.</p>`;
+  const feedback = append(
+    element("section", { className: "grouped-section" }),
+    element("h4", { text: presentationFixture.feedback.outcome }),
+    element("p", { text: presentationFixture.feedback.comments }),
+    ...presentationFixture.feedback.markers.map(markerNode),
+  );
+  contentPanel.replaceChildren(
+    contentHeader(
+      "Student workspace",
+      "Reviewed feedback",
+      "Feedback is attached to the submitted practice evidence.",
+      statusPill("Reviewed"),
+    ),
+    append(
+      element("div", { className: "detail-grid" }),
+      mediaStage(entry.detailGoal, "Practice audio · 01:12", commandButton("Play evidence", "play")),
+      feedback,
+    ),
+    element("p", {
+      className: "simulation-disclosure",
+      text: "Playback is simulated. This page does not request or cache private media.",
+    }),
+  );
 }
 
 function renderReviewQueue() {
-  contentPanel.innerHTML = `
-    ${contentHeader("Teacher workspace", "To review", "Submitted evidence from students in this course.")}
-    <div class="list-surface">
-      ${presentationFixture.reviewQueue
-        .map(
-          (entry) => `
-            <button class="entry-row" type="button" data-review="${entry.key}">
-              <span><strong>${escapeHtml(entry.student)}</strong><small>${escapeHtml(entry.goal)} · ${escapeHtml(entry.date)}</small></span>
-              <span class="row-meta">${statusPill(entry.status)}<span class="row-arrow" aria-hidden="true">›</span></span>
-            </button>`,
-        )
-        .join("")}
-    </div>`;
+  const list = element("div", { className: "list-surface" });
+  list.append(...presentationFixture.reviewQueue.map(reviewRow));
+  contentPanel.replaceChildren(
+    contentHeader("Teacher workspace", "To review", "Submitted evidence from students in this course."),
+    list,
+  );
 }
 
 function renderReviewDetail() {
   const entry = presentationFixture.reviewQueue[0];
-  contentPanel.innerHTML = `
-    ${contentHeader("Submission detail", entry.goal, `${entry.student} · ${entry.date}`, statusPill(entry.status))}
-    <div class="detail-grid">
-      <section class="media-stage">
-        ${waveform()}
-        <strong>Authorized source media ready</strong>
-        <span class="muted">Audio · 01:05 · private course review</span>
-        <div class="button-row"><button class="command-button" type="button" data-command="play">Play evidence${simulationTag()}</button></div>
-      </section>
-      <section class="grouped-section">
-        <h4>Student reflection</h4>
-        <p>${escapeHtml(entry.notes)}</p>
-        <dl class="metadata-list"><div><dt>Duration</dt><dd>${escapeHtml(entry.duration)}</dd></div><div><dt>Scope</dt><dd>Teacher course membership</dd></div></dl>
-        <div class="button-row"><button class="command-button" type="button" data-view="feedback-editor">Compose feedback${simulationTag()}</button></div>
-      </section>
-    </div>
-    <p class="simulation-disclosure">Playback and feedback commands are simulated. No authorized URL is requested and no feedback is persisted.</p>`;
+  const reflection = append(
+    element("section", { className: "grouped-section" }),
+    element("h4", { text: "Student reflection" }),
+    element("p", { text: entry.notes }),
+    metadataList([
+      ["Duration", entry.duration],
+      ["Scope", "Teacher course membership"],
+    ]),
+    buttonRow(commandButton("Compose feedback", "feedback-editor")),
+  );
+  contentPanel.replaceChildren(
+    contentHeader("Submission detail", entry.goal, entry.student + " · " + entry.date, statusPill(entry.status)),
+    append(
+      element("div", { className: "detail-grid" }),
+      mediaStage(
+        "Authorized source media ready",
+        "Audio · 01:05 · private course review",
+        commandButton("Play evidence", "play"),
+      ),
+      reflection,
+    ),
+    element("p", {
+      className: "simulation-disclosure",
+      text: "Playback and feedback commands are simulated. No authorized URL is requested and no feedback is persisted.",
+    }),
+  );
 }
 
 function renderFeedbackEditor() {
   const entry = presentationFixture.reviewQueue[0];
-  contentPanel.innerHTML = `
-    ${contentHeader("Teacher workspace", "Feedback", `${entry.student} · ${entry.goal}`)}
-    <div class="detail-grid">
-      <section class="media-stage">${waveform()}<strong>Practice audio · 01:05</strong><span class="muted">Playback position 00:18</span><div class="button-row"><button class="command-button" type="button" data-command="play">Play evidence${simulationTag()}</button></div></section>
-      <form class="grouped-section" id="feedback-form">
-        <h4>Structured feedback</h4>
-        <div class="editor-field"><label for="outcome">Outcome</label><select id="outcome"><option>Next goal</option><option>Needs revision</option><option>Complete</option></select></div>
-        <div class="editor-field"><label for="feedback">Feedback</label><textarea id="feedback">The phrase is much more connected. Next, keep the release light before increasing the tempo.</textarea></div>
-        <div class="feedback-marker"><time>00:18</time><p>Excellent voicing here.</p></div>
-        <button class="text-button" type="button" data-command="marker">Add marker at current playback time${simulationTag()}</button>
-        <div class="button-row"><button class="command-button" type="submit">Queue feedback${simulationTag()}</button><button class="secondary-button" type="button" data-view="review-detail">Cancel</button></div>
-      </form>
-    </div>
-    <p class="simulation-disclosure">Editing remains inside this browser tab. Queue feedback does not send, store, or synchronize anything.</p>`;
+  const outcome = element("select", { attributes: { id: "outcome" } });
+  outcome.append(
+    element("option", { text: "Next goal" }),
+    element("option", { text: "Needs revision" }),
+    element("option", { text: "Complete" }),
+  );
+  const feedback = element("textarea", {
+    attributes: { id: "feedback" },
+    text: "The phrase is much more connected. Next, keep the release light before increasing the tempo.",
+  });
+  const form = append(
+    element("form", { className: "grouped-section", attributes: { id: "feedback-form" } }),
+    element("h4", { text: "Structured feedback" }),
+    append(
+      element("div", { className: "editor-field" }),
+      element("label", { attributes: { for: "outcome" }, text: "Outcome" }),
+      outcome,
+    ),
+    append(
+      element("div", { className: "editor-field" }),
+      element("label", { attributes: { for: "feedback" }, text: "Feedback" }),
+      feedback,
+    ),
+    markerNode({ time: "00:18", text: "Excellent voicing here." }),
+    button("text-button", "Add marker at current playback time", { "data-command": "marker" }, true),
+    buttonRow(
+      element("button", { className: "command-button", attributes: { type: "submit" } }),
+      button("secondary-button", "Cancel", { "data-view": "review-detail" }),
+    ),
+  );
+  form.querySelector('button[type="submit"]').append(document.createTextNode("Queue feedback"), simulationTag());
+  contentPanel.replaceChildren(
+    contentHeader("Teacher workspace", "Feedback", entry.student + " · " + entry.goal),
+    append(
+      element("div", { className: "detail-grid" }),
+      mediaStage("Practice audio · 01:05", "Playback position 00:18", commandButton("Play evidence", "play")),
+      form,
+    ),
+    element("p", {
+      className: "simulation-disclosure",
+      text: "Editing remains inside this browser tab. Queue feedback does not send, store, or synchronize anything.",
+    }),
+  );
 }
 
 function renderConfirmation() {
-  contentPanel.innerHTML = `
-    <div class="confirmation">
-      ${statusPill("Queued")}
-      <h3>Feedback queued in the simulation.</h3>
-      <p>The real app would keep the command durable until sync succeeds. This static page only changed its local display and sent no command.</p>
-      <div class="button-row"><button class="secondary-button" type="button" data-view="review">Return to review queue</button><button class="text-button" type="button" data-role-jump="student">View student feedback</button></div>
-    </div>`;
+  contentPanel.replaceChildren(
+    append(
+      element("div", { className: "confirmation" }),
+      statusPill("Queued"),
+      element("h3", { text: "Feedback queued in the simulation." }),
+      element("p", {
+        text: "The real app would keep the command durable until sync succeeds. This static page only changed its local display and sent no command.",
+      }),
+      buttonRow(
+        button("secondary-button", "Return to review queue", { "data-view": "review" }),
+        button("text-button", "View student feedback", { "data-role-jump": "student" }),
+      ),
+    ),
+  );
 }
 
 function renderToolView(view) {
-  const copy = {
-    calendar: ["Calendar", "Course dates would appear here. Calendar refresh and save actions are omitted from the static walkthrough."],
-    sync: ["Sync status", "This view names pending and failed work without processing, retrying, refreshing, or deleting queue items."],
-    settings: ["Settings", "Account, sign-out, and local-data deletion controls are omitted because this page has no account or local profile."],
-    "reviewed-list": ["Reviewed", "The focused walkthrough keeps one submitted item in the teacher queue and one reviewed item in the student view."],
-  };
-  const [title, description] = copy[view];
-  contentPanel.innerHTML = `
-    ${contentHeader("Structured demo", title, description)}
-    <section class="grouped-section"><h4>Simulation boundary</h4><p>No command-capable control is provided in this supporting view. Return to the core role flow using the navigation.</p></section>`;
+  let title;
+  let description;
+  if (view === "calendar") {
+    title = "Calendar";
+    description = "Course dates would appear here. Calendar refresh and save actions are omitted from the static walkthrough.";
+  } else if (view === "sync") {
+    title = "Sync status";
+    description = "This view names pending and failed work without processing, retrying, refreshing, or deleting queue items.";
+  } else if (view === "settings") {
+    title = "Settings";
+    description = "Account, sign-out, and local-data deletion controls are omitted because this page has no account or local profile.";
+  } else {
+    title = "Reviewed";
+    description = "The focused walkthrough keeps one submitted item in the teacher queue and one reviewed item in the student view.";
+  }
+  contentPanel.replaceChildren(
+    contentHeader("Structured demo", title, description),
+    append(
+      element("section", { className: "grouped-section" }),
+      element("h4", { text: "Simulation boundary" }),
+      element("p", { text: "No command-capable control is provided in this supporting view. Return to the core role flow using the navigation." }),
+    ),
+  );
 }
 
 function renderContent() {
-  const renderers = {
-    entries: renderStudentEntries,
-    "entry-detail": renderStudentDetail,
-    reviewed: renderReviewedFeedback,
-    review: renderReviewQueue,
-    "review-detail": renderReviewDetail,
-    "feedback-editor": renderFeedbackEditor,
-    confirmation: renderConfirmation,
-  };
-  (renderers[state.view] || (() => renderToolView(state.view)))();
+  const renderers = new Map([
+    ["entries", renderStudentEntries],
+    ["entry-detail", renderStudentDetail],
+    ["reviewed", renderReviewedFeedback],
+    ["review", renderReviewQueue],
+    ["review-detail", renderReviewDetail],
+    ["feedback-editor", renderFeedbackEditor],
+    ["confirmation", renderConfirmation],
+  ]);
+  const renderer = renderers.get(state.view);
+  (renderer || (() => renderToolView(state.view)))();
 }
 
 function render() {
@@ -315,12 +468,12 @@ function render() {
   renderContent();
 }
 
-document.querySelectorAll("[data-role]").forEach((button) => {
-  button.addEventListener("click", () => {
-    state.role = button.dataset.role;
+document.querySelectorAll("[data-role]").forEach((roleButton) => {
+  roleButton.addEventListener("click", () => {
+    state.role = roleButton.dataset.role;
     state.view = state.role === "student" ? "entries" : "review";
     document.querySelectorAll("[data-role]").forEach((candidate) => {
-      const active = candidate === button;
+      const active = candidate === roleButton;
       candidate.classList.toggle("is-active", active);
       candidate.setAttribute("aria-pressed", String(active));
     });

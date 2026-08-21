@@ -19,9 +19,9 @@ This note records the evidence basis and product boundaries for Resonance's teac
 - Capture-profile metadata gives the reviewer context about the intended perspective.
 - Marker synchronization replaces the entry's marker set, avoiding stale omitted markers.
 - Server authorization limits private media to the owning student and same-course teachers.
-- The process-level service-E2E suite covers lesson creation, upload, marker
-  sync, submission, queue metadata, authorized retrieval, and feedback. It must
-  pass again on the final candidate; screenshots remain visual evidence only.
+- Focused server contracts protect upload identity, marker synchronization,
+  submission transactions, queue receipts, authorization, and feedback data.
+  Screenshots remain visual evidence only.
 
 ## Explicit non-capabilities
 

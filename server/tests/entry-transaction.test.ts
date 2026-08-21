@@ -1,7 +1,12 @@
 // Uses real PostgreSQL sessions to prove advisory locks serialize conflicting entry work.
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { lockEntry, lockEntryIdentity, withLockedEntry } from '../src/services/entryTransaction.js';
+import {
+  lockEntry,
+  lockEntryIdentity,
+  lockOperationIdentity,
+  withLockedEntry,
+} from '../src/services/entryTransaction.js';
 
 const lockOwner = new PrismaClient();
 const lockContender = new PrismaClient();
@@ -31,6 +36,28 @@ describe('entry transaction locking', () => {
       Array<{ acquiredAfterCommit: boolean }>
     >`
       SELECT pg_try_advisory_xact_lock(hashtextextended(${entryId}, 0)) AS "acquiredAfterCommit"
+    `;
+    expect(acquiredAfterCommit).toBe(true);
+  });
+
+  it('holds the seed-1 operation identity lock until commit', async () => {
+    const userId = `user-lock-${crypto.randomUUID()}`;
+    const operationId = `operation-lock-${crypto.randomUUID()}`;
+    const identity = `${userId}:${operationId}`;
+
+    await lockOwner.$transaction(async (tx) => {
+      await expect(lockOperationIdentity(tx, userId, operationId)).resolves.toBeUndefined();
+
+      const [{ acquired }] = await lockContender.$queryRaw<Array<{ acquired: boolean }>>`
+        SELECT pg_try_advisory_xact_lock(hashtextextended(${identity}, 1)) AS "acquired"
+      `;
+      expect(acquired).toBe(false);
+    });
+
+    const [{ acquiredAfterCommit }] = await lockContender.$queryRaw<
+      Array<{ acquiredAfterCommit: boolean }>
+    >`
+      SELECT pg_try_advisory_xact_lock(hashtextextended(${identity}, 1)) AS "acquiredAfterCommit"
     `;
     expect(acquiredAfterCommit).toBe(true);
   });

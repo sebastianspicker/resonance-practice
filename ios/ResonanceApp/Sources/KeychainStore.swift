@@ -6,6 +6,13 @@ import Security
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "resonance", category: "KeychainStore")
 
+/// Verified persistence operations for the local-data owner marker.
+struct LocalDataOwnerStore {
+    let read: () throws -> String?
+    let write: (String) throws -> Void
+    let remove: () throws -> Void
+}
+
 /// Stores credentials so persisted authentication and calendar data never fall back to plaintext storage.
 enum KeychainStore {
     /// Security's CFString constants are not Sendable. Create the bridge at
@@ -16,6 +23,14 @@ enum KeychainStore {
 
     static func accountKey(for key: String) -> String {
         "\(AppConfig.keychainNamespace).\(key)"
+    }
+
+    static func localDataOwnerStore() -> LocalDataOwnerStore {
+        LocalDataOwnerStore(
+            read: { try KeychainStore.read("localDataOwnerId") },
+            write: { try KeychainStore.store($0, for: "localDataOwnerId") },
+            remove: { try KeychainStore.removeStoredValue(for: "localDataOwnerId") }
+        )
     }
 
     static func store(_ value: String, for key: String) throws {

@@ -4,7 +4,7 @@ import SwiftUI
 
 struct OfflineHonestyBanner: View {
     var pendingCount: Int = 0
-    var message: String? = nil
+    var message: String?
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -56,7 +56,7 @@ struct SyncStatusStrip: View {
     let isOnline: Bool
     let pendingCount: Int
     let failedCount: Int
-    var onOpenQueue: (() -> Void)? = nil
+    var onOpenQueue: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -138,7 +138,7 @@ struct SyncStatusStrip: View {
 
 struct StatusRail: View {
     let items: [String]
-    var leading: LifecycleStatus? = nil
+    var leading: LifecycleStatus?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -168,7 +168,7 @@ struct StatusRail: View {
 
 struct MediaStageCard<Content: View>: View {
     let title: String
-    var status: LifecycleStatus? = nil
+    var status: LifecycleStatus?
     @ViewBuilder var content: () -> Content
 
     var body: some View {

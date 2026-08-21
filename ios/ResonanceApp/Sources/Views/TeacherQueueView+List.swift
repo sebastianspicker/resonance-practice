@@ -2,7 +2,7 @@ import SwiftUI
 
 // List presentation for compact teacher review queue (phone / sheet flow).
 
-extension TeacherQueueView {
+extension TeacherQueueScreen {
     var listBody: some View {
         Group {
             if isLoading && queue.isEmpty {
@@ -34,7 +34,10 @@ extension TeacherQueueView {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(
-                        "\(entry.studentName), \(entry.goalText), \(queuedFeedback.contains(entry.id) ? LifecycleStatus.feedbackQueued.label : LifecycleStatus.submitted.label)"
+                        "\(entry.studentName), \(entry.goalText), "
+                            + (queuedFeedback.contains(entry.id)
+                                ? LifecycleStatus.feedbackQueued.label
+                                : LifecycleStatus.submitted.label)
                     )
                     .accessibilityHint("Opens the submission and media player")
                 }

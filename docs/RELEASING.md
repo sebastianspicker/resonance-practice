@@ -40,9 +40,9 @@ Run:
 ```
 
 The final candidate must include a fresh disposable PostgreSQL database,
-baseline migration, MinIO-backed artifact flow, coverage, process E2E, strict
-SwiftLint, simulator XCTest, and the exact Swift 6.3.3 toolchain. Record any
-blocked command separately; a subset is not full release proof.
+baseline migration, MinIO-backed artifact flow, strict SwiftLint, retained
+server contracts, iOS XCTest, and the exact Swift toolchain. Record any blocked
+command separately; a subset is not full release proof.
 
 Also confirm:
 
@@ -55,7 +55,7 @@ git diff --check
 
 ## 3. Promote screenshots
 
-1. Capture the exact 12 deterministic mock scenarios listed in
+1. Review any proposed product screenshots against
    [ALPHA_WALKTHROUGH.md](./ALPHA_WALKTHROUGH.md) from the exact frozen source.
 2. Inspect each image for clipping, misleading state, private data, debug
    residue, and role correctness.
@@ -70,8 +70,7 @@ git diff --check
    publication commit. It requires exactly one release-ready, human-reviewed
    manifest with exactly 12 captures.
 
-Screenshots are visual evidence only. Service E2E and XCTest remain separate
-release gates.
+Screenshots are visual evidence only and are not an automated test gate.
 
 ## 4. Open the release pull request
 

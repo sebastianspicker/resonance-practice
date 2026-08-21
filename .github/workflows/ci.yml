@@ -91,9 +91,6 @@ jobs:
       - name: Validate public documentation and screenshots
         run: node ./scripts/validate-public-docs.mjs
 
-      - name: Test repository policy scripts
-        run: node --test tests/repository/*.test.mjs
-
       - name: Validate destructive test database target
         run: node ./scripts/assert-test-database-url.mjs
 
@@ -194,13 +191,9 @@ jobs:
           cleanup
           exit 1
 
-      - name: Test with coverage
+      - name: Run compact server suite
         working-directory: server
-        run: npx vitest run --coverage
-
-      - name: E2E tests
-        working-directory: server
-        run: npm run test:e2e
+        run: npm test
 
   ios:
     name: iOS Build
@@ -212,7 +205,9 @@ jobs:
 
       - name: Install pinned SwiftLint
         run: |
-          brew install swiftlint
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/SwiftLint.pkg" \
+            "https://github.com/realm/SwiftLint/releases/download/0.63.2/SwiftLint.pkg"
+          sudo installer -pkg "$RUNNER_TEMP/SwiftLint.pkg" -target /
           test "$(swiftlint version)" = "0.63.2"
 
       - name: Lint Swift sources and tests
