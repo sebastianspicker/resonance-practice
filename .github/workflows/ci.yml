@@ -49,7 +49,7 @@ jobs:
       AUTH_MODE: dev
       DEV_UNIVERSITY_NAME: Mock University Conservatory
       DEV_LOGIN_CALLBACK_URL: resonance://auth-callback
-      # CI-only local MinIO credentials, not used in production
+      # CI-only credentials for the Compose S3 service, not used in production
       S3_ENDPOINT: http://localhost:9000
       S3_REGION: us-east-1
       S3_BUCKET: resonance-dev
@@ -63,10 +63,12 @@ jobs:
           POSTGRES_PASSWORD: resonance-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           jwt_secret="$(openssl rand -hex 32)"
+          jwt_refresh_secret="$(openssl rand -hex 32)"
           database_url="postgresql://resonance:${POSTGRES_PASSWORD}@localhost:5432/resonance_test"
           {
             echo "DATABASE_URL=$database_url"
             echo "JWT_SECRET=$jwt_secret"
+            echo "JWT_REFRESH_SECRET=$jwt_refresh_secret"
           } >> "$GITHUB_ENV"
 
       - name: Checkout
@@ -79,20 +81,11 @@ jobs:
           cache: "npm"
           cache-dependency-path: server/package-lock.json
 
-      - name: Verify Node runtime
-        run: node ./scripts/check-node-version.mjs
-
-      - name: Validate demo fixture
-        run: node ./scripts/demo/validate-fixture.mjs
-
-      - name: Validate static Pages demo
-        run: node ./scripts/demo/validate-static-site.mjs
-
-      - name: Validate public documentation and screenshots
-        run: node ./scripts/validate-public-docs.mjs
+      - name: Verify repository
+        run: ./scripts/verify-repository.sh
 
       - name: Validate destructive test database target
-        run: node ./scripts/assert-test-database-url.mjs
+        run: node ./scripts/assert-database-target.mjs
 
       - name: Install dependencies
         working-directory: server
@@ -118,12 +111,6 @@ jobs:
         working-directory: server
         run: npm run format:check
 
-      - name: Secret scan
-        run: ./scripts/secret-scan.sh
-
-      - name: Build artifact guard
-        run: ./scripts/check-no-build-artifacts.sh
-
       - name: Shellcheck scripts
         run: docker run --rm -v "$PWD:/mnt" -w /mnt --entrypoint sh koalaman/shellcheck-alpine:stable -lc 'shellcheck -s bash scripts/*.sh scripts/demo/*.sh'
 
@@ -142,27 +129,13 @@ jobs:
         working-directory: server
         run: npm run build
 
-      - name: Start MinIO
-        run: |
-          docker run -d --name resonance-minio \
-            -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin \
-            -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e \
-            server /data
-          for _ in {1..30}; do
-            if curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null; then
-              exit 0
-            fi
-            sleep 1
-          done
-          docker logs resonance-minio
-          exit 1
+      - name: Start S3-compatible storage
+        run: docker compose -f infra/docker-compose.yml up -d --wait s3
 
       - name: Runtime readiness probe
         working-directory: server
         run: |
-          node dist/index.js >/tmp/resonance-server.log 2>&1 &
+          node dist/app/index.js >/tmp/resonance-server.log 2>&1 &
           server_pid=$!
           cleanup() {
             kill "$server_pid" >/dev/null 2>&1 || true
@@ -195,15 +168,20 @@ jobs:
         working-directory: server
         run: npm test
 
-  ios:
-    name: iOS Build
+  ios-toolchain:
+    name: iOS (${{ matrix.toolchain }})
     runs-on: macos-26
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [xcode, swift]
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install pinned SwiftLint
+        if: matrix.toolchain == 'xcode'
         run: |
           curl --fail --location --retry 3 --output "$RUNNER_TEMP/SwiftLint.pkg" \
             "https://github.com/realm/SwiftLint/releases/download/0.63.2/SwiftLint.pkg"
@@ -211,21 +189,38 @@ jobs:
           test "$(swiftlint version)" = "0.63.2"
 
       - name: Lint Swift sources and tests
+        if: matrix.toolchain == 'xcode'
         run: ./scripts/lint-swift.sh lint
 
       - name: Build and test with Xcode-bundled Swift
+        if: matrix.toolchain == 'xcode'
         env:
           IOS_COMPILER_LOG_PATH: ${{ runner.temp }}/resonance-xcodebuild.log
         run: ./scripts/verify-ios.sh
 
       - name: Analyze compiled Swift
+        if: matrix.toolchain == 'xcode'
         run: ./scripts/lint-swift.sh analyze "${{ runner.temp }}/resonance-xcodebuild.log"
 
       - name: Install exact Swift 6.3.3 toolchain
+        if: matrix.toolchain == 'swift'
         run: ./scripts/install-swift-toolchain.sh
 
       - name: Build and test with exact Swift 6.3.3
+        if: matrix.toolchain == 'swift'
         env:
           IOS_TOOLCHAIN: swift
           IOS_EXPECTED_SWIFT_VERSION: 6.3.3
         run: ./scripts/verify-ios.sh
+
+  ios:
+    # Preserve the existing required-check name while toolchains run independently.
+    name: iOS Build
+    needs: ios-toolchain
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both toolchains
+        env:
+          TOOLCHAIN_RESULT: ${{ needs.ios-toolchain.result }}
+        run: test "$TOOLCHAIN_RESULT" = success

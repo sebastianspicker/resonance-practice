@@ -1,6 +1,6 @@
 // Guards idempotent artifact-session identity before an upload credential is issued.
 import { describe, expect, it } from 'vitest';
-import { artifactSessionPayloadHash } from '../src/services/entryTransaction.js';
+import { artifactSessionPayloadHash } from '../src/modules/entries/application/transaction.js';
 
 const base = {
   userId: 'student-1',
@@ -10,6 +10,7 @@ const base = {
   type: 'audio',
   durationSeconds: 30,
   sizeBytes: 1024,
+  checksumSha256: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
   baseVersion: 4,
 } as const;
 

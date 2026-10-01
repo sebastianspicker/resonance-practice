@@ -1,0 +1,93 @@
+{
+  "contractVersion": "v1",
+  "routes": [
+    { "method": "GET", "path": "/api/v1/courses" },
+    { "method": "GET", "path": "/api/v1/courses/:courseId/entries" },
+    { "method": "GET", "path": "/api/v1/courses/:courseId/review-queue" },
+    { "method": "GET", "path": "/api/v1/entries/:entryId" },
+    { "method": "GET", "path": "/api/v1/entries/:entryId/feedback" },
+    { "method": "POST", "path": "/api/v1/artifact-sessions" },
+    {
+      "method": "POST",
+      "path": "/api/v1/artifact-sessions/:sessionId/complete"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/artifacts/:artifactId/download-session"
+    },
+    { "method": "POST", "path": "/api/v1/sync/commands" }
+  ],
+  "reads": {
+    "pageFields": ["items", "nextCursor"],
+    "pageQueryFields": ["limit", "cursor"],
+    "defaultPageSize": 50,
+    "maxPageSize": 200,
+    "feedbackOrder": ["createdAt:asc", "id:asc"],
+    "reviewQueueOmittedFields": ["captureMarkers"]
+  },
+  "sync": {
+    "commandPath": "/api/v1/sync/commands",
+    "commandFields": [
+      "operationId",
+      "entityId",
+      "kind",
+      "baseVersion",
+      "payload"
+    ],
+    "commandKinds": [
+      "createEntry",
+      "updateEntry",
+      "replaceCaptureMarkers",
+      "submitEntry",
+      "deleteEntry",
+      "createFeedback"
+    ],
+    "resultFields": [
+      "operationId",
+      "entityId",
+      "kind",
+      "status",
+      "code",
+      "message",
+      "currentVersion",
+      "resource"
+    ],
+    "resultStatuses": [
+      "applied",
+      "duplicate",
+      "conflict",
+      "rejected",
+      "retryable"
+    ]
+  },
+  "artifactSessions": {
+    "createRequestFields": [
+      "operationId",
+      "entryId",
+      "artifactId",
+      "type",
+      "durationSeconds",
+      "sizeBytes",
+      "checksumSha256",
+      "baseVersion"
+    ],
+    "checksumSha256": {
+      "encoding": "padded-base64",
+      "decodedByteLength": 32
+    },
+    "createResponseFields": [
+      "sessionId",
+      "artifact",
+      "uploadUrl",
+      "requiredHeaders",
+      "expiresInSeconds",
+      "currentVersion",
+      "completed"
+    ],
+    "completeResponseFields": ["artifact", "currentVersion"],
+    "downloadResponseFields": ["downloadUrl", "expiresInSeconds"]
+  },
+  "errorEnvelope": {
+    "fields": ["code", "message", "details", "requestId", "currentVersion"]
+  }
+}

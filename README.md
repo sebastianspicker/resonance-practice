@@ -1,81 +1,138 @@
 # Resonance
 
-Resonance is an offline-first iOS and iPadOS application for practice evidence
-and private teacher feedback in music education. Students create practice or
-teaching-lesson entries, attach audio or consented video, submit entries to a
-course, and receive timestamped feedback. Teachers review submitted entries
-within their course memberships.
+A music practice journal with timestamped teacher feedback.
 
-[Open the static product walkthrough](https://sebastianspicker.github.io/resonance/).
-It uses sanitized fixture data and the app's visual system. Every command-capable
-action is marked as simulated, and the page does not connect to the API or store data.
+[![CI](https://github.com/sebastianspicker/resonance-practice/actions/workflows/ci.yml/badge.svg)](https://github.com/sebastianspicker/resonance-practice/actions/workflows/ci.yml)
+[![Walkthrough](https://img.shields.io/badge/walkthrough-live-5e3fc4)](https://sebastianspicker.github.io/resonance-practice/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-The repository contains a native SwiftUI client, a Fastify API, a PostgreSQL
-schema, and local development infrastructure. The current
-`v0.1.0-alpha.1` candidate is source-only. It does not include a signed app,
-TestFlight distribution, hosted service, or production infrastructure.
+Resonance is an offline-first practice journal for music students and their
+teachers. Students record private practice audio (or consented teaching-lesson
+video), note what they noticed, and submit an entry to a course. Teachers review
+the submissions they can see and leave timestamped feedback.
 
-## Current capabilities
+Every change is written on the device first, so the app keeps working when the
+connection drops and syncs in the background when it returns.
 
-- SwiftUI client targeting iOS and iPadOS 17 or later.
-- SwiftData persistence for courses, entries, artifacts, feedback, calendar
-  data, and a durable synchronization queue.
-- Offline entry creation and queued synchronization with retry, deduplication,
-  account ownership checks, and optimistic versions.
-- Practice audio and consented teaching-lesson video with manual markers.
-- Student entry submission and teacher review with structured, timestamped
-  feedback.
-- Fastify API with development authentication, configurable OpenID Connect
-  authentication, course authorization, and consistent error responses.
-- PostgreSQL persistence through Prisma.
-- S3-compatible artifact upload sessions, protected downloads, and deferred
-  object deletion.
-- Deterministic local fixtures, server tests, iOS XCTest, linting, formatting,
-  dead-code checks, duplicate checks, and CI workflows.
+What you get:
 
-## Limitations
+- **Offline-first capture.** Entries, audio, and reflections are saved on the
+  device before anything touches the network.
+- **Consent-aware lesson video.** Teaching-lesson capture requires explicit
+  per-recording consent.
+- **Course-scoped review.** Teachers see only what their course membership
+  exposes, and leave feedback timestamped against the audio.
+- **One typed sync contract.** Every resource change flows through a single
+  idempotent, owner-bound command endpoint.
+- **Private media by default.** Uploads are checksum-bound; downloads are
+  short-lived and authorized.
 
-- The interface is currently English-only.
-- The full accessibility, Dynamic Type, keyboard, device-layout, localization,
-  poor-network, and performance matrices have not been completed.
-- Some capture editing, preview, retake, reviewed-history, Calendar, Export,
-  Settings, and Sync states need further product validation.
-- No live university identity provider, production PostgreSQL service, object
-  store, backup process, retention process, signing workflow, or deployment has
-  been validated by this repository.
-- The local MinIO service is for loopback development and CI only.
-- No approved public screenshot set currently exists.
+This repository is the source for the iOS app and the server it syncs with. It
+is an early alpha: there is no hosted service, signed build, production identity
+integration, or support commitment. The
+[interactive walkthrough](https://sebastianspicker.github.io/resonance-practice/) is a
+presentation-only page that uses mock data and does not connect to the app or
+server.
 
-## Local setup
+## Screenshot tour
 
-Backend and repository checks require:
+Captured from the iOS app running in a simulator against the deterministic demo
+fixture. No real student data or recordings are shown.
 
-- Node.js 24.x, as specified by [`.nvmrc`](.nvmrc).
-- npm 10 or later.
-- Docker with Compose for the local PostgreSQL and MinIO services. No exact
-  Docker or Compose version is pinned.
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="demo/site/screenshots/iphone-prepare.png" width="260" alt="Prepare screen: a practice entry with course, entry type, date, practice goal, duration, and tags, plus Record audio and Save draft buttons." />
+      <br /><b>Prepare</b>
+      <br /><sub>Set the goal, entry type, and optional tags before recording.</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="demo/site/screenshots/iphone-record-permission.png" width="260" alt="Record screen showing that microphone access is needed and that the draft is saved." />
+      <br /><b>Record</b>
+      <br /><sub>Microphone denial keeps the saved draft and explains how to fix it.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="demo/site/screenshots/iphone-reflect.png" width="260" alt="Reflect screen with audio playback, a seek slider, and a reflection field." />
+      <br /><b>Reflect</b>
+      <br /><sub>Play the take, scrub to any point, and write down what to work on.</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="demo/site/screenshots/iphone-queued.png" width="260" alt="Queued screen stating the entry is saved and waiting for a connection." />
+      <br /><b>Queue</b>
+      <br /><sub>Submitting moves the entry into the local outbox until it can sync.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="demo/site/screenshots/iphone-review.png" width="260" alt="Offline final-review screen showing the goal, privacy, and submission finality." />
+      <br /><b>Final review (offline)</b>
+      <br /><sub>Recipient, privacy scope, and finality are shown before submitting.</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="demo/site/screenshots/iphone-submitted.png" width="260" alt="Submitted confirmation listing recording uploaded, submission confirmed, and teacher availability." />
+      <br /><b>Submitted</b>
+      <br /><sub>Confirmation is driven by the real submitted entry state.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="demo/site/screenshots/ipad-reflect.png" width="260" alt="iPad split view showing the course sidebar and the reflect step." />
+      <br /><b>iPad</b>
+      <br /><sub>The same flow inside the split-view course and tool shell.</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="demo/site/screenshots/iphone-reflect-dark.png" width="260" alt="Reflect screen in dark appearance." />
+      <br /><b>Dark appearance</b>
+      <br /><sub>Lifecycle and privacy state stay legible without relying on color.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="demo/site/screenshots/iphone-reflect-large-text.png" width="260" alt="Reflect screen at an accessibility text size." />
+      <br /><b>Larger text</b>
+      <br /><sub>Layouts reflow with Dynamic Type instead of clipping content.</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="demo/site/screenshots/iphone-review-online.png" width="260" alt="Final-review screen with an online connectivity indicator." />
+      <br /><b>Final review (online)</b>
+      <br /><sub>The review screen names the current connectivity state.</sub>
+    </td>
+  </tr>
+</table>
 
-iOS development and the complete local verification path additionally require:
+The same tour is available as a gallery on the
+[walkthrough site](https://sebastianspicker.github.io/resonance-practice/#screenshots).
 
-- macOS with Xcode 26 and an iOS 17-or-later Simulator runtime. CI uses a
-  macOS 26 runner; no Xcode minor version is pinned.
-- `jq`, used by the simulator selection script.
-- SwiftLint 0.63.2.
-- Swift 6.3.3 for the second compiler gate. The Xcode-bundled compiler is
-  checked separately.
+## Components
 
-## Installation
+| Path | Purpose | Runtime and lifecycle |
+| --- | --- | --- |
+| [`ios/ResonanceApp/`](ios/ResonanceApp/README.md) | Offline SwiftUI client: local persistence, capture, review, and synchronization | iOS/iPadOS 17+, built and tested with Xcode |
+| [`server/`](server/README.md) | Fastify API: identity, authorization, persistence, media sessions, and synchronization | Private Node.js 24 package, built and run as one server monolith |
+| [`demo/site/`](demo/site/README.md) | Presentation-only browser walkthrough | Dependency-free static files, published independently with GitHub Pages |
+| [`contracts/`](contracts/v1-api-contract.json) | Canonical v1 routes and cross-client wire vocabulary | Validated against the TypeScript routes and Swift networking models |
+| [`infra/`](infra/docker-compose.yml) | Disposable PostgreSQL and MinIO dependencies | Loopback-only Docker Compose for development and CI, not production |
+
+The client and server build independently and share the v1 HTTP contract. Neither
+is published as a reusable library. The
+[architecture guide](docs/ARCHITECTURE.md) covers dependency direction and
+runtime flows.
+
+## Prerequisites
+
+- Node.js 24.x and npm 10 or later
+- Docker with Docker Compose for local PostgreSQL and MinIO
+- macOS, Xcode, `xcrun`, `xcodebuild`, `jq`, and an available iPhone Simulator
+  for the iOS verification lane
+
+## Quick start
 
 From the repository root:
 
 ```bash
 cp server/.env.example server/.env
-```
-
-Before starting services, edit `server/.env`, set `AUTH_MODE=dev`, and verify
-the required database, JWT, and S3 values. Then run:
-
-```bash
 docker compose -f infra/docker-compose.yml up -d
 
 cd server
@@ -83,227 +140,57 @@ npm ci
 npm run prisma:generate
 npm run prisma:migrate
 npm run prisma:seed
-```
-
-The repository has one Prisma migration,
-`server/prisma/migrations/20260716000000_alpha_baseline`. A database created
-from an earlier alpha migration chain must be backed up if needed and rebuilt
-before applying this baseline. Do not modify Prisma's `_prisma_migrations`
-table to bypass the migration history.
-
-## Configuration
-
-For local development, keep the server bound to a loopback address. The server
-validates configuration at startup.
-
-Required backend values:
-
-| Variable | Purpose |
-| --- | --- |
-| `DATABASE_URL` | PostgreSQL connection used by Prisma. |
-| `JWT_SECRET` | Access-token signing secret. Must contain at least 32 characters. |
-| `S3_ENDPOINT` | S3-compatible service endpoint. |
-| `S3_BUCKET` | Artifact bucket name. |
-| `S3_ACCESS_KEY` | S3 access key. |
-| `S3_SECRET_KEY` | S3 secret key. |
-
-Important optional or mode-specific values:
-
-| Variable | Default or requirement |
-| --- | --- |
-| `AUTH_MODE` | Defaults to `prod`; set to `dev` only for loopback development. |
-| `HOST` | Defaults to `127.0.0.1` in development; required in production. |
-| `PORT` | Defaults to `4000`. |
-| `JWT_REFRESH_SECRET` | Defaults to a value derived from `JWT_SECRET`; use a separate secret outside local development. |
-| `CORS_ORIGINS` | Comma-separated exact origins; at least one is required in production. |
-| `OIDC_DISCOVERY_URL` | Required in production. URL passed to `openid-client` discovery. |
-| `OIDC_CLIENT_ID` | Required in production. |
-| `OIDC_CLIENT_SECRET` | Required in production. |
-| `OIDC_REDIRECT_URI` | Required in production. |
-| `OIDC_ROLE_CLAIM` | Defaults to `role`. |
-| `OIDC_TEACHER_VALUE` | Defaults to `teacher`. |
-| `ACCESS_TOKEN_TTL_MINUTES` | Defaults to `15`; must be a positive integer. |
-| `REFRESH_TOKEN_TTL_DAYS` | Defaults to `7`; must be a positive integer. |
-| `DEPENDENCY_TIMEOUT_MS` | Defaults to `10000`; accepted range is 100 to 300000. |
-| `S3_REGION` | Defaults to `us-east-1`. |
-| `S3_FORCE_PATH_STYLE` | Defaults to `true`. |
-| `S3_PRESIGN_TTL_SECONDS` | Defaults to `900`; accepted range is 1 to 604800. |
-| `DEV_UNIVERSITY_NAME` | Label shown by the local development sign-in page. |
-| `DEV_LOGIN_CALLBACK_URL` | Defaults to `resonance://auth-callback`. |
-
-The iOS client defaults to `http://localhost:4000`. Set
-`RESONANCE_API_BASE` in the Xcode scheme to use another credential-free HTTP
-or HTTPS base URL.
-
-## Usage
-
-Start the API:
-
-```bash
-cd server
 npm run dev
 ```
 
-Open `ios/ResonanceApp/ResonanceApp.xcodeproj`, select the shared
-`ResonanceApp` scheme, and run an iPhone or iPad Simulator. In development
-mode, the app opens the loopback sign-in page. Select the student or teacher
-persona to create a local session.
+The development server listens on `127.0.0.1:4000` by default. Open
+`ios/ResonanceApp/ResonanceApp.xcodeproj` and run the shared `ResonanceApp`
+scheme to start the client. The default endpoint is `http://localhost:4000` and
+the native callback is `resonance://auth-callback`.
 
-To prepare deterministic demo data:
+[Development](docs/DEVELOPMENT.md) covers test-database setup, demo fixtures,
+iOS toolchain options, and the full validation matrix.
 
-```bash
-./scripts/demo/bootstrap-local-demo.sh
-```
+## Common checks
 
-The fixture can be validated without Docker:
+Run commands from the repository root unless a different directory is shown.
 
-```bash
-node scripts/demo/validate-fixture.mjs
-```
-
-See [Local demo](docs/LOCAL_DEMO.md) for fixture loading and reset behavior.
-
-## Repository structure
-
-| Path | Contents |
+| Purpose | Command |
 | --- | --- |
-| `ios/ResonanceApp/` | SwiftUI application, SwiftData models, networking, sync services, resources, Xcode project, and XCTest. |
-| `server/src/` | Fastify composition root, routes, authentication, validation, storage, and service logic. |
-| `server/prisma/` | Prisma schema, baseline migration, seed commands, and demo reset logic. |
-| `server/tests/` | Compact Vitest suites for database, auth, artifact, entry, and sync boundaries. |
-| `infra/` | Loopback-only PostgreSQL and MinIO Compose services. |
-| `demo/` | Deterministic mock-university fixture. |
-| `scripts/` | Verification, safety, and local demo commands. |
-| `docs/` | API, architecture, operations, security, product, and release documentation. |
-| `.github/` | CI, security analysis, issue forms, and contribution templates. |
+| Repository contracts, docs, fixtures, and publication hygiene | `./scripts/verify-repository.sh` |
+| Server build and type-check | `cd server && npm run build` |
+| Server tests | `cd server && npm test` |
+| Server lint, dead-code, and duplication checks | `cd server && npm run quality` |
+| Server formatting check | `cd server && npm run format:check` |
+| iOS layering, build, and XCTest | `./scripts/verify-ios.sh` |
+| Public Markdown links and images | `node scripts/validate-public-docs.mjs` |
+| Full local CI with disposable services | `./scripts/ci-local.sh --with-docker` |
 
-## Development workflow
+The full local CI lane also needs Docker-based ShellCheck and actionlint,
+SwiftLint 0.63.2, and the exact Swift 6.3.3 toolchain. It creates or reuses the
+loopback `resonance_test` database. Review the safety requirements in
+[Development](docs/DEVELOPMENT.md) before running database commands.
 
-Install dependencies with `npm ci` and keep changes scoped. Use the narrowest
-relevant test while editing, then run the broadest available gate.
+## Documentation
 
-Common backend commands:
-
-```bash
-cd server
-npm run build
-npm test
-npm run lint
-npm run format:check
-npm run quality:dead-code
-npm run quality:duplicates
-```
-
-`npm run build` invokes TypeScript with the strict project configuration and
-serves as the backend type check. Use `npm run format` only when an intentional
-formatting change is in scope.
-
-## Testing
-
-The complete local CI-equivalent command is:
-
-```bash
-./scripts/ci-local.sh --with-docker
-```
-
-It validates Compose, repository boundaries, fixtures, documentation, shell
-script contracts, workflows, backend lint and formatting, dependency audit, Prisma
-generation and migration, TypeScript compilation, server readiness, the compact
-backend suite, SwiftLint, and iOS XCTest with both supported Swift
-compiler paths.
-
-Focused checks:
-
-```bash
-# Backend tests. PostgreSQL must be available.
-cd server
-npm test
-
-# iOS build and XCTest on an available Simulator.
-cd ..
-./scripts/verify-ios.sh
-```
-
-The test database safety guard requires the database name
-`resonance_test`. See [Development and operations](docs/RUNBOOK.md) for the
-exact database setup and tool requirements.
-
-## Deployment and operation
-
-Build and start the API with:
-
-```bash
-cd server
-npm ci
-npm run prisma:generate
-npm run build
-npm run prisma:migrate
-npm run start
-```
-
-`GET /health` reports process availability. `GET /ready` checks PostgreSQL and
-the configured object-storage bucket and returns HTTP 503 when either
-dependency is unavailable.
-
-Production mode requires explicit `HOST`, `CORS_ORIGINS`, OIDC settings,
-PostgreSQL, an S3-compatible object store, operator-managed TLS, and secret
-injection. The repository supplies no container image, infrastructure
-definition, ingress, backup automation, or monitoring configuration for a
-production deployment. Treat the sequence above as an application start
-contract, not a complete deployment recipe. See
-[Development and operations](docs/RUNBOOK.md) and
-[OIDC configuration](docs/SSO_BRIDGE.md).
-
-## Troubleshooting
-
-- Startup reports a missing environment variable: compare the active
-  environment with the tables above and `server/.env.example`.
-- Development authentication returns 403: access the server through
-  `localhost`, `127.0.0.1`, or `::1`, and verify `AUTH_MODE=dev`.
-- Production startup rejects the host or CORS configuration: set `HOST`
-  explicitly and provide at least one exact `CORS_ORIGINS` value.
-- `/ready` returns 503: verify PostgreSQL connectivity, the S3 endpoint,
-  credentials, bucket, and `DEPENDENCY_TIMEOUT_MS`.
-- Prisma rejects a destructive test command: use a database named
-  `resonance_test`; demo reset commands require the loopback `resonance`
-  database.
-- The iOS app contacts the wrong server: check `RESONANCE_API_BASE` in the
-  active Xcode scheme.
-- iOS verification cannot choose a Simulator: install an iPhone Simulator or
-  set `IOS_DESTINATION`.
-
-Additional failure cases are documented in
-[Development and operations](docs/RUNBOOK.md).
-
-## Security considerations
-
-- Never commit environment files, credentials, tokens, signed URLs, private
-  recordings, or real student data.
-- Development authentication is unauthenticated and must remain on loopback.
-- Production authentication requires OpenID Connect. No live provider has been
-  validated by this repository.
-- The API authorizes entry and artifact access through course membership and
-  ownership checks.
-- Artifact download responses use short-lived signed URLs and
-  `Cache-Control: no-store`.
-- The iOS app stores session tokens and account ownership state in Keychain and
-  protects local media with iOS file protection.
-- The Compose credentials and MinIO image are development values. Do not reuse
-  them outside a disposable local environment.
-
-Read the [security model](docs/SECURITY.md). Report vulnerabilities through
-[GitHub private vulnerability reporting](https://github.com/sebastianspicker/resonance/security/advisories/new).
-
-## Contributing
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a change. Pull requests
-should explain behavior, include relevant tests, update affected contracts,
-and list any checks that could not be run. Do not include local logs, private
-data, build output, or unreviewed screenshots.
-
-The [documentation index](docs/INDEX.md) lists the current technical and
-product references.
+- [Product](PRODUCT.md): supported workflows and product boundaries.
+- [Design](DESIGN.md): interaction and accessibility principles.
+- [Architecture](docs/ARCHITECTURE.md): component ownership, dependency rules,
+  state, and runtime flows.
+- [API](docs/API.md): current HTTP routes and synchronization contract.
+- [Development](docs/DEVELOPMENT.md): setup, configuration, fixtures, tests, and
+  quality checks.
+- [Security model](docs/SECURITY.md) and [security policy](SECURITY.md):
+  implemented controls, operator obligations, and private reporting.
+- [OIDC integration](docs/SSO_BRIDGE.md): provider and native-app sign-in
+  boundaries.
+- [Contributing](CONTRIBUTING.md), [support](SUPPORT.md), and
+  [releasing](docs/RELEASING.md): project workflows and scope.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Resonance is available under the [MIT License](LICENSE).
+
+## Repository naming
+
+The repository is now [`resonance-practice`](https://github.com/sebastianspicker/resonance-practice), previously `resonance`. The product name and existing runtime, package, and data identifiers remain unchanged. The demo is at [the new Pages address](https://sebastianspicker.github.io/resonance-practice/).

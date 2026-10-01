@@ -23,7 +23,7 @@ assert.match(html, /does not connect\s+to an account, API, database, microphone,
 assert.match(html, /\.\/styles\.css/);
 assert.match(html, /\.\/demo\.js/);
 assert.match(css, /--accent:\s*#5e3fc4/i);
-assert.match(readme, /https:\/\/sebastianspicker\.github\.io\/resonance\//);
+assert.match(readme, /https:\/\/sebastianspicker\.github\.io\/resonance-practice\//);
 
 const forbiddenOperationalFields = [
   "localPath",

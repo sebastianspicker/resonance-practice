@@ -20,6 +20,7 @@ command -v jq >/dev/null || fail "jq is required to select an available iPhone s
 [[ -f "$SCHEME_FILE" ]] || fail "shared scheme not found at $SCHEME_FILE."
 find "$APP_DIR/Tests" -name '*.swift' -type f -print -quit | grep -q . || fail "no XCTest source files found under $APP_DIR/Tests."
 grep -R -q --include='*.swift' 'func test' "$APP_DIR/Tests" || fail "no XCTest methods found under $APP_DIR/Tests."
+bash "$APP_DIR/verify-core-layering.sh"
 
 if [[ -n "${IOS_DESTINATION:-}" ]]; then
 	DESTINATION="$IOS_DESTINATION"
@@ -28,7 +29,10 @@ else
 		.devices
 		| to_entries
 		| map(.value[])
-		| map(select(.isAvailable == true and (.name | startswith("iPhone"))))
+		| map(select(
+			.isAvailable == true
+			and (.deviceTypeIdentifier | contains(".SimDeviceType.iPhone-"))
+		))
 		| sort_by(.name, .udid)
 		| .[0].udid // empty
 	')"
@@ -36,8 +40,13 @@ else
 	DESTINATION="platform=iOS Simulator,id=$SIMULATOR_ID"
 fi
 
-DERIVED_DATA_PATH="$(mktemp -d "${TMPDIR:-/tmp}/resonance-ios-derived-data.XXXXXX")"
-trap 'rm -rf "$DERIVED_DATA_PATH"' EXIT
+if [[ -n "${IOS_DERIVED_DATA_PATH:-}" ]]; then
+	[[ -z "${IOS_COMPILER_LOG_PATH:-}" ]] || fail "compiler analysis requires a clean build; omit IOS_DERIVED_DATA_PATH."
+	DERIVED_DATA_PATH="$IOS_DERIVED_DATA_PATH"
+else
+	DERIVED_DATA_PATH="$(mktemp -d "${TMPDIR:-/tmp}/resonance-ios-derived-data.XXXXXX")"
+	trap 'rm -rf "$DERIVED_DATA_PATH"' EXIT
+fi
 
 TOOLCHAIN_ARGS=()
 SWIFT_VERSION_COMMAND=(xcrun swift --version)
@@ -68,6 +77,10 @@ XCODEBUILD_ARGS=(
 	-parallel-testing-enabled NO \
 	test
 )
+
+if [[ -n "${IOS_RESULT_BUNDLE_PATH:-}" ]]; then
+	XCODEBUILD_ARGS+=(-resultBundlePath "$IOS_RESULT_BUNDLE_PATH")
+fi
 
 if [[ -n "${IOS_COMPILER_LOG_PATH:-}" ]]; then
 	mkdir -p "$(dirname "$IOS_COMPILER_LOG_PATH")"

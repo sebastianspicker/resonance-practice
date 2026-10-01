@@ -3,9 +3,14 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PrismaClient } from '@prisma/client';
-export { assertDemoDatabaseUrl } from '../../scripts/assert-demo-database-url.mjs';
+import { assertDevelopmentDatabaseUrl } from '../../scripts/assert-database-target.mjs';
 
 const DEMO_ID_PREFIX = 'demo_';
+
+/** Demo seeding and reset may only mutate the local `resonance` database. */
+export function assertDemoDatabaseUrl(databaseUrl: string | undefined): void {
+  assertDevelopmentDatabaseUrl(databaseUrl, 'demo data mutation');
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

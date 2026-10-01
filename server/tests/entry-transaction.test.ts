@@ -6,7 +6,7 @@ import {
   lockEntryIdentity,
   lockOperationIdentity,
   withLockedEntry,
-} from '../src/services/entryTransaction.js';
+} from '../src/modules/entries/application/transaction.js';
 
 const lockOwner = new PrismaClient();
 const lockContender = new PrismaClient();

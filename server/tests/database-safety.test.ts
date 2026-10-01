@@ -1,7 +1,8 @@
 // Runs destructive-database guards in subprocesses to prove unsafe URLs fail before setup.
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
-import { assertTestDatabaseUrl } from './support/databaseSafety.js';
+import { assertDevelopmentDatabaseUrl, assertTestDatabaseUrl } from './support/databaseSafety.js';
 import { expectUnsafeDatabaseUrlStopsScript } from './support/unsafeScriptHarness.js';
 
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
@@ -35,6 +36,20 @@ describe('destructive test database guard', () => {
     ).toThrowError(expect.not.stringContaining(secret));
   });
 
+  it('accepts only the loopback development database for an operator reset', () => {
+    expect(() =>
+      assertDevelopmentDatabaseUrl(
+        'postgresql://user:password@localhost:5432/resonance?schema=public'
+      )
+    ).not.toThrow();
+    expect(() =>
+      assertDevelopmentDatabaseUrl('postgresql://user:password@localhost:5432/resonance_test')
+    ).toThrow('Refusing destructive development reset');
+    expect(() =>
+      assertDevelopmentDatabaseUrl('postgresql://user:password@db.example.test:5432/resonance')
+    ).toThrow('Refusing destructive development reset');
+  });
+
   it('stops local CI before any npm migration command for an unsafe inherited URL', () => {
     expectUnsafeDatabaseUrlStopsScript(
       repositoryRoot,
@@ -42,5 +57,19 @@ describe('destructive test database guard', () => {
       'Refusing destructive test setup',
       'resonance-db-guard-'
     );
+  });
+
+  it('requires the exact confirmation before invoking a development reset', () => {
+    const result = spawnSync(process.execPath, ['scripts/guarded-dev-db-reset.mjs'], {
+      cwd: repositoryRoot,
+      env: {
+        ...process.env,
+        AUTH_MODE: 'dev',
+        DATABASE_URL: 'postgresql://user:password@localhost:5432/resonance?schema=public',
+      },
+      encoding: 'utf8',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('RESONANCE_CONFIRM_DEV_DB_RESET=RESET_DEVELOPMENT_DATABASE');
   });
 });

@@ -1,336 +1,216 @@
 # Architecture
 
-## System overview
+Resonance pairs one offline-first SwiftUI client with one Fastify/Prisma server
+monolith. PostgreSQL holds application state, and S3-compatible storage holds
+protected media. Running that stack in production is an operator task; this
+repository provides the source and a disposable local setup.
+
+At a glance:
+
+- **Client.** One SwiftUI app for iPhone and iPad (`ios/ResonanceApp/`),
+  organized into `App`, `Core`, `Features`, and `SharedUI`.
+- **Server.** One Fastify/Prisma process (`server/`), split into `app`,
+  `platform`, and six feature modules.
+- **Data.** PostgreSQL for application state, S3-compatible storage for
+  protected media; media bytes never pass through the sync endpoint.
+- **Contract.** `contracts/v1-api-contract.json` carries the shared v1 wire
+  vocabulary, and every resource mutation goes through
+  `POST /api/v1/sync/commands`.
+
+## System context
 
 ```mermaid
-flowchart TB
-    subgraph Client["iOS and iPadOS client"]
-        UI[Views]
-        SD[SwiftData / Local Store]
-        SQ[Sync Queue]
-        AM[AuthManager]
-    end
-
-    subgraph Server["API Server (Fastify + Prisma)"]
-        API[Route Handlers]
-        SVC[Services]
-        DB[(PostgreSQL)]
-        S3[(S3-compatible object storage)]
-    end
-
-    subgraph External["Configured External Systems"]
-        ICAL[User-provided\niCalendar feed]
-        SSO[OpenID Connect provider]
-    end
-
-    UI --> SD
-    UI --> SQ
-    SQ -->|"v1 command batches"| API
-    AM -->|"session and refresh"| API
-    API --> SVC
-    SVC --> DB
-    SVC --> S3
-    AM -.->|"production login"| SSO
-    UI -.->|"calendar subscription"| ICAL
+flowchart LR
+    Students[Students] --> Client[iOS and iPadOS client]
+    Teachers[Teachers] --> Client
+    Client -->|Bearer-authenticated HTTP| Server[Fastify server monolith]
+    Server --> PostgreSQL[(PostgreSQL)]
+    Server --> Storage[(S3-compatible storage)]
+    Server -->|OIDC authorization code flow| Provider[OIDC provider]
+    Walkthrough[Static walkthrough] -. simulated presentation only .-> Students
 ```
 
-## Entry lifecycle
+The client is the only product interface in this repository. The server is one
+independently runnable process, not a set of microservices. `demo/site/` is
+built and published on its own and has no runtime connection to the client,
+server, or data stores.
+
+## Server
+
+`server/src/server.ts` is the public composition entry point. `server/src/app/`
+assembles process lifecycle, transport middleware, readiness, and route
+registration. `server/src/platform/` owns configuration, HTTP error and input
+contracts, deadlines, and the S3 adapter.
+
+| Module | Responsibility |
+| --- | --- |
+| `identity` | Development login, OIDC, token sessions, and issuer-scoped identity mapping. |
+| `courses` | Course membership authorization and course reads. |
+| `entries` | Course-scoped entry lists, entry reads, ownership, lifecycle queries, and deletion. |
+| `media` | Artifact sessions, completion, protected download sessions, and cleanup. |
+| `reviews` | Course review queues, feedback reads, and review-facing projections. |
+| `sync` | Typed v1 command parsing, admission, receipts, idempotency, and ordered execution. |
+
+Each module splits an `http/` adapter from an `application/` boundary: HTTP code
+validates transport data and invokes application code, while application code
+owns authorization and persistence transactions. The feature dependency graph
+is acyclic — Entries may use Courses; Media may use Entries; Reviews may use
+Courses and Entries; Sync may use Entries — and Identity and Courses otherwise
+stand alone. Cross-feature imports target `application/` only. Modules may
+depend on `platform`; `platform` never depends on modules or `app`.
+
+## Client
+
+The SwiftUI target is organized under `ios/ResonanceApp/Sources/`:
+
+| Directory | Responsibility |
+| --- | --- |
+| `App` | Composition, app state, navigation, and demo dependencies. |
+| `Core` | Domain models, persistence, networking, security, media, calendar, export, and synchronization. |
+| `Features` | Course, capture, entry, feedback, review, authentication, settings, and sync-status workflows. |
+| `SharedUI` | Reusable theme and presentation primitives. |
+
+Features may depend on Core and SharedUI; Core must not depend on Features. App
+composes features rather than holding domain logic. The durable Core outbox
+holds typed, versioned commands bound to the authenticated local owner.
+
+## Principal runtime flows
 
 ```mermaid
-stateDiagram-v2
-    [*] --> draft : student creates entry (offline)
-    draft --> draft : student edits / attaches media
-    draft --> submitted : student submits
-    submitted --> reviewed : teacher posts feedback
-    reviewed --> [*] : entry deleted (cascade)
-    draft --> [*] : entry deleted (cascade)
-    submitted --> [*] : entry deleted (cascade)
+flowchart LR
+    UI[Feature UI] --> Local[(SwiftData and protected local files)]
+    UI --> Outbox[Typed owner-bound outbox]
+    Outbox --> Sync[SyncManager FIFO batches]
+    Sync --> Commands[POST /api/v1/sync/commands]
+    Commands --> Modules[Server application modules]
+    Modules --> Database[(PostgreSQL)]
+
+    Local --> Session[Create artifact session]
+    Session --> Upload[Signed PUT to S3]
+    Upload --> Complete[Complete artifact session]
+    Complete --> Modules
 ```
 
-## Runtime components
+Normal resource changes are written to the device first and queued as typed
+commands. `SyncManager` serializes ready work, sends at most 25 commands per
+request, and preserves operation IDs and optimistic versions across retries.
+The server executes a request in order under user- and operation-scoped
+admission, persists a durable receipt, and rejects reuse of an operation ID for
+different work.
 
-- iOS and iPadOS client: SwiftUI interface, SwiftData persistence, protected
-  media files, Keychain state, and a persistent synchronization queue.
-- API server: Fastify routes and services for authentication, course context,
-  entry lifecycle, synchronization commands, feedback, and artifact sessions.
-- PostgreSQL: users, memberships, entries, feedback, optimistic versions,
-  command receipts, authentication tokens, upload sessions, and object-deletion
-  jobs.
-- S3-compatible storage: practice audio and teaching-lesson video. The bundled
-  MinIO service is limited to loopback development and CI.
-- External services: an operator-configured OpenID Connect provider and
-  user-provided iCalendar feeds.
+Media bytes never pass through the sync endpoint. The client creates an owner-
+and entry-bound upload session, uploads directly with its signed S3 capability,
+and asks the server to complete the session. An artifact is published only after
+storage metadata and bounded container evidence have been verified.
 
-## Client composition
+Completion shares one storage deadline across metadata, cached container probes,
+and the final copy, and its database claim outlives that deadline. Background
+storage deletion claims one job at a time with an expiring, token-bound lease;
+revoked-token retention also runs in bounded background batches.
 
-The iOS app starts in `ResonanceApp.swift`, opens the shared SwiftData `ModelContainer`, and injects one `AppState` into the SwiftUI tree. `AppState` wires together the long-lived services used by views:
+Course reconciliation consumes entry pages incrementally. Review queues return
+marker counts with entry summaries, while entry detail keeps the complete marker
+projection. Feedback uses an ascending `(createdAt, id)` cursor and the same
+bounded page envelope as entry lists.
 
-- `AuthManager`: ASWebAuthenticationSession login, keychain-backed token persistence, refresh-token rotation, and logout.
-- `APIClient`: typed HTTP wrapper for the Fastify API, v1 sync commands, and the artifact-session staging/finalization flow.
-- `SyncManager`: background-safe queue coordinator; delegates persistence to `QueueStore`, retry decisions to `RetryPolicy`, and concrete network work to `TaskExecutor`.
-- `NetworkMonitor`: reachability gate so offline queue items wait instead of failing immediately.
+## HTTP contracts
 
-## Server composition
+`/health` and `/ready` are unversioned operational endpoints, `/auth/*` is an
+unversioned authentication boundary, and resource reads and media sessions are
+versioned under `/api/v1`.
 
-```
-server/src/
-  index.ts                    Process lifecycle and dependency startup
-  server.ts                   Fastify composition and middleware
-  auth.ts                     JWT and refresh-token operations
-  oidc.ts                     OIDC discovery, state, and identity mapping
-  config.ts                   Environment parsing and startup validation
-  routes/                     HTTP route handlers
-    entries/parsing.ts        Entry request parsing
-    v1.ts                     Sync, artifact-session, and v1 read routes
-  services/                   Transaction and storage workflows
-    sync/                     Sync command admission and execution
-    artifactSessions.ts       Artifact allocation and completion
-    entryCascade.ts           Entry deletion and deferred object removal
-    entryTransaction.ts       Entry-level transaction serialization
-    deadline.ts               Bounded dependency operations
+All externally initiated resource mutations go through one endpoint:
+
+```text
+POST /api/v1/sync/commands
 ```
 
-`index.ts` owns Prisma and S3 client lifetime. `buildServer(prisma, s3)` owns
-middleware, probes, authentication, and route registration. Tests use the same
-server factory with injected dependencies.
+A request carries one to 25 typed commands. Each command includes an operation
+ID, entity ID, kind, payload, and, where required, an optimistic base version.
+The server runs commands in request order and persists a user-bound receipt.
+Retries with the same operation and payload return the durable outcome;
+reusing an operation ID for different work is rejected. Conflict results never
+silently overwrite newer server state.
 
-## Boundary decisions and invariants
+Artifact session creation, completion, and protected download-session creation
+stay as versioned media operations because they issue or finalize scoped storage
+capabilities. They are not a substitute for entry or feedback mutations.
+Creation binds the requested artifact type, byte length, and padded-base64
+SHA-256 checksum into the signed upload contract. Completion rechecks those
+signed properties and reads bounded ISO-BMFF probes for a permitted M4A or MP4
+brand and the expected audio or video track before publication.
 
-These decisions govern the client/server decomposition. A future refactor may
-move code, but it must preserve the listed contracts. If a split must be rolled
-back, revert its facade and extracted units as one compatible batch rather than
-mixing old and new payload, authorization, or persistence behavior.
+There are no legacy unversioned resource-mutation routes. Extend the typed sync
+command contract instead of adding resource-specific ones.
 
-### Ordered and idempotent v1 commands
+## Identity and persistence
 
-DECISION: Keep the v1 command vocabulary and validation in a shared server
-contract, execute admitted commands in request order, and mirror that vocabulary
-with typed client models. Route handlers remain transport adapters; receipt,
-replay, conflict, and mutation policy remain service responsibilities.
+Prisma owns PostgreSQL access. `ExternalIdentity` maps an `(issuer, subject)`
+pair to a stable internal user, so an OIDC subject is never assumed globally
+unique. The additive migration that introduces it also adds hashed browser-
+binding, nonce, and PKCE verifier fields to persisted OIDC attempts. Existing
+internal user IDs remain valid.
 
-This boundary supports durable offline retries without letting a repeated or
-reordered request overwrite newer work.
+OIDC and internal app codes are short-lived and single-use, and the server
+stores hashes of bearer values. Media storage is reached through the platform S3
+adapter; application modules enforce ownership, course membership, and consent
+before issuing capabilities or returning protected media.
 
-Invariants:
+There are two PKCE boundaries. The browser-to-provider attempt keeps its own
+state, nonce, browser binding, and verifier. Separately, the native app
+generates a verifier, sends its `app_code_challenge` at login, and must present
+the matching `codeVerifier` when exchanging the internal code. The `redirectUri`
+supplied at exchange must exactly equal `APP_AUTH_REDIRECT_URI`.
 
-- A successful operation identifier remains bound to the authenticated user and
-  the original payload. Reusing it for different work is rejected.
-- A request contains 1 to 25 commands and preserves FIFO order. `createEntry`
-  has no base version; every other mutation carries a positive base version.
-- A version conflict returns the current version and never silently overwrites
-  the server record.
-- A client retries the same operation with the same identifier, reconciles a
-  conflict, and never converts a terminal rejection into an overwrite.
+For an installed alpha, local persisted data is destructively reset only from the
+known predecessor generation. Unknown or incomplete state fails closed and
+requires user-directed recovery. This is a client persistence boundary, not an
+operator migration procedure.
 
-Implementation: [server command contract](../server/src/services/sync/contract.ts),
-[server admission](../server/src/services/sync/admission.ts),
-[client command models](../ios/ResonanceApp/Sources/APISyncCommandModels.swift), and
-[client command execution](../ios/ResonanceApp/Sources/TaskExecutor%2BCommands.swift).
-Verification: [server receipt tests](../server/tests/v1-sync/command-receipts.test.ts)
-and [client command tests](../ios/ResonanceApp/Tests/APIClientSyncCommandTests.swift).
+## Build and deployment boundaries
 
-### Artifact staging, completion, and deletion
+- The server is a private Node.js package. TypeScript compiles to `server/dist/`,
+  and `dist/app/index.js` starts the one server process.
+- The iOS app and XCTest bundle build from the tracked Xcode project and shared
+  scheme. The Swift package manifest describes the same targets but is not a
+  published library contract.
+- `contracts/v1-api-contract.json` is the hand-maintained cross-component
+  contract. A generated region in the Swift networking contract test projects
+  its route and payload vocabulary.
+- `infra/docker-compose.yml` supplies disposable loopback development
+  dependencies. The repository has no production server image, infrastructure
+  provisioning, application signing, TestFlight, backup, or monitoring workflow.
+- `demo/site/` is the only deployed artifact described by repository automation;
+  GitHub Pages publishes those static files independently.
 
-DECISION: Keep upload allocation and completion in the artifact-session service,
-keep signed credentials scoped to staging keys, and keep entry deletion and
-object cleanup in durable cascade services. HTTP routes do not own storage
-lifecycle policy.
+Production TLS, secrets, CORS, PostgreSQL, S3, identity-provider operation,
+backup, retention, monitoring, and distribution are operator-owned boundaries,
+not features implemented here.
 
-This boundary prevents a signed PUT, concurrent completion, or delayed object
-store operation from publishing mutable evidence or recreating deleted content.
+## Where new code belongs
 
-Invariants:
+- Add an endpoint in the owning module's `http/` directory.
+- Put business rules, DTOs, authorization, and transactions in the owning
+  module's `application/` directory.
+- Put Fastify-wide behavior, configuration, errors, deadlines, and storage
+  adapters in `platform/`.
+- Put iOS workflow UI in `Features`, reusable transport and state in `Core`, and
+  generic visuals in `SharedUI`.
+- Update [API](./API.md), tests, and Swift transport/outbox models when a public
+  contract changes.
 
-- Only the student owner of a draft entry with the matching optimistic version
-  may allocate an upload session.
-- Completion publishes an immutable final key only after exact size and
-  integrity checks against the observed staging object.
-- Entry deletion records durable cleanup work before relational metadata
-  disappears. Cleanup never deletes an object while a signed PUT or completion
-  claim can still be valid.
-- An expired or unsafe session rotates to a new staging key and queues the old
-  key for cleanup. Completion retries use the same durable claim; storage
-  failure retains a retryable deletion job.
+## Extension rules and non-goals
 
-Implementation: [artifact-session service](../server/src/services/artifactSessions.ts),
-[entry deletion](../server/src/services/entryCascade/entryDeletion.ts), and
-[artifact cleanup](../server/src/services/entryCascade/artifactCleanup.ts).
-Verification: [artifact upload contracts](../server/tests/upload.test.ts),
-[artifact lifecycle contracts](../server/tests/artifact-session-lifecycle.test.ts),
-and [client request contracts](../ios/ResonanceApp/Tests/APIClientSyncCommandTests.swift).
+- Extend the existing owning module rather than adding a second composition root
+  or another deployable service.
+- Add resource mutation behavior as a typed sync command. Media capability
+  creation and completion stay separate because the client transfers bytes
+  directly to storage.
+- Treat the static walkthrough as presentation, not as product evidence or a
+  test client.
+- A SAML-only institution needs an external SAML-to-OIDC bridge; this repository
+  implements OIDC, not SAML.
 
-### Course authorization and media visibility
-
-DECISION: Authorize entry, feedback, and media access from current course
-membership, course role, entry owner, and lifecycle state. A global student or
-teacher role is never sufficient, and media inherits the visibility of its
-entry.
-
-This boundary keeps drafts and protected recordings inside their intended
-student and course-review context across legacy routes, v1 routes, and replayed
-commands.
-
-Invariants:
-
-- Students access only their own entries. Teachers must be current teachers in
-  the entry's course.
-- Teachers cannot list, fetch, review, or download media from student drafts.
-- Authorization is rechecked during receipt replay; a previously valid command
-  does not preserve access after membership changes.
-- Rollback or compatibility handling must not restore draft state or relax an
-  authorization check to make a retry succeed.
-
-Implementation: [authorization helpers](../server/src/validation.ts),
-[v1 routes](../server/src/routes/v1.ts), and
-[artifact download route](../server/src/routes/artifacts/download.ts).
-Verification: [server security contracts](../server/tests/security.test.ts) and
-[feedback contracts](../server/tests/feedback-contracts.test.ts).
-
-### Fail-closed runtime and local identity
-
-DECISION: Reject invalid server configuration before startup and preserve local
-credential or account data whenever cleanup cannot be verified. Development
-authentication remains loopback-only; client persistence has no plaintext
-fallback.
-
-This boundary makes uncertainty visible instead of continuing with an unsafe
-network binding, ambiguous credentials, or a second account using a previous
-account's local data.
-
-Invariants:
-
-- Production is the default server mode. Production startup requires explicit
-  host, CORS, and OpenID Connect configuration; development mode rejects
-  non-loopback exposure.
-- Credentials and local ownership use device-only Keychain storage. An
-  uncertainty sentinel remains independently stored until credential removal is
-  verified.
-- Failed credential writes remove and verify the partial state or leave the
-  client blocked. Failed owner replacement or local deletion blocks account
-  admission and sign-out completion.
-- Rollback may restore the previous verified session, but it must not load
-  uncertain credentials, bypass the sentinel, or process a predecessor's queue.
-
-Implementation: [server configuration](../server/src/config.ts),
-[client auth persistence](../ios/ResonanceApp/Sources/AuthManager%2BPersistence.swift),
-and [persistence support](../ios/ResonanceApp/Sources/AuthSessionPersistenceSupport.swift).
-Verification: [database target guards](../server/tests/database-safety.test.ts)
-and [client auth security tests](../ios/ResonanceApp/Tests/LocalAuthSecurityTests.swift).
-
-## iOS synchronization
-
-The sync subsystem is split into four focused components:
-
-- `SyncManager`: coordinator for authentication refresh, reachability, and the
-  queue state machine.
-- `QueueStore`: SwiftData I/O for enqueueing, ready and failed item retrieval, counts, status mutations, and artifact state helpers.
-- `TaskExecutor`: executes one queue item against the API, accepts create retries only when remote identity and metadata match, and treats already-deleted resources as successful deletes.
-- `RetryPolicy`: stateless exponential backoff and terminal-error classification. Validation errors, local-not-found errors, and permission errors are terminal; transient network errors are retried.
-- `EntryDeletionCoordinator`: coordinates offline-safe entry deletion by cancelling in-flight artifact work, deleting local files, and enqueueing a remote delete only when the entry was already synchronized.
-- `CalendarSubscriptionStore`: persists the iCal subscription URL in Keychain and migrates a legacy UserDefaults value on first access.
-
-## Data flow
-
-1. The app opens `GET /auth/login` with `ASWebAuthenticationSession`.
-2. The server selects loopback development login or production OpenID Connect.
-3. The callback returns a short-lived internal code to
-   `resonance://auth-callback`.
-4. The app exchanges that code at `POST /auth/session` and receives access and
-   refresh tokens.
-5. Course memberships and remote entries are merged into SwiftData.
-6. Local mutations enter the persistent queue. The sync worker sends one to 25
-   v1 commands in request order. Commands carry operation identifiers and
-   optimistic versions.
-7. Artifact work allocates a session, uploads directly to a staging key with a
-   signed PUT URL, and completes the session after size and integrity checks.
-8. Submission changes an entry from `draft` to `submitted`. Teacher feedback
-   changes it to `reviewed`.
-9. Deletion removes relational content, preserves a minimal identifier
-   tombstone, and queues object keys for asynchronous deletion.
-
-## Offline behavior
-
-- Local-first writes to SwiftData with a persistent sync queue. Every queue row records its authenticated owner; selection and response application require the session user, verified local-data owner, and queue owner to match.
-- Synchronization uses `URLSession` with the default configuration and
-  exponential backoff. It is not an iOS background-transfer service.
-- Entry mutations use optimistic versions. A stale write returns a conflict with the current version; the client keeps the queue item for reconciliation instead of silently overwriting server data. Feedback is append-only server-side.
-
-## Entry hydration and reconciliation
-
-After course refresh, the iOS client reads every student entry page and merges
-server metadata and artifacts into SwiftData. `remoteUpdatedAt` distinguishes a
-server-backed record from a local-only draft. Newer queued local edits retain
-their editable fields while server lifecycle and artifact state continue to
-advance. Remote-backed records are pruned only after pagination completes
-successfully; an offline launch continues to use the cache.
-
-Queue tasks have an entity identity. Re-enqueueing create/update/submit/delete,
-artifact, capture metadata, or feedback replaces the pending payload and resets
-its retry state. Submission stays pending while media dependencies are pending.
-Independent entities may share a request; dependent work for the same entry is
-processed FIFO.
-
-## Session data lifecycle
-
-The Keychain stores the active local-data owner. A different authenticated user
-is blocked before any queue request until the person explicitly deletes the previous local profile or signs out. Manual
-sign-out reports pending and failed work, offers sync, and requires confirmation
-before deleting courses, entries, media files, feedback, calendar data, exports,
-and queue state.
-
-## Remote media playback
-
-The iOS entry detail uses an existing protected local file when one is available.
-Otherwise, student owners and same-course teachers request
-`POST /api/v1/artifacts/:artifactId/download-session`. The server applies entry
-membership/ownership authorization and signs an S3 `GetObject` request for 15
-minutes. The client streams the response through `AVPlayer` without persisting a
-remote copy. Expiry, offline access, and authorization failures are implemented
-as contextual retryable playback states. Device and poor-network behavior still
-requires pilot validation.
-
-## Pagination
-
-Both the review queue (`GET /courses/:courseId/review-queue`) and the entries list (`GET /courses/:courseId/entries`) use cursor-based pagination. The response shape is `{ items: [...], nextCursor: string | null }`. Clients pass `?cursor=<entryId>&limit=N` to fetch subsequent pages. The sort order is deterministic: `practiceDate DESC`, `createdAt DESC`, `id DESC` (three-column tiebreaker). Default page size is 50, maximum is 200.
-
-## Error handling
-
-The API returns consistent error objects:
-```
-{
-  "error": {
-    "code": "STRING_CODE",
-    "message": "Human readable message",
-    "details": { "optional": true }
-  }
-}
-```
-
-Error codes are centralized in `server/src/errorCodes.ts`. Database constraint
-and missing-record errors are translated into structured API responses.
-
-## Test surfaces
-
-The checked-in server suite protects focused boundaries for database target
-safety, authentication and refresh rotation, S3 startup, course isolation,
-entry deletion cascades, artifact-session allocation and completion, feedback
-idempotency and completeness, and sync admission, replay, conflicts, and
-tombstones.
-
-The server factory accepts injected database and storage clients. The iOS
-application services accept test persistence and network boundaries. The
-checked-in suites cover:
-
-- credential-free API endpoint resolution;
-- request encoding, artifact-session transport, and wire-model decoding; and
-- conflict replacement, queue reset, and local-auth persistence boundaries.
-
-The complete local gate is `./scripts/ci-local.sh --with-docker`. Release
-evidence and unresolved checks are recorded in the
-[alpha release notes](./release-notes/v0.1.0-alpha.1.md).
-
-## Not implemented
-
-The repository does not implement LTI launch, automatic course import, ILIAS
-deep-link mapping, or automatic ASIMUT integration. Calendar data comes from a
-user-provided iCalendar URL.
+Component setup and verification live in the [server README](../server/README.md),
+[iOS README](../ios/ResonanceApp/README.md), and
+[development guide](./DEVELOPMENT.md).

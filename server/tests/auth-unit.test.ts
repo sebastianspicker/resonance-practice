@@ -6,10 +6,11 @@ import {
   issueDevAuthCode,
   signAccessToken,
   signRefreshToken,
+  s256CodeChallenge,
   verifyAccessToken,
   verifyRefreshToken,
-} from '../src/auth.js';
-import { ApiError } from '../src/errors.js';
+} from '../src/modules/identity/application/auth.js';
+import { ApiError } from '../src/platform/http/errors.js';
 import { makeUser } from './support/authTestUtils.js';
 
 describe('authentication primitives', () => {
@@ -48,15 +49,16 @@ describe('authentication primitives', () => {
   });
 
   it('makes development codes single-use and rejects them after expiry', () => {
-    const code = issueDevAuthCode('user-once');
-    expect(consumeDevAuthCode(code)).toBe('user-once');
-    expect(consumeDevAuthCode(code)).toBeNull();
+    const verifier = 'a'.repeat(43);
+    const code = issueDevAuthCode('user-once', s256CodeChallenge(verifier));
+    expect(consumeDevAuthCode(code, verifier)).toBe('user-once');
+    expect(consumeDevAuthCode(code, verifier)).toBeNull();
 
     vi.useFakeTimers();
     try {
-      const expiring = issueDevAuthCode('user-expired');
+      const expiring = issueDevAuthCode('user-expired', s256CodeChallenge(verifier));
       vi.advanceTimersByTime(5 * 60 * 1000 + 1);
-      expect(consumeDevAuthCode(expiring)).toBeNull();
+      expect(consumeDevAuthCode(expiring, verifier)).toBeNull();
     } finally {
       vi.useRealTimers();
     }

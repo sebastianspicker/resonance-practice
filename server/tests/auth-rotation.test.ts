@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { issueSessionTokens, revokeRefreshTokenFamily, rotateRefreshToken } from '../src/auth.js';
+import {
+  issueSessionTokens,
+  revokeRefreshTokenFamily,
+  rotateRefreshToken,
+} from '../src/modules/identity/application/auth.js';
 import { installBasicSuite, prisma } from './support/testUtils.js';
 
 describe('refresh-token family containment', () => {
@@ -11,10 +15,10 @@ describe('refresh-token family containment', () => {
     const rotated = await rotateRefreshToken(prisma, initial.refreshToken);
 
     await expect(rotateRefreshToken(prisma, initial.refreshToken)).rejects.toMatchObject({
-      status: 401,
+      statusCode: 401,
     });
     await expect(rotateRefreshToken(prisma, rotated.refreshToken)).rejects.toMatchObject({
-      status: 401,
+      statusCode: 401,
     });
     expect(await prisma.refreshToken.count({ where: { userId: user.id, revokedAt: null } })).toBe(
       0
@@ -30,7 +34,7 @@ describe('refresh-token family containment', () => {
     );
     if (rotation.status === 'fulfilled') {
       await expect(rotateRefreshToken(prisma, rotation.value.refreshToken)).rejects.toMatchObject({
-        status: 401,
+        statusCode: 401,
       });
     }
   });

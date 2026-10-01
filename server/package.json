@@ -2,39 +2,48 @@
   "name": "resonance-server",
   "version": "0.1.0-alpha.1",
   "private": true,
+  "files": [
+    ".env.example",
+    "dist",
+    "prisma/migrations",
+    "prisma/schema.prisma"
+  ],
   "type": "module",
   "description": "Fastify API for the Resonance offline-first music-education alpha.",
   "license": "MIT",
-  "homepage": "https://github.com/sebastianspicker/resonance#readme",
+  "homepage": "https://github.com/sebastianspicker/resonance-practice#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sebastianspicker/resonance.git",
+    "url": "git+https://github.com/sebastianspicker/resonance-practice.git",
     "directory": "server"
   },
   "bugs": {
-    "url": "https://github.com/sebastianspicker/resonance/issues"
+    "url": "https://github.com/sebastianspicker/resonance-practice/issues"
   },
   "engines": {
     "node": "24.x",
     "npm": ">=10"
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/app/index.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.json",
     "clean": "rm -rf dist node_modules",
-    "start": "node dist/index.js",
+    "start": "node dist/app/index.js",
     "test": "vitest run",
+    "test:contracts": "vitest run tests/v1-api-contract.test.ts tests/module-dependency-rules.test.ts",
+    "benchmark:reads": "NODE_ENV=test tsx benchmarks/read-pages.ts",
+    "verify:contracts": "node ../scripts/validate-v1-contract.mjs",
     "lint": "eslint .",
     "quality": "npm run lint && npm run quality:dead-code && npm run quality:duplicates",
     "quality:dead-code": "knip --config knip.json --no-progress --treat-config-hints-as-errors",
     "quality:duplicates": "jscpd --config .jscpd.json --no-colors --no-tips src tests prisma ../ios/ResonanceApp/Sources ../ios/ResonanceApp/Tests",
-    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"prisma/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" \"prisma/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"prisma/**/*.ts\" \"benchmarks/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" \"prisma/**/*.ts\" \"benchmarks/**/*.ts\"",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "db:reset": "prisma migrate reset --force",
+    "db:reset": "node ../scripts/guarded-dev-db-reset.mjs",
     "prisma:seed:demo": "tsx prisma/seed.demo.ts",
     "demo:reset": "tsx prisma/reset.demo.ts"
   },
@@ -46,7 +55,7 @@
     "@fastify/rate-limit": "10.3.0",
     "@prisma/client": "5.22.0",
     "dotenv": "17.3.1",
-    "fastify": "5.8.5",
+    "fastify": "5.12.5",
     "jsonwebtoken": "9.0.3",
     "nanoid": "5.1.16",
     "openid-client": "5.7.1",

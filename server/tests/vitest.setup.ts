@@ -4,6 +4,7 @@
 // NEVER be reused in staging or production environments.
 // ────────────────────────────────────────────────────────────────────
 process.env.JWT_SECRET = 'test-secret-at-least-32-characters';
+process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-at-least-32-characters';
 process.env.ACCESS_TOKEN_TTL_MINUTES = '15';
 process.env.REFRESH_TOKEN_TTL_DAYS = '7';
 process.env.S3_ENDPOINT = 'http://localhost:9000';

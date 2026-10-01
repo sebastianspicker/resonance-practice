@@ -7,7 +7,7 @@ import {
   registerResourceRoutes,
   registerStatusRoutes,
   registerTransport,
-} from './serverRuntime.js';
+} from './app/serverRuntime.js';
 
 /**
  * Compose the API around injected database and storage clients so production

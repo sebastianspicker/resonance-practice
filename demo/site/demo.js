@@ -1,56 +1,125 @@
 "use strict";
 
-const document = globalThis.document;
-
 const presentationFixture = Object.freeze({
-  course: "Mock University · Piano Studio I",
+  university: "Mock University",
+  course: "Piano Studio I",
   student: "Lea Sommer",
   teacher: "Prof. Anna Berg",
   entries: [
-    { key: "draft", goal: "Draft: octaves warmup pattern", detailGoal: "Octaves warmup pattern", date: "23 February 2026", duration: "6 min", notes: "Still experimenting with fingering.", status: "Draft" },
-    { key: "submitted", goal: "Improve legato transitions in Chopin Nocturne", detailGoal: "Improve legato transitions in Chopin Nocturne", date: "20 February 2026", duration: "15 min", notes: "Left hand balance and softer pedal.", status: "Submitted" },
-    { key: "reviewed", goal: "Phrase shaping in Debussy prelude", detailGoal: "Phrase shaping in Debussy prelude", date: "18 February 2026", duration: "14 min", notes: "Try broader dynamic contrast.", status: "Reviewed" },
+    {
+      id: "lea-draft",
+      student: "Lea Sommer",
+      title: "Octaves warmup pattern",
+      date: "23 Feb",
+      time: "12:30",
+      duration: 33,
+      practiceDuration: "6 min",
+      medium: "Audio",
+      status: "failed",
+      note: "Still experimenting with fingering.",
+      tags: ["warmup", "octaves"],
+      markers: [],
+    },
+    {
+      id: "lea-submitted",
+      student: "Lea Sommer",
+      title: "Legato transitions — Chopin Nocturne op. 9",
+      date: "20 Feb",
+      time: "09:15",
+      duration: 65,
+      practiceDuration: "15 min",
+      medium: "Audio",
+      status: "submitted",
+      note: "Left hand balance and softer pedal. Transitions still rush before the cadence.",
+      tags: ["legato", "chopin"],
+      markers: [
+        { id: "lea-submitted-18", seconds: 18, text: "Left-hand balance" },
+        { id: "lea-submitted-42", seconds: 42, text: "Pedal release" },
+        { id: "lea-submitted-61", seconds: 61, text: "Final phrase — tempo" },
+      ],
+    },
+    {
+      id: "noah-submitted",
+      student: "Noah Keller",
+      title: "Stabilize tempo in Bach invention, hands together",
+      date: "21 Feb",
+      time: "11:00",
+      duration: 58,
+      practiceDuration: "12 min",
+      medium: "Audio",
+      status: "queued",
+      note: "Focus on metronome consistency.",
+      tags: ["bach", "tempo"],
+      markers: [],
+    },
+    {
+      id: "lea-reviewed",
+      student: "Lea Sommer",
+      title: "Phrase shaping in Debussy prelude",
+      date: "18 Feb",
+      time: "07:30",
+      duration: 72,
+      practiceDuration: "14 min",
+      medium: "Audio",
+      status: "reviewed",
+      note: "Try broader dynamic contrast.",
+      tags: ["debussy", "phrasing"],
+      verdict: "Next goal",
+      feedback: "Great color palette. Next step: slower transitions before full tempo.",
+      markers: [
+        { id: "lea-reviewed-18", seconds: 18, text: "Excellent voicing here." },
+        { id: "lea-reviewed-41", seconds: 41, text: "Keep wrist relaxed in this passage." },
+      ],
+    },
   ],
-  reviewQueue: [
-    { key: "lea", student: "Lea Sommer", goal: "Improve legato transitions in Chopin Nocturne", date: "20 February 2026", duration: "15 min", notes: "Left hand balance and softer pedal.", status: "Submitted" },
-    { key: "noah", student: "Noah Keller", goal: "Stabilize tempo in Bach invention, hands together", date: "21 February 2026", duration: "12 min", notes: "Focus on metronome consistency.", status: "Submitted" },
-  ],
-  feedback: {
-    outcome: "Next goal",
-    comments: "Great color palette. Next step: slower transitions before full tempo.",
-    markers: [{ time: "00:18", text: "Excellent voicing here." }, { time: "00:41", text: "Keep wrist relaxed in this passage." }],
-  },
 });
 
-const svgNamespace = "http://www.w3.org/2000/svg";
-const icons = new Map([
-  ["courses", [{ name: "path", attributes: { d: "M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5zM4 5.5v16M8 7h8M8 11h8" } }]],
-  ["entries", [{ name: "path", attributes: { d: "M6 3h9l3 3v15H6zM14 3v4h4M9 11h6M9 15h6" } }]],
-  ["review", [{ name: "path", attributes: { d: "M4 5h16v14H4zM8 9h8M8 13h5" } }]],
-  ["calendar", [{ name: "path", attributes: { d: "M4 6h16v14H4zM8 3v6M16 3v6M4 10h16" } }]],
-  ["sync", [{ name: "path", attributes: { d: "M20 7h-5V2M4 17h5v5M19 12a7 7 0 0 0-12-5L4 10M5 12a7 7 0 0 0 12 5l3-3" } }]],
-  ["settings", [{ name: "circle", attributes: { cx: "12", cy: "12", r: "3" } }, { name: "path", attributes: { d: "M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1A8 8 0 0 0 15 6.2L14.7 3h-4L10 6.2a8 8 0 0 0-1.5.9l-2.4-1-2 3.4L6.1 11a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 1.5-.9l2.4 1 2-3.4-2-1.5a7 7 0 0 0 .1-1z" } }]],
-]);
+const waveformHeights = [
+  28, 48, 66, 42, 24, 52, 78, 60, 35, 20, 43, 64, 31, 22, 37, 72, 53, 28, 45,
+  62, 39, 25, 46, 58, 33, 22, 51, 81, 38, 25, 34, 69, 43, 22, 57, 31, 18, 42, 65,
+  36, 54, 27,
+];
 
-const state = {
-  role: "student",
-  view: "entries",
-  selectedEntry: "draft",
-  queued: false,
-};
+function freshState() {
+  return {
+    role: "student",
+    entries: presentationFixture.entries.map((entry) => ({
+      ...entry,
+      tags: [...entry.tags],
+      markers: entry.markers.map((marker) => ({ ...marker })),
+    })),
+    selectedStudentEntry: "lea-draft",
+    selectedTeacherEntry: "lea-submitted",
+    queueFilter: "review",
+    selectedMarker: null,
+    selectedVerdict: "Next goal",
+    feedbackText: "Great color palette. Next step: slower transitions before full tempo.",
+    feedbackSent: false,
+    playbackSecond: 25,
+    isPlaying: false,
+    recording: false,
+    recordingSeconds: 0,
+    recordingMarkers: 0,
+  };
+}
 
-const roleConfigurations = new Map([
-  ["student", { name: presentationFixture.student, label: "Student", waiting: "2 items waiting", queuedWaiting: "3 items waiting", detail: "One upload needs attention", items: [["entries", "Practice entries", "entries"], ["reviewed", "Reviewed feedback", "review"]] }],
-  ["teacher", { name: presentationFixture.teacher, label: "Teacher", waiting: "Feedback queue ready", queuedWaiting: "Feedback queue ready", detail: "No command sent", items: [["review", "To review", "review"], ["reviewed-list", "Reviewed", "entries"]] }],
-]);
-const toolNavigationItems = [["calendar", "Calendar", "calendar"], ["sync", "Sync status", "sync"], ["settings", "Settings", "settings"]];
+let state = freshState();
+let recordingTimer;
 
 const contentPanel = document.querySelector("#content-panel");
-const sidebarNav = document.querySelector("#sidebar-nav");
+const sidebarContent = document.querySelector("#sidebar-content");
 const personaName = document.querySelector("#persona-name");
-const personaRole = document.querySelector("#persona-role");
-const syncTitle = document.querySelector("#sync-title");
-const syncDetail = document.querySelector("#sync-detail");
+const personaInitials = document.querySelector("#persona-initials");
+const syncSummary = document.querySelector("#sync-summary");
+const courseCount = document.querySelector("#course-count");
+const demoStatus = document.querySelector("#demo-status");
+const captureDialog = document.querySelector("#capture-dialog");
+const consentCheckbox = document.querySelector("#consent-checkbox");
+const captureToggle = document.querySelector("#capture-toggle");
+const captureMarker = document.querySelector("#capture-marker");
+const captureTimer = document.querySelector("#capture-timer");
+const captureState = document.querySelector("#capture-state");
+const liveWaveform = document.querySelector("#live-waveform");
 
 function element(name, { attributes = {}, className, text } = {}) {
   const node = document.createElement(name);
@@ -71,43 +140,6 @@ function append(parent, ...children) {
   return parent;
 }
 
-function icon(name) {
-  const definitions = icons.get(name);
-  const svg = document.createElementNS(svgNamespace, "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("aria-hidden", "true");
-  for (const definition of definitions) {
-    const child = document.createElementNS(svgNamespace, definition.name);
-    for (const [attribute, value] of Object.entries(definition.attributes)) {
-      child.setAttribute(attribute, value);
-    }
-    svg.append(child);
-  }
-  return svg;
-}
-
-function simulationTag() {
-  return element("span", { className: "simulation-tag", text: "Simulated" });
-}
-
-function statusPill(status) {
-  return element("span", {
-    className: "status-pill status-" + status.toLowerCase(),
-    text: status,
-  });
-}
-
-function waveform() {
-  const waveformNode = element("div", {
-    className: "waveform",
-    attributes: { "aria-hidden": "true" },
-  });
-  for (let index = 0; index < 9; index += 1) {
-    waveformNode.append(element("span"));
-  }
-  return waveformNode;
-}
-
 function button(className, text, attributes = {}, simulated = false) {
   const node = element("button", {
     className,
@@ -120,410 +152,645 @@ function button(className, text, attributes = {}, simulated = false) {
   return node;
 }
 
-function commandButton(text, command) {
-  return button("command-button", text, { "data-command": command }, true);
+function simulationTag() {
+  return element("span", { className: "simulation-tag", text: "Simulated" });
 }
 
-function buttonRow(...buttons) {
-  return append(element("div", { className: "button-row" }), ...buttons);
+function commandButton(text, command, className = "command-button") {
+  return button(className, text, { "data-command": command }, true);
 }
 
-function markerNode(marker) {
-  return append(
-    element("div", { className: "feedback-marker" }),
-    element("time", { text: marker.time }),
-    element("p", { text: marker.text }),
-  );
+function announce(message) {
+  demoStatus.textContent = "";
+  globalThis.requestAnimationFrame(() => {
+    demoStatus.textContent = message;
+  });
 }
 
-function metadataList(rows) {
-  const list = element("dl", { className: "metadata-list" });
-  for (const [label, value] of rows) {
-    list.append(
-      append(
-        element("div"),
-        element("dt", { text: label }),
-        element("dd", { text: value }),
-      ),
-    );
+function formatTime(seconds) {
+  const wholeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(wholeSeconds / 60);
+  return `${minutes}:${String(wholeSeconds % 60).padStart(2, "0")}`;
+}
+
+function statusLabel(status) {
+  return new Map([
+    ["local", "Local only"],
+    ["queued", "Queued"],
+    ["submitted", "Submitted"],
+    ["reviewed", "Reviewed"],
+    ["failed", "Sync failed"],
+    ["uploading", "Uploading"],
+  ]).get(status) ?? status;
+}
+
+function statusPill(status) {
+  return element("span", {
+    className: `status-pill status-${status}`,
+    text: statusLabel(status),
+  });
+}
+
+function selectedEntry(id) {
+  return state.entries.find((entry) => entry.id === id) ?? state.entries[0];
+}
+
+function queueEntries() {
+  if (state.queueFilter === "reviewed") {
+    return state.entries.filter((entry) => entry.status === "reviewed");
   }
-  return list;
+  return state.entries.filter((entry) => entry.status === "submitted" || entry.status === "queued");
 }
 
-function contentHeader(label, title, description, trailing) {
-  const heading = append(
-    element("div"),
-    element("span", { className: "section-label", text: label }),
-    element("h3", { text: title }),
-    element("p", { text: description }),
+function rowButton(entry, selected, kind) {
+  const node = button(`${kind}-button${selected ? " is-selected" : ""}`, "", {
+    "data-entry-id": entry.id,
+    "aria-pressed": String(selected),
+  });
+  const top = append(
+    element("span", { className: "row-top" }),
+    element("strong", { text: kind === "queue" ? entry.student : entry.date }),
+    element("span", { className: "row-time", text: entry.time }),
   );
-  return append(element("header", { className: "content-header" }), heading, trailing);
-}
-
-function mediaStage(primary, secondary, control) {
-  return append(
-    element("section", { className: "media-stage" }),
-    waveform(),
-    element("strong", { text: primary }),
-    element("span", { className: "muted", text: secondary }),
-    buttonRow(control),
-  );
-}
-
-function entryRow(entry) {
-  const status = entry.key === "draft" && state.queued ? "Queued" : entry.status;
-  const leading = append(
-    element("span"),
-    element("strong", { text: entry.goal }),
-    element("small", { text: entry.date + " · " + entry.duration }),
-  );
+  const goal = element("span", { className: "row-goal", text: entry.title });
   const meta = append(
     element("span", { className: "row-meta" }),
-    statusPill(status),
-    element("span", { className: "row-arrow", attributes: { "aria-hidden": "true" }, text: "›" }),
-  );
-  return append(
-    button("entry-row", "", { "data-entry": entry.key }),
-    leading,
-    meta,
-  );
-}
-
-function reviewRow(entry) {
-  const leading = append(
-    element("span"),
-    element("strong", { text: entry.student }),
-    element("small", { text: entry.goal + " · " + entry.date }),
-  );
-  const meta = append(
-    element("span", { className: "row-meta" }),
+    element("span", { text: `${entry.medium} · ${formatTime(entry.duration)}` }),
     statusPill(entry.status),
-    element("span", { className: "row-arrow", attributes: { "aria-hidden": "true" }, text: "›" }),
   );
-  return append(button("entry-row", "", { "data-review": entry.key }), leading, meta);
+  node.append(top, goal, meta);
+  return node;
 }
 
-function navigationButton(view, label, iconName, active) {
-  return append(
-    button("nav-button" + (active ? " is-active" : ""), "", { "data-view": view }),
-    icon(iconName),
-    element("span", { text: label }),
-  );
+function filterButton(value, label, count) {
+  const active = state.queueFilter === value;
+  const node = button(`filter-button${active ? " is-active" : ""}`, "", {
+    "data-filter": value,
+    "aria-pressed": String(active),
+  });
+  node.append(document.createTextNode(label));
+  node.append(element("span", { className: "filter-count", text: String(count) }));
+  return node;
 }
 
 function renderSidebar() {
-  const role = roleConfigurations.get(state.role);
-  personaName.textContent = role.name;
-  personaRole.textContent = role.label + " · simulated session";
-  syncTitle.textContent = state.queued ? role.queuedWaiting : role.waiting;
-  syncDetail.textContent = role.detail;
-  const navigation = [
-    element("span", { className: "nav-section-label", text: presentationFixture.course }),
-    ...role.items.map(([view, label, iconName]) => navigationButton(view, label, iconName, state.view === view)),
-    element("span", { className: "nav-section-label", text: "Tools" }),
-    ...toolNavigationItems.map(([view, label, iconName]) => navigationButton(view, label, iconName, false)),
-  ];
-  sidebarNav.replaceChildren(...navigation);
+  sidebarContent.replaceChildren();
+  if (state.role === "teacher") {
+    const reviewCount = state.entries.filter((entry) =>
+      ["submitted", "queued"].includes(entry.status),
+    ).length;
+    const reviewedCount = state.entries.filter((entry) => entry.status === "reviewed").length;
+    const filters = append(
+      element("div", { className: "filter-switch", attributes: { role: "group", "aria-label": "Queue filter" } }),
+      filterButton("review", "To review", reviewCount),
+      filterButton("reviewed", "Reviewed", reviewedCount),
+    );
+    sidebarContent.append(append(element("div", { className: "sidebar-controls" }), filters));
+
+    const list = element("ul", { className: "queue-list" });
+    for (const entry of queueEntries()) {
+      const item = element("li");
+      item.append(rowButton(entry, entry.id === state.selectedTeacherEntry, "queue"));
+      list.append(item);
+    }
+    if (list.childElementCount === 0) {
+      list.append(
+        append(
+          element("li", { className: "empty-state" }),
+          element("h2", { text: "Queue is clear" }),
+          element("p", { text: "New submissions will appear here when a student shares evidence." }),
+        ),
+      );
+    }
+    sidebarContent.append(list);
+  } else {
+    sidebarContent.append(element("div", { className: "list-divider", text: "Practice journal" }));
+    const list = element("ul", { className: "entry-list" });
+    for (const entry of state.entries.filter((item) => item.student === presentationFixture.student)) {
+      const item = element("li");
+      item.append(rowButton(entry, entry.id === state.selectedStudentEntry, "entry"));
+      list.append(item);
+    }
+    sidebarContent.append(list);
+  }
+
+  sidebarContent.querySelectorAll("[data-filter]").forEach((node) => {
+    node.addEventListener("click", () => {
+      state.queueFilter = node.dataset.filter;
+      const first = queueEntries()[0];
+      if (first) {
+        state.selectedTeacherEntry = first.id;
+      }
+      state.feedbackSent = false;
+      render();
+    });
+  });
+
+  sidebarContent.querySelectorAll("[data-entry-id]").forEach((node) => {
+    node.addEventListener("click", () => {
+      if (state.role === "teacher") {
+        state.selectedTeacherEntry = node.dataset.entryId;
+        state.feedbackSent = false;
+      } else {
+        state.selectedStudentEntry = node.dataset.entryId;
+      }
+      state.selectedMarker = null;
+      render();
+    });
+  });
 }
 
-function renderStudentEntries() {
-  const list = element("div", { className: "list-surface" });
-  list.append(...presentationFixture.entries.map(entryRow));
-  contentPanel.replaceChildren(
-    contentHeader(
-      "Student workspace",
-      "Practice entries",
-      "Evidence stays explicit from local draft through reviewed feedback.",
-    ),
-    list,
+function detailHeader(entry, actions) {
+  const kicker = append(
+    element("div", { className: "detail-kicker" }),
+    element("span", { text: `${entry.student} · ${entry.date}, ${entry.time}` }),
+    statusPill(entry.status),
+  );
+  const heading = append(
+    element("div"),
+    kicker,
+    element("h2", { text: entry.title }),
+  );
+  return append(element("header", { className: "detail-header" }), heading, actions);
+}
+
+function waveform(entry, markers = entry.markers) {
+  const container = element("div", {
+    className: "waveform",
+    attributes: { role: "img", "aria-label": `Waveform for ${entry.title}` },
+  });
+  waveformHeights.forEach((height, index) => {
+    const barSecond = (index / (waveformHeights.length - 1)) * entry.duration;
+    const className = barSecond <= state.playbackSecond ? "wave-bar is-played" : "wave-bar";
+    const bar = element("span", { className });
+    bar.style.height = `${height}%`;
+    container.append(bar);
+  });
+  markers.forEach((marker, index) => {
+    const pin = button(`marker-pin${state.selectedMarker === marker.id ? " is-selected" : ""}`, String(index + 1), {
+      "data-marker-id": marker.id,
+      "aria-label": `${formatTime(marker.seconds)} ${marker.text}`,
+    });
+    pin.style.left = `${Math.min(98, Math.max(2, (marker.seconds / entry.duration) * 100))}%`;
+    container.append(pin);
+  });
+  return container;
+}
+
+function markerChips(markers) {
+  const chips = element("div", { className: "marker-chips" });
+  markers.forEach((marker) => {
+    const chip = button(`marker-chip${state.selectedMarker === marker.id ? " is-selected" : ""}`, "", {
+      "data-marker-id": marker.id,
+    });
+    chip.append(
+      element("strong", { text: formatTime(marker.seconds) }),
+      document.createTextNode(marker.text),
+    );
+    chips.append(chip);
+  });
+  return chips;
+}
+
+function mediaStage(entry, markers = entry.markers) {
+  const stage = element("section", { className: "media-stage", attributes: { "aria-label": "Practice audio" } });
+  const meta = append(
+    element("div", { className: "stage-meta" }),
+    element("strong", { text: `${entry.student.toLowerCase().replace(" ", "-")} · practice audio` }),
+    element("span", { text: "44.1 kHz · private to course" }),
+  );
+  const play = button("play-button", state.isPlaying ? "Ⅱ" : "▶", {
+    "data-playback": "toggle",
+    "aria-label": state.isPlaying ? "Pause simulated audio" : "Play simulated audio",
+  });
+  const controls = append(
+    element("div", { className: "stage-controls" }),
+    play,
+    element("span", {
+      className: "timecode",
+      text: `${formatTime(state.playbackSecond)} / ${formatTime(entry.duration)}`,
+    }),
+  );
+  stage.append(meta, waveform(entry, markers), controls, markerChips(markers));
+  return stage;
+}
+
+function humanNote(entry) {
+  return append(
+    element("section", { className: "human-note" }),
+    element("span", { className: "section-label", text: "Student's note" }),
+    element("blockquote", { text: entry.note }),
+    element("cite", { text: `${entry.student} · ${entry.date} · practice ${entry.practiceDuration}` }),
   );
 }
 
-function feedbackSection(entry) {
-  const section = append(element("section", { className: "grouped-section" }), element("h4", { text: "Teacher feedback" }));
-  if (entry.key === "reviewed") {
-    section.append(element("p", { text: presentationFixture.feedback.comments }));
-    section.append(...presentationFixture.feedback.markers.map(markerNode));
+function bindMediaInteractions(root, entry) {
+  root.querySelector("[data-playback]")?.addEventListener("click", () => {
+    state.isPlaying = !state.isPlaying;
+    state.playbackSecond = state.isPlaying
+      ? Math.min(entry.duration, state.playbackSecond + 7)
+      : state.playbackSecond;
+    announce(state.isPlaying ? "Simulated playback started." : "Simulated playback paused.");
+    renderContent();
+  });
+  root.querySelectorAll("[data-marker-id]").forEach((node) => {
+    node.addEventListener("click", () => {
+      const marker = entry.markers.find((item) => item.id === node.dataset.markerId);
+      if (!marker) {
+        return;
+      }
+      state.selectedMarker = marker.id;
+      state.playbackSecond = marker.seconds;
+      announce(`Marker selected at ${formatTime(marker.seconds)}: ${marker.text}`);
+      renderContent();
+    });
+  });
+}
+
+function renderStudent() {
+  const entry = selectedEntry(state.selectedStudentEntry);
+  const capture = commandButton("Capture practice", "capture");
+  const header = append(
+    element("header", { className: "journal-header" }),
+    append(
+      element("div"),
+      element("span", { className: "caps-label", text: "Offline-ready journal" }),
+      element("h2", { className: "journal-title", text: "Practice journal" }),
+    ),
+    capture,
+  );
+
+  const detail = element("section", { className: "journal-detail" });
+  const summary = append(
+    element("div", { className: "entry-summary" }),
+    append(
+      element("div", { className: "detail-kicker" }),
+      element("span", { text: `${entry.date} · ${entry.practiceDuration}` }),
+      statusPill(entry.status),
+    ),
+    element("h2", { text: entry.title }),
+    append(
+      element("div", { className: "entry-facts" }),
+      element("span", { text: `${entry.medium} · ${formatTime(entry.duration)}` }),
+      element("span", { text: entry.tags.join(" · ") }),
+    ),
+  );
+  detail.append(summary);
+  if (entry.duration > 0) {
+    const label = element("span", { className: "section-label", text: "Practice evidence" });
+    label.style.marginTop = "24px";
+    detail.append(label, mediaStage(entry), humanNote(entry));
+  }
+
+  if (entry.status === "failed") {
+    const retry = commandButton("Retry sync", "retry", "retry-button");
+    const failure = append(
+      element("section", { className: "sync-failure" }),
+      element("strong", { text: "Sync failed" }),
+      element("p", { text: "The recording remains safely on this device. Retry whenever a connection returns." }),
+      retry,
+    );
+    retry.addEventListener("click", () => {
+      entry.status = "queued";
+      announce("Practice evidence queued. No network request was made.");
+      render();
+    });
+    detail.append(failure);
+  }
+
+  const timeline = element("aside", { className: "feedback-timeline", attributes: { "aria-label": "Teacher feedback" } });
+  timeline.append(element("span", { className: "section-label", text: "Teacher feedback" }));
+  if (entry.feedback) {
+    timeline.append(
+      append(
+        element("div", { className: "detail-kicker" }),
+        element("span", { text: `${presentationFixture.teacher} · ${entry.verdict}` }),
+        statusPill("reviewed"),
+      ),
+      element("p", { text: entry.feedback }),
+    );
+    const list = element("ol", { className: "timeline-list" });
+    entry.markers.forEach((marker) => {
+      list.append(
+        append(
+          element("li", { className: "timeline-item" }),
+          element("span", { className: "timeline-time", text: formatTime(marker.seconds) }),
+          element("p", { text: marker.text }),
+        ),
+      );
+    });
+    timeline.append(list);
   } else {
-    section.append(
-      element("p", {
-        className: "muted",
-        text: "No feedback yet. Submit the entry so your teacher can review it.",
-      }),
+    timeline.append(
+      append(
+        element("div", { className: "empty-state" }),
+        element("h2", { text: entry.status === "submitted" ? "Awaiting review" : "No feedback yet" }),
+        element("p", {
+          text:
+            entry.status === "submitted"
+              ? "Prof. Anna Berg will see this entry in the private review queue."
+              : "Submit this entry when it is ready for your teacher.",
+        }),
+      ),
     );
   }
-  return section;
+
+  const body = append(element("div", { className: "journal-body" }), detail, timeline);
+  contentPanel.append(append(element("div", { className: "journal-layout" }), header, body));
+  capture.addEventListener("click", openCapture);
+  bindMediaInteractions(detail, entry);
 }
 
-function renderStudentDetail() {
-  const entry = presentationFixture.entries.find((candidate) => candidate.key === state.selectedEntry);
-  const status = entry.key === "draft" && state.queued ? "Queued" : entry.status;
-  const controls = [
-    entry.key === "draft" ? commandButton("Submit for review", "submit") : null,
-    button("secondary-button", "Back to entries", { "data-view": "entries" }),
-  ];
-  const media = mediaStage(
-    entry.key === "draft" ? "Practice audio not recorded" : "Practice audio · 01:05",
-    entry.key === "draft"
-      ? "Microphone access is never requested by this page."
-      : "Playback is visual only in this static demo.",
-    commandButton(entry.key === "draft" ? "Record audio" : "Play evidence", "play"),
-  );
-  const details = append(
-    element("section", { className: "grouped-section" }),
-    element("h4", { text: "Entry details" }),
-    metadataList([
-      ["Status", status],
-      ["Reflection", entry.notes],
-      ["Privacy", "Private course review"],
-    ]),
-  );
-  const left = append(
-    element("div"),
-    media,
-    buttonRow(...controls),
-    element("p", {
-      className: "simulation-disclosure",
-      text: "Command-capable controls change this page's local display only. No recording, upload, submission, playback request, or sync command is sent.",
-    }),
-  );
-  contentPanel.replaceChildren(
-    contentHeader("Practice entry", entry.detailGoal, entry.date + " · " + entry.duration, statusPill(status)),
-    append(element("div", { className: "detail-grid" }), left, append(element("div"), details, feedbackSection(entry))),
-  );
-}
-
-function renderReviewedFeedback() {
-  const entry = presentationFixture.entries.find((candidate) => candidate.key === "reviewed");
-  const feedback = append(
-    element("section", { className: "grouped-section" }),
-    element("h4", { text: presentationFixture.feedback.outcome }),
-    element("p", { text: presentationFixture.feedback.comments }),
-    ...presentationFixture.feedback.markers.map(markerNode),
-  );
-  contentPanel.replaceChildren(
-    contentHeader(
-      "Student workspace",
-      "Reviewed feedback",
-      "Feedback is attached to the submitted practice evidence.",
-      statusPill("Reviewed"),
-    ),
-    append(
-      element("div", { className: "detail-grid" }),
-      mediaStage(entry.detailGoal, "Practice audio · 01:12", commandButton("Play evidence", "play")),
-      feedback,
-    ),
-    element("p", {
-      className: "simulation-disclosure",
-      text: "Playback is simulated. This page does not request or cache private media.",
-    }),
-  );
-}
-
-function renderReviewQueue() {
-  const list = element("div", { className: "list-surface" });
-  list.append(...presentationFixture.reviewQueue.map(reviewRow));
-  contentPanel.replaceChildren(
-    contentHeader("Teacher workspace", "To review", "Submitted evidence from students in this course."),
-    list,
-  );
-}
-
-function renderReviewDetail() {
-  const entry = presentationFixture.reviewQueue[0];
-  const reflection = append(
-    element("section", { className: "grouped-section" }),
-    element("h4", { text: "Student reflection" }),
-    element("p", { text: entry.notes }),
-    metadataList([
-      ["Duration", entry.duration],
-      ["Scope", "Teacher course membership"],
-    ]),
-    buttonRow(commandButton("Compose feedback", "feedback-editor")),
-  );
-  contentPanel.replaceChildren(
-    contentHeader("Submission detail", entry.goal, entry.student + " · " + entry.date, statusPill(entry.status)),
-    append(
-      element("div", { className: "detail-grid" }),
-      mediaStage(
-        "Authorized source media ready",
-        "Audio · 01:05 · private course review",
-        commandButton("Play evidence", "play"),
-      ),
-      reflection,
-    ),
-    element("p", {
-      className: "simulation-disclosure",
-      text: "Playback and feedback commands are simulated. No authorized URL is requested and no feedback is persisted.",
-    }),
-  );
-}
-
-function renderFeedbackEditor() {
-  const entry = presentationFixture.reviewQueue[0];
-  const outcome = element("select", { attributes: { id: "outcome" } });
-  outcome.append(
-    element("option", { text: "Next goal" }),
-    element("option", { text: "Needs revision" }),
-    element("option", { text: "Complete" }),
-  );
-  const feedback = element("textarea", {
-    attributes: { id: "feedback" },
-    text: "The phrase is much more connected. Next, keep the release light before increasing the tempo.",
+function verdictButton(value) {
+  return button(`verdict-button${state.selectedVerdict === value ? " is-selected" : ""}`, value, {
+    "data-verdict": value,
+    "aria-pressed": String(state.selectedVerdict === value),
   });
-  const form = append(
-    element("form", { className: "grouped-section", attributes: { id: "feedback-form" } }),
-    element("h4", { text: "Structured feedback" }),
+}
+
+function renderFeedbackSuccess(entry) {
+  const back = button("secondary-button", "Return to queue");
+  back.addEventListener("click", () => {
+    entry.status = "reviewed";
+    entry.feedback = state.feedbackText;
+    entry.verdict = state.selectedVerdict;
+    state.feedbackSent = false;
+    state.queueFilter = "review";
+    const next = queueEntries().find((item) => item.id !== entry.id);
+    if (next) {
+      state.selectedTeacherEntry = next.id;
+    }
+    render();
+  });
+  contentPanel.append(
     append(
-      element("div", { className: "editor-field" }),
-      element("label", { attributes: { for: "outcome" }, text: "Outcome" }),
-      outcome,
-    ),
-    append(
-      element("div", { className: "editor-field" }),
-      element("label", { attributes: { for: "feedback" }, text: "Feedback" }),
-      feedback,
-    ),
-    markerNode({ time: "00:18", text: "Excellent voicing here." }),
-    button("text-button", "Add marker at current playback time", { "data-command": "marker" }, true),
-    buttonRow(
-      element("button", { className: "command-button", attributes: { type: "submit" } }),
-      button("secondary-button", "Cancel", { "data-view": "review-detail" }),
+      element("section", { className: "success-state" }),
+      statusPill("queued"),
+      element("h2", { text: "Feedback queued" }),
+      element("p", {
+        text: "The simulated feedback is now waiting to sync. Lea can keep practicing while either side is offline.",
+      }),
+      back,
     ),
   );
-  form.querySelector('button[type="submit"]').append(document.createTextNode("Queue feedback"), simulationTag());
-  contentPanel.replaceChildren(
-    contentHeader("Teacher workspace", "Feedback", entry.student + " · " + entry.goal),
-    append(
-      element("div", { className: "detail-grid" }),
-      mediaStage("Practice audio · 01:05", "Playback position 00:18", commandButton("Play evidence", "play")),
-      form,
-    ),
+}
+
+function renderTeacher() {
+  const entry = selectedEntry(state.selectedTeacherEntry);
+  if (state.feedbackSent) {
+    renderFeedbackSuccess(entry);
+    return;
+  }
+
+  const openStudent = commandButton("Open student", "open-student", "secondary-button");
+  const jumpComposer = button("primary-button", "Write feedback", { "data-command": "focus-feedback" });
+  const actions = append(element("div", { className: "button-row" }), openStudent, jumpComposer);
+  contentPanel.append(detailHeader(entry, actions));
+
+  const evidence = element("section", { className: "evidence-column" });
+  evidence.append(
+    element("span", { className: "section-label", text: "Evidence · practice audio" }),
+    mediaStage(entry),
+    humanNote(entry),
+  );
+
+  const composer = element("aside", { className: "composer-column", attributes: { "aria-label": "Feedback composer" } });
+  composer.append(element("span", { className: "section-label", text: "Verdict" }));
+  const verdicts = append(
+    element("div", { className: "verdict-group", attributes: { role: "group", "aria-label": "Feedback verdict" } }),
+    verdictButton("On track"),
+    verdictButton("Needs revision"),
+    verdictButton("Next goal"),
+  );
+  const form = element("form", { className: "feedback-form" });
+  const feedbackId = "feedback-text";
+  const textarea = element("textarea", {
+    attributes: { id: feedbackId, name: "feedback", required: "", maxlength: "500" },
+  });
+  textarea.value = state.feedbackText;
+  const addMarker = commandButton(
+    `Add marker at ${formatTime(state.playbackSecond)}`,
+    "add-marker",
+    "secondary-button",
+  );
+  const submit = button("command-button", "Send feedback", { type: "submit" });
+  submit.append(simulationTag());
+  const footer = append(element("div", { className: "composer-footer" }), addMarker, submit);
+  form.append(
+    element("label", { attributes: { for: feedbackId }, text: "Private feedback for this entry" }),
+    textarea,
+    footer,
+  );
+  composer.append(
+    verdicts,
+    form,
     element("p", {
-      className: "simulation-disclosure",
-      text: "Editing remains inside this browser tab. Queue feedback does not send, store, or synchronize anything.",
+      className: "privacy-note",
+      text: `Visible only to ${entry.student} and ${presentationFixture.course} teachers. Feedback syncs when either side is online.`,
     }),
   );
-}
+  contentPanel.append(append(element("div", { className: "teacher-detail-grid" }), evidence, composer));
 
-function renderConfirmation() {
-  contentPanel.replaceChildren(
-    append(
-      element("div", { className: "confirmation" }),
-      statusPill("Queued"),
-      element("h3", { text: "Feedback queued in the simulation." }),
-      element("p", {
-        text: "The real app would keep the command durable until sync succeeds. This static page only changed its local display and sent no command.",
-      }),
-      buttonRow(
-        button("secondary-button", "Return to review queue", { "data-view": "review" }),
-        button("text-button", "View student feedback", { "data-role-jump": "student" }),
-      ),
-    ),
-  );
-}
-
-function renderToolView(view) {
-  let title;
-  let description;
-  if (view === "calendar") {
-    title = "Calendar";
-    description = "Course dates would appear here. Calendar refresh and save actions are omitted from the static walkthrough.";
-  } else if (view === "sync") {
-    title = "Sync status";
-    description = "This view names pending and failed work without processing, retrying, refreshing, or deleting queue items.";
-  } else if (view === "settings") {
-    title = "Settings";
-    description = "Account, sign-out, and local-data deletion controls are omitted because this page has no account or local profile.";
-  } else {
-    title = "Reviewed";
-    description = "The focused walkthrough keeps one submitted item in the teacher queue and one reviewed item in the student view.";
-  }
-  contentPanel.replaceChildren(
-    contentHeader("Structured demo", title, description),
-    append(
-      element("section", { className: "grouped-section" }),
-      element("h4", { text: "Simulation boundary" }),
-      element("p", { text: "No command-capable control is provided in this supporting view. Return to the core role flow using the navigation." }),
-    ),
-  );
+  jumpComposer.addEventListener("click", () => textarea.focus());
+  openStudent.addEventListener("click", () => {
+    state.role = "student";
+    state.selectedStudentEntry = entry.id;
+    render();
+    announce(`${entry.student}'s student view opened.`);
+  });
+  composer.querySelectorAll("[data-verdict]").forEach((node) => {
+    node.addEventListener("click", () => {
+      state.selectedVerdict = node.dataset.verdict;
+      renderContent();
+      announce(`${state.selectedVerdict} selected.`);
+    });
+  });
+  textarea.addEventListener("input", () => {
+    state.feedbackText = textarea.value;
+  });
+  addMarker.addEventListener("click", () => {
+    const seconds = Math.min(entry.duration - 1, Math.max(1, state.playbackSecond));
+    const marker = {
+      id: `${entry.id}-demo-${entry.markers.length + 1}`,
+      seconds,
+      text: "New teacher note",
+    };
+    entry.markers.push(marker);
+    state.selectedMarker = marker.id;
+    renderContent();
+    announce(`Marker added at ${formatTime(seconds)}. No data was sent.`);
+  });
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.feedbackText = textarea.value.trim();
+    if (!state.feedbackText) {
+      textarea.setCustomValidity("Add feedback before sending.");
+      textarea.reportValidity();
+      return;
+    }
+    textarea.setCustomValidity("");
+    state.feedbackSent = true;
+    announce("Feedback queued in this simulated browser session.");
+    renderContent();
+  });
+  bindMediaInteractions(evidence, entry);
 }
 
 function renderContent() {
-  const renderers = new Map([
-    ["entries", renderStudentEntries],
-    ["entry-detail", renderStudentDetail],
-    ["reviewed", renderReviewedFeedback],
-    ["review", renderReviewQueue],
-    ["review-detail", renderReviewDetail],
-    ["feedback-editor", renderFeedbackEditor],
-    ["confirmation", renderConfirmation],
-  ]);
-  const renderer = renderers.get(state.view);
-  (renderer || (() => renderToolView(state.view)))();
+  contentPanel.replaceChildren();
+  if (state.role === "teacher") {
+    renderTeacher();
+  } else {
+    renderStudent();
+  }
+}
+
+function updateChrome() {
+  const teacherMode = state.role === "teacher";
+  personaName.textContent = teacherMode ? presentationFixture.teacher : presentationFixture.student;
+  personaInitials.textContent = teacherMode ? "AB" : "LS";
+  const waiting = state.entries.filter((entry) => ["queued", "failed"].includes(entry.status)).length;
+  syncSummary.textContent = teacherMode
+    ? "Online · feedback queue ready"
+    : `Offline · ${waiting} ${waiting === 1 ? "item" : "items"} waiting`;
+  courseCount.textContent = teacherMode
+    ? `${state.entries.filter((entry) => ["submitted", "queued"].includes(entry.status)).length} to review`
+    : `${state.entries.filter((entry) => entry.student === presentationFixture.student).length} entries`;
+  document.querySelectorAll("[data-role]").forEach((node) => {
+    const active = node.dataset.role === state.role;
+    node.classList.toggle("is-active", active);
+    node.setAttribute("aria-pressed", String(active));
+  });
 }
 
 function render() {
+  updateChrome();
   renderSidebar();
   renderContent();
 }
 
-document.querySelectorAll("[data-role]").forEach((roleButton) => {
-  roleButton.addEventListener("click", () => {
-    state.role = roleButton.dataset.role;
-    state.view = state.role === "student" ? "entries" : "review";
-    document.querySelectorAll("[data-role]").forEach((candidate) => {
-      const active = candidate === roleButton;
-      candidate.classList.toggle("is-active", active);
-      candidate.setAttribute("aria-pressed", String(active));
-    });
+function resetCapture() {
+  globalThis.clearInterval(recordingTimer);
+  state.recording = false;
+  state.recordingSeconds = 0;
+  state.recordingMarkers = 0;
+  consentCheckbox.checked = false;
+  captureToggle.disabled = true;
+  captureMarker.disabled = true;
+  captureToggle.textContent = "Start recording";
+  captureTimer.textContent = "0:00";
+  captureState.textContent = "Ready to record";
+}
+
+function openCapture() {
+  resetCapture();
+  captureDialog.showModal();
+  consentCheckbox.focus();
+}
+
+function finishCapture() {
+  globalThis.clearInterval(recordingTimer);
+  state.recording = false;
+  const newEntry = {
+    id: `local-capture-${state.entries.length + 1}`,
+    student: presentationFixture.student,
+    title: "New private practice recording",
+    date: "Today",
+    time: "Now",
+    duration: Math.max(1, state.recordingSeconds),
+    practiceDuration: "Just now",
+    medium: "Audio",
+    status: "local",
+    note: `${state.recordingMarkers} ${state.recordingMarkers === 1 ? "marker" : "markers"} added during capture.`,
+    tags: ["new take"],
+    markers: [],
+  };
+  state.entries.unshift(newEntry);
+  state.selectedStudentEntry = newEntry.id;
+  captureDialog.close();
+  render();
+  announce("A local-only practice entry was added. Nothing left this browser.");
+}
+
+function populateLiveWaveform() {
+  liveWaveform.replaceChildren();
+  waveformHeights.slice(0, 32).forEach((height) => {
+    const bar = element("span", { className: "wave-bar" });
+    bar.style.height = `${height}%`;
+    liveWaveform.append(bar);
+  });
+}
+
+document.querySelectorAll("[data-role]").forEach((node) => {
+  node.addEventListener("click", () => {
+    state.role = node.dataset.role;
+    state.feedbackSent = false;
+    state.selectedMarker = null;
     render();
+    announce(`${node.textContent.trim()} demo opened.`);
   });
 });
 
-document.addEventListener("click", (event) => {
-  const viewButton = event.target.closest("[data-view]");
-  const entryButton = event.target.closest("[data-entry]");
-  const reviewButton = event.target.closest("[data-review]");
-  const commandButton = event.target.closest("[data-command]");
-  const roleJump = event.target.closest("[data-role-jump]");
+document.querySelector("#reset-demo").addEventListener("click", () => {
+  state = freshState();
+  resetCapture();
+  render();
+  announce("Demo reset to the original mock data.");
+});
 
-  if (viewButton) {
-    state.view = viewButton.dataset.view;
-    render();
-  } else if (entryButton) {
-    state.selectedEntry = entryButton.dataset.entry;
-    state.view = "entry-detail";
-    render();
-  } else if (reviewButton) {
-    state.view = "review-detail";
-    render();
-  } else if (commandButton) {
-    if (commandButton.dataset.command === "submit") {
-      state.queued = true;
-      render();
-    } else {
-      commandButton.setAttribute("aria-live", "polite");
-      commandButton.firstChild.textContent = commandButton.dataset.command === "marker" ? "Marker staged " : "Visual state changed ";
+document.querySelector("#sync-command").addEventListener("click", () => {
+  let changed = 0;
+  state.entries.forEach((entry) => {
+    if (entry.status === "failed") {
+      entry.status = "queued";
+      changed += 1;
+    } else if (entry.status === "queued") {
+      entry.status = "submitted";
+      changed += 1;
     }
-  } else if (roleJump) {
-    state.role = "student";
-    state.view = "reviewed";
-    document.querySelectorAll("[data-role]").forEach((candidate) => {
-      const active = candidate.dataset.role === "student";
-      candidate.classList.toggle("is-active", active);
-      candidate.setAttribute("aria-pressed", String(active));
-    });
-    render();
+  });
+  render();
+  announce(
+    changed > 0
+      ? `${changed} mock items advanced to their next sync state. No request was sent.`
+      : "Everything in the mock queue is already current.",
+  );
+});
+
+consentCheckbox.addEventListener("change", () => {
+  captureToggle.disabled = !consentCheckbox.checked;
+  captureState.textContent = consentCheckbox.checked ? "Consent confirmed · ready" : "Ready to record";
+});
+
+captureToggle.addEventListener("click", () => {
+  if (!state.recording) {
+    state.recording = true;
+    captureMarker.disabled = false;
+    captureToggle.textContent = "Save recording";
+    captureState.textContent = "Recording locally · no microphone is active";
+    recordingTimer = globalThis.setInterval(() => {
+      state.recordingSeconds += 1;
+      captureTimer.textContent = formatTime(state.recordingSeconds);
+      liveWaveform.querySelectorAll(".wave-bar").forEach((bar, index) => {
+        bar.classList.toggle("is-active", index % 5 === state.recordingSeconds % 5);
+      });
+    }, 1000);
+    announce("Simulated local recording started.");
+  } else {
+    finishCapture();
   }
 });
 
-document.addEventListener("submit", (event) => {
-  if (event.target.matches("#feedback-form")) {
-    event.preventDefault();
-    state.view = "confirmation";
-    render();
-  }
+captureMarker.addEventListener("click", () => {
+  state.recordingMarkers += 1;
+  captureState.textContent = `${state.recordingMarkers} ${state.recordingMarkers === 1 ? "marker" : "markers"} added`;
+  announce(`Capture marker ${state.recordingMarkers} added at ${formatTime(state.recordingSeconds)}.`);
 });
 
+captureDialog.addEventListener("close", () => {
+  globalThis.clearInterval(recordingTimer);
+  state.recording = false;
+});
+
+populateLiveWaveform();
 render();

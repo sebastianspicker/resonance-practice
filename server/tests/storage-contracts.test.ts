@@ -2,7 +2,7 @@
 import { CreateBucketCommand, HeadBucketCommand, S3Client } from '@aws-sdk/client-s3';
 import { mockClient } from 'aws-sdk-client-mock';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ensureBucket, isS3NotFoundError } from '../src/storage.js';
+import { ensureBucket, isS3NotFoundError } from '../src/platform/storage/s3.js';
 
 const s3Mock = mockClient(S3Client);
 const s3Error = (name: string, statusCode: number) =>

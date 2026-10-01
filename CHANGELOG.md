@@ -1,53 +1,54 @@
 # Changelog
 
-All notable public changes to Resonance are documented here.
+Notable changes, grouped by area and newest first. This project follows a
+lightweight version of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.1.0-alpha.1] - Unreleased
+## Unreleased
 
-Source-only public alpha for developers and contributors. It does not include a
-signed app, TestFlight build, hosted service, or production deployment. See the
-[release notes](docs/release-notes/v0.1.0-alpha.1.md) for current verification,
-limitations, migration expectations, and screenshots.
+### Performance and bounded work
 
-### Product and client
+- Paginate feedback history and load teacher review pages on demand. Review
+  summaries now return marker counts, and the full marker array stays in entry
+  detail. The feedback response uses the page envelope, so client and server
+  must ship together.
+- Bound media validation time, include streamed bodies in storage deadlines, and
+  keep completion claims live for the whole storage operation.
+- Move recording checksums off the main actor and bound local outbox queries and
+  course reconciliation while preserving owner and retry semantics.
+- Lease storage deletion jobs across workers and move revoked-token retention
+  into bounded background maintenance, with supporting indexes.
+- Run the two iOS compiler lanes independently and support opt-in local build
+  reuse while keeping clean builds for compiler analysis.
 
-- Added offline-first SwiftUI and SwiftData foundations for entries, protected
-  media, calendar data, feedback, and durable queued work.
-- Added student and teacher course workflows, audio evidence, consented
-  teaching-lesson video, manual markers, private review, and reviewed feedback.
-- Bound local queues and cached data to the authenticated owner, with explicit
-  profile replacement and fail-closed recovery for ambiguous local data.
-- Adopted Swift 6 language mode, strict concurrency enforcement, structured view and
-  client modules, and deterministic simulator scenarios.
+### Architecture
 
-### Server, sync, and storage
+- Reorganized the server as one Fastify/Prisma monolith with `app`, `platform`,
+  and identity, courses, entries, media, reviews, and sync modules.
+- Reorganized the SwiftUI target into `App`, `Core`, `Features`, and `SharedUI`.
+- Made `POST /api/v1/sync/commands` the canonical external resource-mutation
+  boundary and removed the legacy unversioned mutation routes.
 
-- Added the v1 sequential sync contract with operation receipts, optimistic
-  versions, conflict results, replay authorization, and bounded admission.
-- Added race-safe artifact sessions with staging-only PUT credentials,
-  signer-derived expiry, leased completion claims, immutable final keys,
-  conditional copy, durable deletion jobs, and bounded quotas and retention.
-- Added authorized short-lived media access for owners and same-course teachers
-  while denying teachers all draft entry and media reads.
-- Added configurable OIDC, loopback-only development auth, refresh-token replay
-  containment, explicit production listener configuration, bounded dependency
-  operations, and destructive-database guards.
+### Identity
 
-### Repository and quality
+- Added issuer-scoped `ExternalIdentity` records so the same OIDC subject from
+  different issuers cannot resolve to a single user.
+- Extended OIDC attempts with browser-binding, nonce, and PKCE verifier hashes.
+  The accompanying Prisma migration is additive.
+- Bound native app PKCE to an app code challenge and exact application callback,
+  separate from the browser-to-identity-provider PKCE exchange.
 
-- Added Node.js 24, SwiftLint 0.63.2, Knip 6.27.0, jscpd 5.0.12, CodeQL,
-  dependency audit, secret scanning, and public-boundary checks.
-- Added a native Xcode project and shared scheme, simulator XCTest, focused
-  server tests, deterministic demo fixtures, and current public documentation.
-- Added concise file-purpose and contract documentation across first-party
-  Swift, TypeScript, Prisma, shell tooling, configuration, and test suites.
-- Added a 12-scenario student and teacher screenshot capture harness with
-  explicit visual-evidence limits. The public set still requires final-commit
-  recapture and review.
+### Security and operations
 
-### Migration
+- Require distinct, non-placeholder production JWT access and refresh signing
+  secrets with at least 32 bytes of base64 or base64url key material.
+- Guard the development database reset behind an exact local target,
+  development mode, and explicit confirmation.
+- Bind artifact uploads to content type, length, and SHA-256, then validate
+  bounded ISO-BMFF M4A or MP4 container evidence before publication.
 
-- Replaced the pre-alpha migration chain with
-  `20260716000000_alpha_baseline`.
-- Existing alpha databases require a destructive rebuild. Back up data if
-  needed and never edit Prisma's `_prisma_migrations` table manually.
+### Documentation
+
+- Replaced obsolete flat-path and resource-route docs with the current module
+  and command contracts.
+- Added an app screenshot tour to the README and the static walkthrough, and
+  relaxed the public-docs validator to allow tracked images with alt text.

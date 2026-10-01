@@ -1,4 +1,4 @@
-# Provides loopback-only disposable PostgreSQL and object storage for development and CI.
+# Provides loopback-only disposable PostgreSQL and S3-compatible storage for development and CI.
 services:
   postgres:
     image: postgres:18.4@sha256:c2d42a104eb6b37b286a2d9c5cf83f349de4d6516d513d00a2bd9610e2c2e5e4
@@ -21,29 +21,29 @@ services:
       retries: 5
       start_period: 10s
 
-  minio:
-    # The public MinIO image is archived and retained only for loopback-bound
-    # development and ephemeral CI compatibility. Production must use a
-    # supported, patched S3-compatible service.
-    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
-    container_name: resonance-minio
+  s3:
+    # SeaweedFS provides the S3 API for local development and CI. The archived
+    # MinIO image can no longer be pulled. Production must use a supported,
+    # patched S3-compatible service with managed credentials.
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    container_name: resonance-s3
     environment:
-      # Local development defaults only. Replace for any shared environment.
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    command: server /data --console-address ":9001"
+      # Local development defaults only; requests signed with other keys are
+      # rejected. Replace for any shared environment.
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+    command: server -s3 -dir=/data
     ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
+      - "127.0.0.1:9000:8333"
     volumes:
-      - minio-data:/data
+      - s3-data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8333/healthz"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
       start_period: 10s
 
 volumes:
   postgres-data:
-  minio-data:
+  s3-data:

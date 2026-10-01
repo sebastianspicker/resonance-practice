@@ -1,9 +1,12 @@
 // Keeps exported security and storage seams under direct regression coverage.
 import { describe, expect, it } from 'vitest';
-import { config, validateDevCallbackUrl } from '../src/config.js';
-import { _resetOidcClientForTesting, getOidcClient } from '../src/oidc.js';
-import { artifactCompletionClaimLeaseMs } from '../src/services/entryTransaction.js';
-import { buildCreateBucketInput } from '../src/storage.js';
+import { config, validateDevCallbackUrl } from '../src/platform/config.js';
+import {
+  _resetOidcClientForTesting,
+  getOidcClient,
+} from '../src/modules/identity/application/oidc.js';
+import { artifactCompletionClaimLeaseMs } from '../src/modules/entries/application/transaction.js';
+import { buildCreateBucketInput } from '../src/platform/storage/s3.js';
 
 describe('cleanup regression unit contracts', () => {
   it('allows only explicit development callback origins', () => {
@@ -23,7 +26,7 @@ describe('cleanup regression unit contracts', () => {
   });
 
   it('keeps artifact completion claims live through storage calls and settlement', () => {
-    expect(artifactCompletionClaimLeaseMs()).toBe(config.dependencyTimeoutMs * 2 + 5_000);
+    expect(artifactCompletionClaimLeaseMs()).toBe(config.dependencyTimeoutMs + 5_000);
   });
 
   it('uses the AWS-compatible create-bucket shape for each region class', () => {
