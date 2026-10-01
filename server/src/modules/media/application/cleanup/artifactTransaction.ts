@@ -1,18 +1,21 @@
-import type { EntryTransaction } from '../../../entries/application/transaction.js';
-import { lockEntry } from '../../../entries/application/transaction.js';
+import type { Prisma } from '@prisma/client';
+import { lockEntry } from '../../../entries/application/locks.js';
 
 export type ArtifactCandidate = { id: string; entryId: string };
 
 export type LockedArtifact = NonNullable<
-  Awaited<ReturnType<EntryTransaction['artifact']['findUnique']>>
+  Awaited<ReturnType<Prisma.TransactionClient['artifact']['findUnique']>>
 >;
 
-export async function lockAndFindArtifact(tx: EntryTransaction, candidate: ArtifactCandidate) {
+export async function lockAndFindArtifact(
+  tx: Prisma.TransactionClient,
+  candidate: ArtifactCandidate
+) {
   await lockEntry(tx, candidate.entryId);
   return tx.artifact.findUnique({ where: { id: candidate.id } });
 }
 
-export async function incrementEntryVersion(tx: EntryTransaction, entryId: string) {
+export async function incrementEntryVersion(tx: Prisma.TransactionClient, entryId: string) {
   await tx.practiceEntry.update({
     where: { id: entryId },
     data: { version: { increment: 1 } },

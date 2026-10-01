@@ -1,14 +1,14 @@
 /** Transactional v1 feedback-command handler for the sync command pipeline. */
-import type { FeedbackTargetType, PracticeEntry } from '@prisma/client';
+import type { FeedbackTargetType, PracticeEntry, Prisma } from '@prisma/client';
 import { ErrorCodes } from '../../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../../platform/http/errors.js';
-import { type EntryTransaction, lockEntry } from '../../../entries/application/transaction.js';
+import { lockEntry } from '../../../entries/application/locks.js';
 import type { SyncCommand, SyncCommandResult } from './contract.js';
 import { appliedEntryResult, requireVersion } from './entryCommands.js';
 import { parseFeedbackPayload } from './payloads.js';
 
 export async function createFeedback(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   userId: string,
   command: SyncCommand
 ): Promise<SyncCommandResult> {
@@ -50,7 +50,7 @@ export async function createFeedback(
 }
 
 async function requireFeedbackTeacher(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   userId: string,
   courseId: string
 ): Promise<void> {
@@ -73,7 +73,7 @@ function requireSubmittedEntry(entry: PracticeEntry): void {
 }
 
 async function resolveFeedbackEntryId(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   targetType: FeedbackTargetType,
   targetId: string
 ): Promise<string> {
@@ -87,7 +87,7 @@ async function resolveFeedbackEntryId(
 }
 
 async function requireFeedbackTarget(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   entry: PracticeEntry,
   targetType: FeedbackTargetType,
   targetId: string

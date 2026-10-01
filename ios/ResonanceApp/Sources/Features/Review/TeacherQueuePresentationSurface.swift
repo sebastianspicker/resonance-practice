@@ -5,7 +5,7 @@ import SwiftUI
 struct TeacherQueuePresentationSurface<ListContent: View, WorkspaceContent: View>: View {
     let presentation: TeacherQueuePresentation
     let queue: [ReviewQueueEntry]
-    let screenshotQueue: [ReviewQueueEntry]?
+    let presetQueue: [ReviewQueueEntry]?
     let selectsInitialSubmission: Bool
     let initialSelectedEntryID: String?
     @Binding var selected: ReviewQueueEntry?
@@ -27,7 +27,7 @@ struct TeacherQueuePresentationSurface<ListContent: View, WorkspaceContent: View
     }
 
     private func loadInitialQueueState() async {
-        if screenshotQueue == nil {
+        if presetQueue == nil {
             await refreshQueue()
         } else if selectsInitialSubmission, selected == nil {
             selected = queue.first { $0.id == initialSelectedEntryID } ?? queue.first
@@ -35,7 +35,7 @@ struct TeacherQueuePresentationSurface<ListContent: View, WorkspaceContent: View
     }
 }
 
-extension TeacherQueueScreen {
+extension TeacherQueueView {
     func queueMetadata(_ entry: ReviewQueueEntry) -> String {
         let kindLabel = Self.kindDisplayName(entry.kind)
         let duration = Self.totalDurationLabel(for: entry)
@@ -68,12 +68,5 @@ extension TeacherQueueScreen {
             return String(format: "%d:%02d", minutes, seconds)
         }
         return String(format: "0:%02d", seconds)
-    }
-}
-
-extension TeacherQueueView {
-    static func kindDisplayName(_ kind: String?) -> String { TeacherQueueScreen.kindDisplayName(kind) }
-    static func totalDurationLabel(for entry: ReviewQueueEntry) -> String {
-        TeacherQueueScreen.totalDurationLabel(for: entry)
     }
 }

@@ -1,10 +1,10 @@
 import AVFoundation
 import SwiftUI
 
-extension EntryDetailScreen {
+extension EntryDetailView {
   /// Keep visible submissions moving through the existing queue's upload dependencies and retry policy.
   func continuePracticeSubmission() async {
-    guard ScreenshotScenario.current == nil else { return }
+    guard !capturePresentation else { return }
     while !Task.isCancelled && networkMonitor.isOnline && !queuedSubmissions.isEmpty && entry.status == .draft {
       guard deliveryState != .failed else { return }
       await syncManager.processQueue()
@@ -88,7 +88,7 @@ extension EntryDetailScreen {
       entry.notes = previousNotes
       entry.updatedAt = previousDate
       reflectionError = "Your reflection could not be saved. Try again."
-      appState.reportError(error)
+      errorReporter.report(error)
       return false
     }
   }

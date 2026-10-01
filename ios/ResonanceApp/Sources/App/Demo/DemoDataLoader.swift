@@ -1,3 +1,4 @@
+#if DEBUG || RESONANCE_SCREENSHOTS
 import Foundation
 import SwiftData
 
@@ -132,3 +133,4 @@ struct DemoDataLoader {
         }
     }
 }
+#endif

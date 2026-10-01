@@ -1,6 +1,7 @@
+#if RESONANCE_SCREENSHOTS
 import Foundation
 
-// Defines validated debug-only personas, routes, and deterministic content for screenshot capture.
+// Defines validated capture-build personas, routes, and deterministic content for screenshot capture.
 
 enum ScreenshotPersona: String {
     case student
@@ -25,35 +26,6 @@ enum ScreenshotScreen: String {
     case practiceReview = "practice-review"
     case practiceQueued = "practice-queued"
     case practiceSubmitted = "practice-submitted"
-}
-
-struct ScreenshotFormContent: Equatable {
-    let goalText: String
-    let durationMinutes: String
-    let tags: String
-    let notes: String
-
-    static let walkthrough = ScreenshotFormContent(
-        goalText: "Shape the opening phrase with an even legato line",
-        durationMinutes: "25",
-        tags: "chopin, legato, phrasing",
-        notes: "Keep the left hand quiet and compare takes at 72 bpm."
-    )
-}
-
-struct ScreenshotFeedbackContent: Equatable {
-    let status: FeedbackStatus
-    let commentsText: String
-    let markers: [MarkerDraft]
-
-    static let walkthrough = ScreenshotFeedbackContent(
-        status: .nextGoal,
-        commentsText: "The phrase is much more connected. Next, keep the release light before increasing the tempo.",
-        markers: [
-            MarkerDraft(time: "00:18", text: "Excellent voicing here."),
-            MarkerDraft(time: "00:41", text: "Keep the wrist relaxed through the release.")
-        ]
-    )
 }
 
 /// Complete capture route derived only from explicitly enabled screenshot environment values.
@@ -84,13 +56,29 @@ struct ScreenshotScenario {
         }
     }
 
-    var formContent: ScreenshotFormContent? {
-        screen == .newEntry ? .walkthrough : nil
+    var newEntryPrefill: NewEntryPrefill? {
+        screen == .newEntry ? Self.walkthroughEntry : nil
     }
 
-    var feedbackContent: ScreenshotFeedbackContent? {
-        screen == .feedbackEditor ? .walkthrough : nil
+    var feedbackPrefill: FeedbackPrefill? {
+        screen == .feedbackEditor ? Self.walkthroughFeedback : nil
     }
+
+    private static let walkthroughEntry = NewEntryPrefill(
+        goalText: "Shape the opening phrase with an even legato line",
+        durationMinutes: "25",
+        tags: "chopin, legato, phrasing",
+        notes: "Keep the left hand quiet and compare takes at 72 bpm."
+    )
+
+    private static let walkthroughFeedback = FeedbackPrefill(
+        status: .nextGoal,
+        commentsText: "The phrase is much more connected. Next, keep the release light before increasing the tempo.",
+        markers: [
+            MarkerDraft(time: "00:18", text: "Excellent voicing here."),
+            MarkerDraft(time: "00:41", text: "Keep the wrist relaxed through the release.")
+        ]
+    )
 
     var startsAtFeedback: Bool {
         screen == .reviewedFeedback
@@ -135,3 +123,4 @@ struct ScreenshotScenario {
         return ScreenshotScenario(persona: persona, screen: screen)
     }
 }
+#endif

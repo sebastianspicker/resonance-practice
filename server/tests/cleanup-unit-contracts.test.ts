@@ -5,7 +5,7 @@ import {
   _resetOidcClientForTesting,
   getOidcClient,
 } from '../src/modules/identity/application/oidc.js';
-import { artifactCompletionClaimLeaseMs } from '../src/modules/entries/application/transaction.js';
+import { artifactCompletionClaimLeaseMs } from '../src/modules/media/application/completionLease.js';
 import { buildCreateBucketInput } from '../src/platform/storage/s3.js';
 
 describe('cleanup regression unit contracts', () => {

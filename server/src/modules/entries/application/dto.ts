@@ -1,4 +1,4 @@
-/** Public entry projections shared by versioned entry read adapters. */
+/** Public entry and artifact projections shared by versioned read and media adapters. */
 import type { Artifact, CaptureMarker, PracticeEntry } from '@prisma/client';
 
 type EntryWithMedia = PracticeEntry & {
@@ -28,11 +28,17 @@ export function toEntrySummaryDto(entry: PracticeEntry & { artifacts: Artifact[]
     consentScope: entry.consentScope,
     captureProfile: entry.captureProfile,
     version: entry.version,
-    artifacts: entry.artifacts.map(toEntryArtifactResponseDto),
+    artifacts: entry.artifacts.map(toArtifactResponseDto),
   };
 }
 
-function toEntryArtifactResponseDto(artifact: Artifact) {
+type ArtifactResponseDto = Pick<
+  Artifact,
+  'id' | 'entryId' | 'type' | 'durationSeconds' | 'createdAt' | 'uploadState' | 'expectedSizeBytes'
+>;
+
+/** The only public artifact projection; storage and cleanup metadata are never transport contracts. */
+export function toArtifactResponseDto(artifact: Artifact): ArtifactResponseDto {
   return {
     id: artifact.id,
     entryId: artifact.entryId,

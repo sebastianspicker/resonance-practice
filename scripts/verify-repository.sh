@@ -12,6 +12,10 @@ echo "Validating canonical v1 API contract..."
 node ./scripts/validate-v1-contract.mjs
 node ./scripts/generate-v1-contract-projection.mjs
 
+echo "Checking iOS source layering..."
+node ./scripts/check-ios-layers.mjs --self-test
+node ./scripts/check-ios-layers.mjs
+
 echo "Validating demo fixture..."
 node ./scripts/demo/validate-fixture.mjs
 

@@ -8,10 +8,8 @@ final class AppState: ObservableObject {
     let authManager: AuthManager
     let syncManager: SyncManager
     let networkMonitor: NetworkMonitor
+    let errorReporter = ErrorReporter()
     private let dependencies: AppStateDependencies
-
-    @Published var lastErrorMessage: String?
-    @Published var showErrorAlert: Bool = false
 
     convenience init(
         modelContext: ModelContext,
@@ -50,25 +48,11 @@ final class AppState: ObservableObject {
         do {
             try await makeLocalProfileLifecycle().signOutAndDeleteLocalData()
         } catch {
-            reportError(error)
+            errorReporter.report(error)
         }
     }
 
     private func makeLocalProfileLifecycle() -> AppStateLocalProfileLifecycle {
         dependencies.makeLocalProfileLifecycle(syncManager: syncManager)
-    }
-
-    func reportError(_ error: Error) {
-        if let apiError = error as? APIError {
-            lastErrorMessage = apiError.error.message
-        } else {
-            lastErrorMessage = error.localizedDescription
-        }
-        showErrorAlert = true
-    }
-
-    func clearError() {
-        lastErrorMessage = nil
-        showErrorAlert = false
     }
 }

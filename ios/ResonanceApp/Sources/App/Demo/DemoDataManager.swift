@@ -1,3 +1,4 @@
+#if DEBUG || RESONANCE_SCREENSHOTS
 import Foundation
 import SwiftData
 
@@ -22,3 +23,4 @@ final class DemoDataManager {
         try DemoDataCleanup(modelContext: modelContext, demoPrefix: demoPrefix).clear()
     }
 }
+#endif

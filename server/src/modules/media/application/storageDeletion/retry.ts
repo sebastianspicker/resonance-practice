@@ -4,7 +4,7 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import { nanoid } from 'nanoid';
 import { config } from '../../../../platform/config.js';
 import { withDeadline } from '../../../../platform/deadline.js';
-import { boundedStorageDeletionLimit } from './shared.js';
+import { boundedStorageDeletionLimit } from '../cleanup/shared.js';
 
 const MAX_STORAGE_DELETION_ERROR_LENGTH = 1000;
 const STORAGE_DELETION_RETRY_BASE_MS = 60_000;

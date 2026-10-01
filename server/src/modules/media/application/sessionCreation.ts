@@ -1,33 +1,20 @@
+/** Idempotent artifact upload-session creation, staging rotation, and upload presigning. */
 import type { S3Client } from '@aws-sdk/client-s3';
-import { CopyObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import type { ArtifactType, PrismaClient } from '@prisma/client';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+import type { ArtifactType, Prisma, PrismaClient } from '@prisma/client';
 import { config } from '../../../platform/config.js';
+import { lockOperationIdentity } from '../../../platform/database/advisoryLocks.js';
 import { ErrorCodes } from '../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../platform/http/errors.js';
-import { withDeadline } from '../../../platform/deadline.js';
-import { isS3SourceInvalidError } from './cleanup/artifactCleanup.js';
-import { toArtifactResponseDto } from './dto.js';
-import { assertSupportedMediaContainer, expectedContentType } from './mediaValidation.js';
+import { requireStudentOwner } from '../../entries/application/authorization.js';
+import { toArtifactResponseDto } from '../../entries/application/dto.js';
+import { assertEntryActive, lockEntry } from '../../entries/application/locks.js';
+import { artifactSessionPayloadHash, artifactStagingKey } from './artifactIdentity.js';
+import { lockArtifactSessionIdentity } from './completionClaims.js';
+import { artifactCompletionClaimLeaseEnd } from './completionLease.js';
+import { artifactSessionCleanupAt, queueStorageDeletion } from './storageDeletion/schedule.js';
+import { assertArtifactSessionCapacity, lockArtifactQuotaIdentity } from './uploadQuota.js';
 import { presignUpload } from './uploadPresign.js';
-import {
-  acquireArtifactCompletionClaim,
-  artifactCompletionClaimLeaseEnd,
-  artifactSessionPayloadHash,
-  artifactSessionCleanupAt,
-  artifactStagingKey,
-  type ArtifactCompletionClaim,
-  assertArtifactSessionCapacity,
-  assertArtifactStudentOwner,
-  assertEntryActive,
-  finalizeArtifactCompletionClaim,
-  type EntryTransaction,
-  lockArtifactQuotaIdentity,
-  lockArtifactSessionIdentity,
-  lockEntry,
-  lockOperationIdentity,
-  queueStorageDeletion,
-  releaseArtifactCompletionClaim,
-} from '../../entries/application/transaction.js';
 
 const MIN_USEFUL_PRESIGN_LIFETIME_SECONDS = 5;
 
@@ -41,6 +28,16 @@ export type ArtifactSessionCreate = {
   sizeBytes: number;
   checksumSha256: string;
   baseVersion: number;
+};
+
+type RotatableArtifactSession = {
+  id: string;
+  artifactId: string;
+  storageKey: string;
+  expiresAt: Date;
+  credentialExpiresAt: Date | null;
+  completionFinalKey: string | null;
+  completionClaimedAt: Date | null;
 };
 
 async function prepareArtifactSession(
@@ -61,7 +58,7 @@ async function prepareArtifactSession(
   });
 }
 async function prepareExistingArtifactSession(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   input: ArtifactSessionCreate,
   hash: string,
   now: Date,
@@ -82,7 +79,7 @@ async function prepareExistingArtifactSession(
   });
   const entry = await lockEntry(tx, current.artifact.entryId);
   assertEntryActive(entry);
-  await assertArtifactStudentOwner(tx, input.userId, entry);
+  await requireStudentOwner(tx, input.userId, entry, 'upload artifacts');
   if (current.completedAt) {
     return {
       session: current,
@@ -99,37 +96,11 @@ async function prepareExistingArtifactSession(
       completed: false,
     };
   }
-  const cleanupAt = artifactSessionCleanupAt(current);
-  await queueStorageDeletion(tx, entry.id, current.storageKey, cleanupAt);
-  if (current.completionFinalKey) {
-    await queueStorageDeletion(tx, entry.id, current.completionFinalKey, cleanupAt);
-  }
-  const storageKey = artifactStagingKey(entry.id, current.artifactId);
-  const session = await tx.artifactUploadSession.update({
-    where: { id: current.id },
-    data: {
-      storageKey,
-      expiresAt,
-      credentialExpiresAt: null,
-      completionClaimToken: null,
-      completionFinalKey: null,
-      completionClaimedAt: null,
-    },
-  });
-  const artifact = await tx.artifact.update({
-    where: { id: current.artifactId },
-    data: {
-      storageKey,
-      uploadState: 'uploading',
-      uploadExpiresAt: expiresAt,
-      confirmationToken: null,
-      failedAt: null,
-    },
-  });
+  const { session, artifact } = await rotateStagingSession(tx, entry.id, current, expiresAt);
   return { session, artifact, version: entry.version, completed: false };
 }
 async function prepareNewArtifactSession(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   input: ArtifactSessionCreate,
   hash: string,
   now: Date,
@@ -137,7 +108,7 @@ async function prepareNewArtifactSession(
 ) {
   const entry = await lockEntry(tx, input.entryId);
   assertEntryActive(entry);
-  await assertArtifactStudentOwner(tx, input.userId, entry);
+  await requireStudentOwner(tx, input.userId, entry, 'upload artifacts');
   if (entry.version !== input.baseVersion) {
     throw new ApiError(409, ErrorCodes.VERSION_CONFLICT, 'Entry has changed on the server', {
       actual: entry.version,
@@ -184,6 +155,46 @@ async function prepareNewArtifactSession(
   });
   return { session, artifact, version: updated.version, completed: false };
 }
+
+/**
+ * Retire a session's staging (and any claimed final) key for durable cleanup
+ * and point the session and its artifact at a fresh staging key.
+ */
+async function rotateStagingSession(
+  tx: Prisma.TransactionClient,
+  entryId: string,
+  current: RotatableArtifactSession,
+  expiresAt: Date
+) {
+  const cleanupAt = artifactSessionCleanupAt(current);
+  await queueStorageDeletion(tx, entryId, current.storageKey, cleanupAt);
+  if (current.completionFinalKey) {
+    await queueStorageDeletion(tx, entryId, current.completionFinalKey, cleanupAt);
+  }
+  const storageKey = artifactStagingKey(entryId, current.artifactId);
+  const session = await tx.artifactUploadSession.update({
+    where: { id: current.id },
+    data: {
+      storageKey,
+      expiresAt,
+      credentialExpiresAt: null,
+      completionClaimToken: null,
+      completionFinalKey: null,
+      completionClaimedAt: null,
+    },
+  });
+  const artifact = await tx.artifact.update({
+    where: { id: current.artifactId },
+    data: {
+      storageKey,
+      uploadState: 'uploading',
+      uploadExpiresAt: expiresAt,
+      confirmationToken: null,
+      failedAt: null,
+    },
+  });
+  return { session, artifact };
+}
 export async function createArtifactSession(
   prisma: PrismaClient,
   s3: S3Client,
@@ -227,41 +238,9 @@ export async function createArtifactSession(
     }
     let expiresInSeconds = Math.floor((session.expiresAt.getTime() - now.getTime()) / 1000);
     if (expiresInSeconds < MIN_USEFUL_PRESIGN_LIFETIME_SECONDS) {
-      const cleanupAt = artifactSessionCleanupAt(session);
-      await queueStorageDeletion(tx, session.artifact.entryId, session.storageKey, cleanupAt);
-      if (session.completionFinalKey) {
-        await queueStorageDeletion(
-          tx,
-          session.artifact.entryId,
-          session.completionFinalKey,
-          cleanupAt
-        );
-      }
-      const storageKey = artifactStagingKey(session.artifact.entryId, session.artifactId);
       const expiresAt = new Date(now.getTime() + config.s3.presignTtlSeconds * 1000);
-      session = await tx.artifactUploadSession.update({
-        where: { id: session.id },
-        data: {
-          storageKey,
-          expiresAt,
-          credentialExpiresAt: null,
-          completionClaimToken: null,
-          completionFinalKey: null,
-          completionClaimedAt: null,
-        },
-        include: { artifact: true },
-      });
-      const artifact = await tx.artifact.update({
-        where: { id: session.artifactId },
-        data: {
-          storageKey,
-          uploadState: 'uploading',
-          uploadExpiresAt: expiresAt,
-          confirmationToken: null,
-          failedAt: null,
-        },
-      });
-      session = { ...session, artifact };
+      const rotated = await rotateStagingSession(tx, session.artifact.entryId, session, expiresAt);
+      session = { ...rotated.session, artifact: rotated.artifact };
       expiresInSeconds = config.s3.presignTtlSeconds;
     }
     if (expiresInSeconds < 1) {
@@ -308,114 +287,4 @@ export async function createArtifactSession(
     currentVersion: prepared.version,
     completed: false,
   };
-}
-export async function completeArtifactSession(
-  prisma: PrismaClient,
-  s3: S3Client,
-  userId: string,
-  sessionId: string
-) {
-  const claim = await acquireArtifactCompletionClaim(prisma, userId, sessionId);
-  if (claim.completed) {
-    return { artifact: toArtifactResponseDto(claim.artifact), currentVersion: claim.version };
-  }
-  await copyArtifactCompletionClaim(prisma, s3, sessionId, claim);
-  const completed = await finalizeArtifactCompletionClaim(prisma, userId, sessionId, claim);
-  return { ...completed, artifact: toArtifactResponseDto(completed.artifact) };
-}
-export async function copyArtifactCompletionClaim(
-  prisma: PrismaClient,
-  s3: S3Client,
-  sessionId: string,
-  claim: ArtifactCompletionClaim,
-  timeoutMs = config.dependencyTimeoutMs
-) {
-  try {
-    await withDeadline(
-      async (abortSignal) => {
-        let head;
-        try {
-          head = await s3.send(
-            new HeadObjectCommand({
-              Bucket: config.s3.bucket,
-              Key: claim.stagingKey,
-              ChecksumMode: 'ENABLED',
-            }),
-            { abortSignal }
-          );
-        } catch (error) {
-          if (isS3SourceInvalidError(error)) {
-            throw new ApiError(409, ErrorCodes.UPLOAD_INVALID, 'Uploaded object was not found');
-          }
-          throw error;
-        }
-        assertArtifactObjectMetadata(head, claim);
-        await assertSupportedMediaContainer(s3, claim.stagingKey, claim.type, head.ContentLength, {
-          abortSignal,
-        });
-        abortSignal.throwIfAborted();
-        try {
-          await s3.send(
-            new CopyObjectCommand({
-              Bucket: config.s3.bucket,
-              Key: claim.storageKey,
-              CopySource: `${config.s3.bucket}/${encodeURIComponent(claim.stagingKey)}`,
-              CopySourceIfMatch: head.ETag,
-            }),
-            { abortSignal }
-          );
-        } catch (error) {
-          if (isS3SourceInvalidError(error)) {
-            throw new ApiError(
-              409,
-              ErrorCodes.UPLOAD_INVALID,
-              'Uploaded object changed before it could be finalized'
-            );
-          }
-          throw error;
-        }
-      },
-      timeoutMs,
-      'S3 artifact completion'
-    );
-  } catch (error) {
-    await releaseArtifactCompletionClaim(prisma, sessionId, claim);
-    if (error instanceof ApiError) throw error;
-    throw new ApiError(503, ErrorCodes.STORAGE_UNAVAILABLE, 'Storage is temporarily unavailable');
-  }
-}
-
-function assertArtifactObjectMetadata(
-  head: {
-    ContentLength?: number | undefined;
-    ContentType?: string | undefined;
-    ChecksumSHA256?: string | undefined;
-    ETag?: string | undefined;
-  },
-  claim: ArtifactCompletionClaim
-) {
-  if (head.ContentLength !== claim.expectedSizeBytes) {
-    throw new ApiError(
-      409,
-      ErrorCodes.UPLOAD_INVALID,
-      'Uploaded object size does not match the artifact'
-    );
-  }
-  if (head.ContentType !== expectedContentType(claim.type)) {
-    throw new ApiError(
-      409,
-      ErrorCodes.UPLOAD_INVALID,
-      'Uploaded object content type is not supported'
-    );
-  }
-  if (head.ChecksumSHA256 !== claim.checksumSha256) {
-    throw new ApiError(409, ErrorCodes.UPLOAD_INVALID, 'Uploaded object checksum does not match');
-  }
-  if (!head.ETag?.trim()) {
-    throw new ApiError(
-      409,
-      ErrorCodes.UPLOAD_INVALID,
-      'Uploaded object is missing a supported integrity validator'
-    );
-  }
 }

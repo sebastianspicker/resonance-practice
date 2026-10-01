@@ -14,7 +14,7 @@ struct SecureReviewArtifactLoadState {
 func loadSecureReviewArtifact(
     _ artifact: ArtifactResponse?,
     accessToken: String?,
-    appState: AppState,
+    apiClient: APIClient,
     player: AVPlayer,
     state: SecureReviewArtifactLoadState
 ) async {
@@ -25,7 +25,7 @@ func loadSecureReviewArtifact(
     state.beforeLoad()
     defer { state.isLoading.wrappedValue = false }
     do {
-        let response = try await appState.apiClient.fetchArtifactDownloadURL(
+        let response = try await apiClient.fetchArtifactDownloadURL(
             accessToken: accessToken,
             artifactId: artifact.id
         )
@@ -41,7 +41,7 @@ struct SubmissionDetailView: View {
     let onFeedbackQueued: () -> Void
     private let loadsRemoteMedia: Bool
     private let isFeedbackQueued: Bool
-    @EnvironmentObject private var appState: AppState
+    @Environment(\.apiClient) private var apiClient
     @EnvironmentObject private var authManager: AuthManager
     @State private var selectedArtifactId: String?
     @State private var player = AVPlayer()
@@ -181,7 +181,7 @@ struct SubmissionDetailView: View {
         await loadSecureReviewArtifact(
             entry.artifacts.first(where: { $0.id == selectedArtifactId }),
             accessToken: authManager.session?.accessToken,
-            appState: appState,
+            apiClient: apiClient,
             player: player,
             state: SecureReviewArtifactLoadState(
                 isLoading: $isLoadingMedia,

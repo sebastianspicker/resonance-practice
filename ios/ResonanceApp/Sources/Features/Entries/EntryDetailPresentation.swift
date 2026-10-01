@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct EntryDetailPresentationSurface<Content: View>: View {
+  @Environment(\.capturePresentation) private var capturePresentation
   let entry: LocalPracticeEntry
   @Binding var showsSubmitConfirmation: Bool
   @Binding var showsDeleteConfirmation: Bool
@@ -24,7 +25,7 @@ struct EntryDetailPresentationSurface<Content: View>: View {
       .navigationTitle(usesGuidedPractice ? "" : (entry.kind == .teachingLesson ? "Teaching Lesson" : "Practice Entry"))
       .navigationBarTitleDisplayMode(.inline)
       .task {
-        if ScreenshotScenario.current == nil && entry.status != .draft {
+        if !capturePresentation && entry.status != .draft {
           await refreshFeedback()
         }
       }

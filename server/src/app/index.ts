@@ -6,7 +6,7 @@ import {
   cleanupFailedArtifacts,
 } from '../modules/media/application/cleanup/artifactCleanup.js';
 import { expireStaleArtifactUploads } from '../modules/media/application/cleanup/staleUploads.js';
-import { retryStorageDeletionJobs } from '../modules/media/application/cleanup/storageDeletionRetry.js';
+import { retryStorageDeletionJobs } from '../modules/media/application/storageDeletion/retry.js';
 import { settlesWithin, withDeadline } from '../platform/deadline.js';
 import { cleanupSyncReceipts } from '../modules/sync/application/commands.js';
 import { cleanupRevokedRefreshTokens } from '../modules/identity/application/maintenance.js';

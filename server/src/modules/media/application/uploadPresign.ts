@@ -8,6 +8,12 @@ import { ErrorCodes } from '../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../platform/http/errors.js';
 
 const MAX_PRESIGN_ATTEMPTS = 3;
+/**
+ * Clients send every `requiredHeaders` entry, including the checksum. The SDK
+ * would otherwise hoist the checksum into the query string, leaving the sent
+ * header unsigned, which strict S3 implementations reject.
+ */
+const SIGNED_UPLOAD_HEADERS = new Set(['x-amz-checksum-sha256']);
 
 export async function presignUpload(
   s3: S3Client,
@@ -25,7 +31,11 @@ export async function presignUpload(
     let uploadUrl: string;
     try {
       uploadUrl = await withDeadline(
-        () => getSignedUrl(s3, command, { expiresIn: expiresInSeconds }),
+        () =>
+          getSignedUrl(s3, command, {
+            expiresIn: expiresInSeconds,
+            unhoistableHeaders: SIGNED_UPLOAD_HEADERS,
+          }),
         remainingBudgetMs,
         'S3 upload presign'
       );

@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-extension EntryDetailScreen {
+extension EntryDetailView {
   func submitEntry() {
     guard entry.status == .draft, authManager.session?.userId == entry.studentId else { return }
     guard !usesGuidedPractice || canEditPractice else { return }
@@ -15,7 +15,7 @@ extension EntryDetailScreen {
       return
     }
     do { try modelContext.save() } catch {
-      appState.reportError(error)
+      errorReporter.report(error)
       return
     }
     syncManager.enqueue(type: .submitEntry, payload: .entry(.init(entryId: entry.id)))
@@ -46,7 +46,7 @@ extension EntryDetailScreen {
       try modelContext.save()
       return true
     } catch {
-      appState.reportError(error)
+      errorReporter.report(error)
       return false
     }
   }
@@ -70,7 +70,7 @@ extension EntryDetailScreen {
       practiceError = message
       return
     }
-    appState.reportError(
+    errorReporter.report(
       NSError(domain: "Resonance", code: 0, userInfo: [NSLocalizedDescriptionKey: message]))
   }
 
@@ -85,7 +85,7 @@ extension EntryDetailScreen {
         entry: entry, modelContext: modelContext, ownerId: authManager.session?.userId,
         additionalOwnedMediaPaths: stoppedRecorderPath.map { [$0] } ?? [])
       finishPractice()
-    } catch { appState.reportError(error) }
+    } catch { errorReporter.report(error) }
   }
 
   func refreshFeedback() async {
@@ -148,7 +148,7 @@ extension EntryDetailScreen {
     accessToken: String,
     cursor: String?
   ) async throws -> PaginatedResponse<FeedbackResponse> {
-    try await appState.apiClient.fetchFeedback(
+    try await apiClient.fetchFeedback(
       accessToken: accessToken, entryId: entry.id, limit: 50, cursor: cursor)
   }
 
@@ -170,7 +170,7 @@ extension EntryDetailScreen {
           isCurrentFeedbackLoad(generation, session: session),
           cursor == nil || feedbackCursor == cursor
     else { return }
-    appState.reportError(error)
+    errorReporter.report(error)
   }
 
   private func mergeFeedback(_ responses: [FeedbackResponse]) {

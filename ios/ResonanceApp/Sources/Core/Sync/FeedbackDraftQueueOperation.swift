@@ -56,7 +56,7 @@ struct FeedbackDraftQueueOperation {
     private func validatedMarkers() throws -> [(seconds: Int, text: String)] {
         try markers.compactMap { marker in
             guard !marker.time.isEmpty || !marker.text.isEmpty else { return nil }
-            guard let seconds = FeedbackEditorView.parse(marker.time) else {
+            guard let seconds = MarkerDraft.parseTime(marker.time) else {
                 throw FeedbackDraftValidationError.invalidMarkerTime
             }
             guard !marker.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {

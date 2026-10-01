@@ -8,7 +8,7 @@ import {
   requireRecord,
 } from '../../../../platform/http/input.js';
 
-const COMMAND_KINDS = [
+export const SYNC_COMMAND_KINDS = [
   'createEntry',
   'updateEntry',
   'replaceCaptureMarkers',
@@ -17,7 +17,7 @@ const COMMAND_KINDS = [
   'createFeedback',
 ] as const;
 
-type SyncCommandKind = (typeof COMMAND_KINDS)[number];
+type SyncCommandKind = (typeof SYNC_COMMAND_KINDS)[number];
 export type SyncCommand = {
   operationId: string;
   entityId: string;
@@ -25,7 +25,14 @@ export type SyncCommand = {
   baseVersion?: number;
   payload: Record<string, unknown>;
 };
-export type SyncCommandStatus = 'applied' | 'duplicate' | 'conflict' | 'rejected' | 'retryable';
+export const SYNC_RESULT_STATUSES = [
+  'applied',
+  'duplicate',
+  'conflict',
+  'rejected',
+  'retryable',
+] as const;
+export type SyncCommandStatus = (typeof SYNC_RESULT_STATUSES)[number];
 export type SyncCommandResult = {
   operationId: string;
   entityId: string;
@@ -39,7 +46,7 @@ export type SyncCommandResult = {
 
 export function parseSyncCommand(value: unknown): SyncCommand {
   const body = requireRecord(value, 'command');
-  const kind = requireEnum(body.kind, 'kind', COMMAND_KINDS);
+  const kind = requireEnum(body.kind, 'kind', SYNC_COMMAND_KINDS);
   const baseVersion =
     body.baseVersion === undefined
       ? undefined

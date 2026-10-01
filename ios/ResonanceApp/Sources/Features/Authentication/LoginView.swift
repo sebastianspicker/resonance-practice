@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct LoginView: View {
+    let universityName: String
     @EnvironmentObject private var authManager: AuthManager
 
     var body: some View {
@@ -22,7 +23,7 @@ struct LoginView: View {
                     VStack(spacing: AppTheme.Spacing.standard) {
                         Text("Keep practice evidence, teaching reflection, and feedback together, even when you are offline.")
                             .multilineTextAlignment(.center)
-                        Text(DemoConfiguration.universityName)
+                        Text(universityName)
                             .font(.headline)
                         Button("Sign in with university account") {
                             authManager.signIn()

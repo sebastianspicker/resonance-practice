@@ -2,7 +2,7 @@ import SwiftUI
 
 // List presentation for compact teacher review queue (phone / sheet flow).
 
-extension TeacherQueueScreen {
+extension TeacherQueueView {
     var listBody: some View {
         Group {
             if isLoading && queue.isEmpty {
@@ -75,7 +75,7 @@ extension TeacherQueueScreen {
     }
 }
 
-extension TeacherQueueScreen {
+extension TeacherQueueView {
     @ViewBuilder var queuePaginationControl: some View {
         HStack {
             Spacer()

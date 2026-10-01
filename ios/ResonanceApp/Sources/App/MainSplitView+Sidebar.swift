@@ -3,18 +3,10 @@ import SwiftUI
 
 // Builds the course sidebar and exposes refresh, retry, and utility navigation actions.
 
-extension MainSplitScreen {
+extension MainSplitView {
   func teacherWorkspace(course: LocalCourse) -> some View {
     NavigationStack {
-      TeacherQueueView(
-        courseId: course.id,
-        screenshotQueue: ScreenshotScenario.current == nil ? nil : screenshotReviewEntries,
-        initiallyQueuedFeedback: ScreenshotScenario.current?.queuedFeedbackEntryIDs ?? [],
-        presentation: .workspace,
-        initialSelectedEntryID: ScreenshotScenario.current?.selectedEntryID,
-        initialFeedbackContent: ScreenshotScenario.current?.feedbackContent,
-        selectsInitialSubmission: ScreenshotScenario.current?.screen != .courses
-      )
+      teacherWorkspaceQueue(courseId: course.id)
         .navigationTitle(course.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -34,6 +26,23 @@ extension MainSplitScreen {
         }
     }
     .background(AppTheme.workspaceBackground)
+  }
+
+  private func teacherWorkspaceQueue(courseId: String) -> TeacherQueueView {
+#if RESONANCE_SCREENSHOTS
+    if let scenario = ScreenshotScenario.current {
+      return TeacherQueueView(
+        courseId: courseId,
+        presetQueue: screenshotReviewEntries,
+        initiallyQueuedFeedback: scenario.queuedFeedbackEntryIDs,
+        presentation: .workspace,
+        initialSelectedEntryID: scenario.selectedEntryID,
+        initialFeedback: scenario.feedbackPrefill,
+        selectsInitialSubmission: scenario.screen != .courses
+      )
+    }
+#endif
+    return TeacherQueueView(courseId: courseId, presentation: .workspace)
   }
 
   var sidebar: some View {
@@ -80,7 +89,7 @@ extension MainSplitScreen {
   }
 
   @ViewBuilder var connectionStatus: some View {
-    if ScreenshotScenario.current == nil {
+    if !capturePresentation {
       SyncStatusStrip(
         isOnline: networkMonitor.isOnline,
         pendingCount: syncManager.pendingQueueCount,
@@ -150,7 +159,7 @@ extension MainSplitScreen {
     } catch is CancellationError {
       return
     } catch {
-      appState.reportError(error)
+      errorReporter.report(error)
     }
   }
 

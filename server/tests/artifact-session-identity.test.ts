@@ -1,6 +1,6 @@
 // Guards idempotent artifact-session identity before an upload credential is issued.
 import { describe, expect, it } from 'vitest';
-import { artifactSessionPayloadHash } from '../src/modules/entries/application/transaction.js';
+import { artifactSessionPayloadHash } from '../src/modules/media/application/artifactIdentity.js';
 
 const base = {
   userId: 'student-1',

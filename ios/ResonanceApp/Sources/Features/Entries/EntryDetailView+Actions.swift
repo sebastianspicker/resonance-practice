@@ -2,7 +2,7 @@ import AVFoundation
 import SwiftData
 import SwiftUI
 
-extension EntryDetailScreen {
+extension EntryDetailView {
   var captureProfileSelection: Binding<CaptureProfile> {
     Binding(get: { entry.captureProfile ?? .teacherLearner }, set: { updateCaptureProfile($0) })
   }
@@ -29,7 +29,7 @@ extension EntryDetailScreen {
         reflectionText = entry.notes ?? ""
         practiceError = nil
         practiceStage = PracticeEntryStage.initial(for: entry, section: nil)
-      } catch { appState.reportError(error) }
+      } catch { errorReporter.report(error) }
     }
   }
 
@@ -37,7 +37,7 @@ extension EntryDetailScreen {
     do {
       _ = try syncManager.duplicateAsNewDraft(entry, modelContext: modelContext)
       finishPractice()
-    } catch { appState.reportError(error) }
+    } catch { errorReporter.report(error) }
   }
 
   func stopRecording() {
@@ -158,7 +158,7 @@ extension EntryDetailScreen {
       if didSetDefaultProfile {
         syncManager.enqueue(type: .syncCaptureProfile, payload: .entry(.init(entryId: entry.id)))
       }
-    } catch { appState.reportError(error) }
+    } catch { errorReporter.report(error) }
   }
 
   func finishLessonCapture(_ result: TeachingLessonCaptureResult) {
@@ -181,7 +181,7 @@ extension EntryDetailScreen {
       modelContext.insert(marker)
     }
     do { try modelContext.save() } catch {
-      appState.reportError(error)
+      errorReporter.report(error)
       return
     }
     syncManager.enqueue(type: .syncCaptureProfile, payload: .entry(.init(entryId: entry.id)))
@@ -204,7 +204,7 @@ extension EntryDetailScreen {
       try modelContext.save()
       return true
     } catch {
-      appState.reportError(error)
+      errorReporter.report(error)
       return false
     }
   }

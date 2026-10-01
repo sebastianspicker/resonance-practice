@@ -1,10 +1,17 @@
 import SwiftUI
-import SwiftData
+
+// Shows account, privacy, and debug settings; App supplies the sign-out and demo-data actions.
+
+/// Debug-only demo-data hooks supplied by the app composition.
+struct SettingsDemoDataActions {
+    let load: (_ roleInCourse: String) throws -> Void
+    let clear: () throws -> Void
+}
 
 struct SettingsView: View {
-    @Environment(\.modelContext) private var modelContext
+    let signOutAndDeleteLocalData: () async -> Void
+    let demoData: SettingsDemoDataActions?
     @EnvironmentObject var authManager: AuthManager
-    @EnvironmentObject var appState: AppState
     @EnvironmentObject var syncManager: SyncManager
     @State private var demoStatusMessage: String?
     @State private var showDemoStatusAlert = false
@@ -31,30 +38,32 @@ struct SettingsView: View {
                         .font(.caption)
                         .textSelection(.enabled)
 
-                    Button("Load Mock Demo Data") {
-                        do {
-                            let roleInCourse = authManager.session?.globalRole == "teacher" ? "teacher" : "student"
-                            try DemoDataManager(modelContext: modelContext).loadMockUniversityData(roleInCourse: roleInCourse)
-                            demoStatusMessage = "Loaded mock university demo data."
-                        } catch {
-                            demoStatusMessage = "Loading demo data failed: \(error.localizedDescription)"
+                    if let demoData {
+                        Button("Load Mock Demo Data") {
+                            do {
+                                let roleInCourse = authManager.session?.globalRole == "teacher" ? "teacher" : "student"
+                                try demoData.load(roleInCourse)
+                                demoStatusMessage = "Loaded mock university demo data."
+                            } catch {
+                                demoStatusMessage = "Loading demo data failed: \(error.localizedDescription)"
+                            }
+                            showDemoStatusAlert = true
                         }
-                        showDemoStatusAlert = true
-                    }
-                    .accessibilityLabel("Load mock demo data")
-                    .accessibilityHint("Double-tap to populate the app with sample university data")
+                        .accessibilityLabel("Load mock demo data")
+                        .accessibilityHint("Double-tap to populate the app with sample university data")
 
-                    Button("Clear Mock Demo Data") {
-                        do {
-                            try DemoDataManager(modelContext: modelContext).clearMockUniversityData()
-                            demoStatusMessage = "Cleared mock university demo data."
-                        } catch {
-                            demoStatusMessage = "Clearing demo data failed: \(error.localizedDescription)"
+                        Button("Clear Mock Demo Data") {
+                            do {
+                                try demoData.clear()
+                                demoStatusMessage = "Cleared mock university demo data."
+                            } catch {
+                                demoStatusMessage = "Clearing demo data failed: \(error.localizedDescription)"
+                            }
+                            showDemoStatusAlert = true
                         }
-                        showDemoStatusAlert = true
+                        .accessibilityLabel("Clear mock demo data")
+                        .accessibilityHint("Double-tap to remove all sample data from the app")
                     }
-                    .accessibilityLabel("Clear mock demo data")
-                    .accessibilityHint("Double-tap to remove all sample data from the app")
                 }
 #endif
 
@@ -78,7 +87,7 @@ struct SettingsView: View {
                     }
                 }
                 Button("Sign out and delete local data", role: .destructive) {
-                    Task { await appState.signOutAndDeleteLocalData() }
+                    Task { await signOutAndDeleteLocalData() }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {

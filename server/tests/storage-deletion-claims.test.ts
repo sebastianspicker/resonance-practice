@@ -1,6 +1,6 @@
 import { DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { describe, expect, it } from 'vitest';
-import { retryStorageDeletionJobs } from '../src/modules/media/application/cleanup/storageDeletionRetry.js';
+import { retryStorageDeletionJobs } from '../src/modules/media/application/storageDeletion/retry.js';
 import { installBasicSuite, prisma, s3Mock } from './support/testUtils.js';
 
 const logger = { error: () => undefined };

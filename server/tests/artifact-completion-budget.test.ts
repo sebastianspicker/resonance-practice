@@ -1,7 +1,7 @@
 import { CopyObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { describe, expect, it } from 'vitest';
-import { copyArtifactCompletionClaim } from '../src/modules/media/application/artifactSessions.js';
-import type { ArtifactCompletionClaim } from '../src/modules/entries/application/transaction.js';
+import { copyArtifactCompletionClaim } from '../src/modules/media/application/sessionCompletion.js';
+import type { ArtifactCompletionClaim } from '../src/modules/media/application/completionClaims.js';
 
 describe('artifact completion storage budget', () => {
   it('does not start a copy when an ignored-signal body finishes after the deadline', async () => {

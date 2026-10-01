@@ -8,6 +8,10 @@ import { buildServer } from '../src/server.js';
 import { ErrorCodes } from '../src/platform/http/errorCodes.js';
 import { ApiError, sendError } from '../src/platform/http/errors.js';
 import { parseSyncCommand } from '../src/modules/sync/application/commands.js';
+import {
+  SYNC_COMMAND_KINDS,
+  SYNC_RESULT_STATUSES,
+} from '../src/modules/sync/application/sync/contract.js';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, cursorPage } from '../src/platform/http/pagination.js';
 
 const v1Contract = contract as {
@@ -29,6 +33,22 @@ const v1Contract = contract as {
   errorEnvelope: { fields: string[] };
 };
 
+/** Flatten Fastify's indented route tree into `METHOD /full/path` strings, without HEAD. */
+function registeredRoutes(tree: string): string[] {
+  const parents: string[] = [];
+  return tree.split('\n').flatMap((line) => {
+    const match = /^([│ ]*)[├└]── (\S+) \(([^)]+)\)/.exec(line);
+    if (!match) return [];
+    const depth = match[1]!.length / 4;
+    const path = `${parents[depth - 1] ?? ''}${match[2]}`;
+    parents[depth] = path;
+    return match[3]!
+      .split(', ')
+      .filter((method) => method !== 'HEAD')
+      .map((method) => `${method} ${path}`);
+  });
+}
+
 describe('v1 API contract', () => {
   it('keeps bounded read envelopes aligned with the client contract', () => {
     expect(DEFAULT_PAGE_SIZE).toBe(v1Contract.reads.defaultPageSize);
@@ -41,6 +61,13 @@ describe('v1 API contract', () => {
       for (const route of v1Contract.routes) {
         expect(app.hasRoute({ method: route.method, url: route.path })).toBe(true);
       }
+      await app.ready();
+      const registered = registeredRoutes(app.printRoutes({ commonPrefix: false })).filter(
+        (route) => route.split(' ')[1]!.startsWith('/api/v1/')
+      );
+      expect(new Set(registered)).toEqual(
+        new Set(v1Contract.routes.map((route) => `${route.method} ${route.path}`))
+      );
     } finally {
       await app.close();
     }
@@ -60,6 +87,11 @@ describe('v1 API contract', () => {
         new Set(v1Contract.sync.commandFields)
       );
     }
+  });
+
+  it('keeps server command kinds and result statuses equal to the contract', () => {
+    expect(new Set(SYNC_COMMAND_KINDS)).toEqual(new Set(v1Contract.sync.commandKinds));
+    expect(new Set(SYNC_RESULT_STATUSES)).toEqual(new Set(v1Contract.sync.resultStatuses));
   });
 
   it('keeps the stable error envelope available to clients', () => {

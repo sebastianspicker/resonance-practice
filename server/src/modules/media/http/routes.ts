@@ -1,13 +1,11 @@
 /** Versioned artifact session and authorized download transport. */
 import type { S3Client } from '@aws-sdk/client-s3';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { completeArtifactSession, createArtifactSession } from '../application/artifactSessions.js';
-import { requireVisibleCourseEntry } from '../../entries/application/authorization.js';
-import { config, limits } from '../../../platform/config.js';
-import { withDeadline } from '../../../platform/deadline.js';
+import { createDownloadSession } from '../application/downloads.js';
+import { completeArtifactSession } from '../application/sessionCompletion.js';
+import { createArtifactSession } from '../application/sessionCreation.js';
+import { limits } from '../../../platform/config.js';
 import { ErrorCodes } from '../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../platform/http/errors.js';
 import {
@@ -16,8 +14,6 @@ import {
   requireNumber,
   requireRecord,
 } from '../../../platform/http/input.js';
-
-const DOWNLOAD_TTL_SECONDS = 900;
 
 export function registerMediaRoutes(
   app: FastifyInstance,
@@ -68,26 +64,9 @@ export function registerMediaRoutes(
         (request.params as { artifactId: string }).artifactId,
         'artifactId'
       );
-      const artifact = await prisma.artifact.findUnique({
-        where: { id: artifactId },
-        include: { entry: true },
-      });
-      if (!artifact || artifact.uploadState !== 'uploaded' || !artifact.storageKey) {
-        throw new ApiError(404, ErrorCodes.ARTIFACT_NOT_FOUND, 'Artifact not found');
-      }
-      await requireVisibleCourseEntry(prisma, request.user!.id, artifact.entry);
-      const downloadUrl = await withDeadline(
-        () =>
-          getSignedUrl(
-            s3,
-            new GetObjectCommand({ Bucket: config.s3.bucket, Key: artifact.storageKey! }),
-            { expiresIn: DOWNLOAD_TTL_SECONDS }
-          ),
-        config.dependencyTimeoutMs,
-        'S3 download presign'
-      );
+      const session = await createDownloadSession(prisma, s3, request.user!.id, artifactId);
       reply.header('Cache-Control', 'no-store');
-      return { downloadUrl, expiresInSeconds: DOWNLOAD_TTL_SECONDS };
+      return session;
     }
   );
 }

@@ -51,12 +51,23 @@ private struct AppRootView: View {
         _appState = StateObject(wrappedValue: AppState(modelContext: container.mainContext))
     }
 
+    private var isCapturePresentation: Bool {
+#if RESONANCE_SCREENSHOTS
+        ScreenshotScenario.current != nil
+#else
+        false
+#endif
+    }
+
     var body: some View {
         ContentView(modelContext: container.mainContext)
             .environmentObject(appState)
             .environmentObject(appState.authManager)
             .environmentObject(appState.syncManager)
             .environmentObject(appState.networkMonitor)
+            .environmentObject(appState.errorReporter)
+            .environment(\.apiClient, appState.apiClient)
+            .environment(\.capturePresentation, isCapturePresentation)
             .modelContainer(container)
     }
 }

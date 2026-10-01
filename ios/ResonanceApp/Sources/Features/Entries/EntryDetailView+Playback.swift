@@ -1,6 +1,6 @@
 import SwiftUI
 
-extension EntryDetailScreen {
+extension EntryDetailView {
   func formatTime(_ seconds: TimeInterval) -> String {
     String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
   }
@@ -39,7 +39,7 @@ extension EntryDetailScreen {
     playbackErrorMessage = nil
     defer { if playbackLoadingArtifactID == artifactID { playbackLoadingArtifactID = nil } }
     do {
-      let sourceURL = try await ArtifactPlaybackSourceResolver(apiClient: appState.apiClient)
+      let sourceURL = try await ArtifactPlaybackSourceResolver(apiClient: apiClient)
         .resolve(artifact: artifact, accessToken: authManager.session?.accessToken)
       guard !Task.isCancelled else { return }
       guard player.play(url: sourceURL) else {

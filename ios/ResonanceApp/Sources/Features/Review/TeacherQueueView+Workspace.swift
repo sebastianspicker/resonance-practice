@@ -2,7 +2,7 @@ import SwiftUI
 
 // Workspace (iPad) presentation: queue pane + selected submission review.
 
-extension TeacherQueueScreen {
+extension TeacherQueueView {
     @ViewBuilder var workspaceBody: some View {
         if isLoading && queue.isEmpty {
             HStack(spacing: 0) {
@@ -26,7 +26,7 @@ extension TeacherQueueScreen {
                 if let selected {
                     WorkspaceReviewDetail(
                         entry: selected,
-                        initialFeedbackContent: initialFeedbackContent,
+                        initialFeedback: initialFeedback,
                         onFeedbackQueued: { queuedFeedback.insert(selected.id) },
                         isFeedbackQueued: queuedFeedback.contains(selected.id)
                     )

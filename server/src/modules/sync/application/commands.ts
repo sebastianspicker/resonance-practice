@@ -3,7 +3,11 @@ import { createHash } from 'node:crypto';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { ErrorCodes } from '../../../platform/http/errorCodes.js';
 import { ApiError, isPrismaError } from '../../../platform/http/errors.js';
-import { lockOperationIdentity } from '../../entries/application/transaction.js';
+import {
+  advisoryTransactionLock,
+  AdvisoryLockNamespace,
+  lockOperationIdentity,
+} from '../../../platform/database/advisoryLocks.js';
 import {
   type SyncCommand,
   type SyncCommandResult,
@@ -147,12 +151,13 @@ export async function cleanupSyncReceipts(
 }
 
 /** Advisory lock makes receipt cleanup and quota admission atomic per user. */
-async function admitSyncReceipt(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+export async function admitSyncReceipt(
+  tx: Prisma.TransactionClient,
+  userId: string
+): Promise<void> {
   // A per-user advisory lock makes count-and-admit enforcement deterministic
   // across concurrent operation IDs for the same authenticated user.
-  await tx.$queryRaw<Array<{ locked: string }>>`
-    SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 3))::text AS "locked"
-  `;
+  await advisoryTransactionLock(tx, userId, AdvisoryLockNamespace.userQuota);
   const expiresBefore = new Date(Date.now() - SYNC_RECEIPT_RETENTION_MS);
   await tx.syncReceipt.deleteMany({ where: { userId, createdAt: { lt: expiresBefore } } });
   assertSyncReceiptCapacity(await tx.syncReceipt.count({ where: { userId } }));

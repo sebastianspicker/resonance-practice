@@ -26,7 +26,7 @@ describe('modular-monolith dependency rules', () => {
       identity: [],
       media: ['entries'],
       reviews: ['courses', 'entries'],
-      sync: ['entries'],
+      sync: ['entries', 'media', 'reviews'],
     };
     const importPattern = /from\s+['"]([^'"]+)['"]/g;
 

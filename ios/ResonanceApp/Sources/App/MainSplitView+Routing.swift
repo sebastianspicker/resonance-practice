@@ -2,97 +2,17 @@ import SwiftUI
 
 // Routes normal deep links and deterministic screenshot scenarios through the app split view.
 
-extension MainSplitScreen {
+extension MainSplitView {
   @ViewBuilder var detailPane: some View {
+#if RESONANCE_SCREENSHOTS
     if let scenario = ScreenshotScenario.current, scenario.requiresAuthenticatedSession {
       screenshotDetailPane(for: scenario)
     } else {
       defaultDetailPane
     }
-  }
-
-  @ViewBuilder func screenshotDetailPane(for scenario: ScreenshotScenario) -> some View {
-    switch scenario.screen {
-    case .newEntry: screenshotNewEntryPane(for: scenario)
-    case .entryDetail: screenshotEntryDetailPane
-    case .practiceReflect, .practiceReview, .practiceQueued, .practiceSubmitted:
-      screenshotGuidedPracticePane(for: scenario)
-    case .teacherReviewQueue: screenshotReviewQueuePane
-    case .submissionDetail: screenshotSubmissionDetailPane
-    case .feedbackEditor: screenshotFeedbackEditorPane(for: scenario)
-    case .feedbackQueued: screenshotQueuedFeedbackPane(for: scenario)
-    case .reviewedFeedback: screenshotReviewedFeedbackPane(for: scenario)
-    default: defaultDetailPane
-    }
-  }
-
-  @ViewBuilder private func screenshotNewEntryPane(for scenario: ScreenshotScenario) -> some View {
-    if let course = screenshotCourse {
-      NewEntryView(
-        courseId: course.id, initialContent: scenario.formContent, wrapsInNavigationStack: true)
-    } else {
-      defaultDetailPane
-    }
-  }
-
-  @ViewBuilder private var screenshotEntryDetailPane: some View {
-    if let entry = screenshotPrimaryEntry {
-      EntryDetailView(entry: entry, showsArtifacts: false)
-    } else {
-      defaultDetailPane
-    }
-  }
-
-  @ViewBuilder private func screenshotGuidedPracticePane(for scenario: ScreenshotScenario) -> some View {
-    if let entry = screenshotPrimaryEntry {
-      NavigationStack {
-        EntryDetailView(entry: entry, initialSection: scenario.guidedPracticeInitialSection)
-      }
-    } else {
-      defaultDetailPane
-    }
-  }
-
-  @ViewBuilder private var screenshotReviewQueuePane: some View {
-    if let course = screenshotCourse {
-      TeacherQueueView(courseId: course.id, screenshotQueue: screenshotReviewEntries)
-    } else {
-      defaultDetailPane
-    }
-  }
-
-  @ViewBuilder private var screenshotSubmissionDetailPane: some View {
-    if let entry = screenshotFeedbackEntry {
-      SubmissionDetailView(entry: entry, onFeedbackQueued: {}, loadsRemoteMedia: false)
-    } else {
-      defaultDetailPane
-    }
-  }
-
-  @ViewBuilder private func screenshotFeedbackEditorPane(for scenario: ScreenshotScenario) -> some View {
-    if let entry = screenshotFeedbackEntry {
-      FeedbackEditorView(entry: entry, initialContent: scenario.feedbackContent)
-    } else {
-      defaultDetailPane
-    }
-  }
-
-  @ViewBuilder private func screenshotQueuedFeedbackPane(for scenario: ScreenshotScenario) -> some View {
-    if let course = screenshotCourse {
-      TeacherQueueView(
-        courseId: course.id, screenshotQueue: screenshotReviewEntries,
-        initiallyQueuedFeedback: scenario.queuedFeedbackEntryIDs)
-    } else {
-      defaultDetailPane
-    }
-  }
-
-  @ViewBuilder private func screenshotReviewedFeedbackPane(for scenario: ScreenshotScenario) -> some View {
-    if let entry = screenshotPrimaryEntry {
-      EntryDetailView(entry: entry, initialSection: scenario.startsAtFeedback ? "feedback" : nil)
-    } else {
-      defaultDetailPane
-    }
+#else
+    defaultDetailPane
+#endif
   }
 
   @ViewBuilder var defaultDetailPane: some View {
@@ -119,6 +39,98 @@ extension MainSplitScreen {
       }
       await refreshCourses()
       if courses.contains(where: { $0.id == courseID }) { selectionId = courseID }
+    }
+  }
+
+  var selectedCourse: LocalCourse? {
+    guard let selectionId else { return nil }
+    return courses.first { $0.id == selectionId }
+  }
+}
+
+#if RESONANCE_SCREENSHOTS
+extension MainSplitView {
+  @ViewBuilder func screenshotDetailPane(for scenario: ScreenshotScenario) -> some View {
+    switch scenario.screen {
+    case .newEntry: screenshotNewEntryPane(for: scenario)
+    case .entryDetail: screenshotEntryDetailPane
+    case .practiceReflect, .practiceReview, .practiceQueued, .practiceSubmitted:
+      screenshotGuidedPracticePane(for: scenario)
+    case .teacherReviewQueue: screenshotReviewQueuePane
+    case .submissionDetail: screenshotSubmissionDetailPane
+    case .feedbackEditor: screenshotFeedbackEditorPane(for: scenario)
+    case .feedbackQueued: screenshotQueuedFeedbackPane(for: scenario)
+    case .reviewedFeedback: screenshotReviewedFeedbackPane(for: scenario)
+    default: defaultDetailPane
+    }
+  }
+
+  @ViewBuilder private func screenshotNewEntryPane(for scenario: ScreenshotScenario) -> some View {
+    if let course = screenshotCourse {
+      NewEntryView(
+        courseId: course.id, prefill: scenario.newEntryPrefill, wrapsInNavigationStack: true)
+    } else {
+      defaultDetailPane
+    }
+  }
+
+  @ViewBuilder private var screenshotEntryDetailPane: some View {
+    if let entry = screenshotPrimaryEntry {
+      EntryDetailView(entry: entry, showsArtifacts: false)
+    } else {
+      defaultDetailPane
+    }
+  }
+
+  @ViewBuilder private func screenshotGuidedPracticePane(for scenario: ScreenshotScenario) -> some View {
+    if let entry = screenshotPrimaryEntry {
+      NavigationStack {
+        EntryDetailView(entry: entry, initialSection: scenario.guidedPracticeInitialSection)
+      }
+    } else {
+      defaultDetailPane
+    }
+  }
+
+  @ViewBuilder private var screenshotReviewQueuePane: some View {
+    if let course = screenshotCourse {
+      TeacherQueueView(courseId: course.id, presetQueue: screenshotReviewEntries)
+    } else {
+      defaultDetailPane
+    }
+  }
+
+  @ViewBuilder private var screenshotSubmissionDetailPane: some View {
+    if let entry = screenshotFeedbackEntry {
+      SubmissionDetailView(entry: entry, onFeedbackQueued: {}, loadsRemoteMedia: false)
+    } else {
+      defaultDetailPane
+    }
+  }
+
+  @ViewBuilder private func screenshotFeedbackEditorPane(for scenario: ScreenshotScenario) -> some View {
+    if let entry = screenshotFeedbackEntry {
+      FeedbackEditorView(entry: entry, prefill: scenario.feedbackPrefill)
+    } else {
+      defaultDetailPane
+    }
+  }
+
+  @ViewBuilder private func screenshotQueuedFeedbackPane(for scenario: ScreenshotScenario) -> some View {
+    if let course = screenshotCourse {
+      TeacherQueueView(
+        courseId: course.id, presetQueue: screenshotReviewEntries,
+        initiallyQueuedFeedback: scenario.queuedFeedbackEntryIDs)
+    } else {
+      defaultDetailPane
+    }
+  }
+
+  @ViewBuilder private func screenshotReviewedFeedbackPane(for scenario: ScreenshotScenario) -> some View {
+    if let entry = screenshotPrimaryEntry {
+      EntryDetailView(entry: entry, initialSection: scenario.startsAtFeedback ? "feedback" : nil)
+    } else {
+      defaultDetailPane
     }
   }
 
@@ -153,11 +165,6 @@ extension MainSplitScreen {
       return fixedCourse
     }
     return courses.first(where: { $0.roleInCourse == scenario.roleInCourse }) ?? courses.first
-  }
-
-  var selectedCourse: LocalCourse? {
-    guard let selectionId else { return nil }
-    return courses.first { $0.id == selectionId }
   }
 
   var screenshotPrimaryEntry: LocalPracticeEntry? {
@@ -211,3 +218,4 @@ extension MainSplitScreen {
     }
   }
 }
+#endif

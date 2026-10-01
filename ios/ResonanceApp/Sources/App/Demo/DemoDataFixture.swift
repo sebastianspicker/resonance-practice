@@ -1,3 +1,4 @@
+#if DEBUG || RESONANCE_SCREENSHOTS
 import Foundation
 
 enum DemoDataFixtureLoader {
@@ -130,3 +131,4 @@ struct DemoQueueItem: Decodable {
         payload = try container.decode(JSONValue.self, forKey: .payload).encodedData()
     }
 }
+#endif

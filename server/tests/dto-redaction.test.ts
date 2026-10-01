@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toArtifactResponseDto } from '../src/modules/media/application/dto.js';
+import { toArtifactResponseDto } from '../src/modules/entries/application/dto.js';
 
 describe('artifact response DTO', () => {
   it('never serializes object keys, confirmation material, or cleanup metadata', () => {

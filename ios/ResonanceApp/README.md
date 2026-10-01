@@ -38,15 +38,17 @@ The native callback is `resonance://auth-callback`, and the server's
 
 | Path | Responsibility |
 | --- | --- |
-| `Sources/App/` | SwiftUI composition, app state, navigation, export presentation, and demo wiring |
+| `Sources/App/` | SwiftUI composition, app state, navigation, and demo and screenshot wiring |
 | `Sources/Core/` | Domain values, SwiftData persistence, networking, security, media, calendar, export, feedback, and synchronization |
-| `Sources/Features/` | Authentication, capture, courses, entries, feedback, review, settings, and sync-status flows |
+| `Sources/Features/` | Authentication, capture, courses, entries, export, feedback, review, settings, and sync-status flows |
 | `Sources/SharedUI/` | Reusable theme tokens and presentation primitives |
 
-Features may depend on Core and SharedUI; Core must not depend on Features, and
-App assembles the feature and service graph. Run the repository verifier rather
-than invoking `verify-core-layering.sh` directly; the verifier calls that
-non-executable script through Bash.
+Core depends on nothing above it, SharedUI may use Core, Features may use Core
+and SharedUI, and App assembles the feature and service graph. Features read the
+services App provides from the SwiftUI environment (`ErrorReporter`,
+`\.apiClient`, `\.capturePresentation`) instead of referencing App types.
+`node scripts/check-ios-layers.mjs` enforces these rules from type
+declarations; both repository verifiers run it.
 
 The outbox stores typed, versioned commands bound to the authenticated local
 owner. `SyncManager` sends ready commands in FIFO order in batches of at most 25
@@ -67,10 +69,38 @@ Run from the repository root:
 ```
 
 The verifier selects an available iPhone Simulator unless `IOS_DESTINATION` is
-set, creates temporary DerivedData, runs the Core layering guard, and executes
-XCTest through the shared scheme. It also accepts `IOS_TOOLCHAIN`,
-`IOS_EXPECTED_SWIFT_VERSION`, `IOS_COMPILER_LOG_PATH`, `IOS_RESULT_BUNDLE_PATH`,
-and `IOS_DERIVED_DATA_PATH`.
+set, creates temporary DerivedData, runs the source-layer check, and executes
+XCTest through the shared scheme. It then compiles a Release build and a Debug
+build with `RESONANCE_SCREENSHOTS` for a generic simulator. It also accepts
+`IOS_TOOLCHAIN`, `IOS_EXPECTED_SWIFT_VERSION`, `IOS_COMPILER_LOG_PATH`,
+`IOS_RESULT_BUNDLE_PATH`, and `IOS_DERIVED_DATA_PATH`.
+
+## Demo data and screenshot capture
+
+Debug builds offer Settings > Debug > Load Mock Demo Data, which loads the
+bundled mock-university fixture. Release builds compile the demo-data loader out.
+
+Screenshot capture code compiles only when the `RESONANCE_SCREENSHOTS`
+compilation condition is set, for example:
+
+```bash
+xcodebuild -project ios/ResonanceApp/ResonanceApp.xcodeproj -scheme ResonanceApp \
+  -destination 'generic/platform=iOS Simulator' \
+  'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) DEBUG RESONANCE_SCREENSHOTS' build
+```
+
+A capture build reads these launch environment variables; other builds ignore
+them:
+
+| Variable | Meaning |
+| --- | --- |
+| `RESONANCE_SCREENSHOT_MODE` | `1` enables a capture scenario with an in-memory store and a fake local session |
+| `RESONANCE_SCREENSHOT_ROLE` | `student` (default) or `teacher` |
+| `RESONANCE_SCREENSHOT_SCREEN` | Route such as `courses` (default), `new-entry`, `entry-detail`, `practice-review`, `teacher-review-queue`, or `feedback-editor`; see `ScreenshotScreen` for the full list |
+| `RESONANCE_SCREENSHOT_STUDENT_USER_ID`, `RESONANCE_SCREENSHOT_TEACHER_USER_ID`, `RESONANCE_SCREENSHOT_PRIMARY_COURSE_ID` | Optional fixture ID overrides |
+
+`RESONANCE_DEMO_UNIVERSITY_NAME` overrides the university name on the sign-in
+screen in every build.
 
 The full local CI lane additionally runs SwiftLint analysis against the compiler
 log and verifies with the exact Swift 6.3.3 toolchain.

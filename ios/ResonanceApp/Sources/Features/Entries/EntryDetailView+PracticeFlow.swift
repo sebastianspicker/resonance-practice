@@ -1,7 +1,7 @@
 import AVFoundation
 import SwiftUI
 
-extension EntryDetailScreen {
+extension EntryDetailView {
   var usesGuidedPractice: Bool {
     entry.kind == .practice && authManager.session?.userId == entry.studentId
   }

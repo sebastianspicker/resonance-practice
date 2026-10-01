@@ -1,3 +1,4 @@
+#if DEBUG || RESONANCE_SCREENSHOTS
 import Foundation
 import SwiftData
 
@@ -61,3 +62,4 @@ struct DemoDataCleanup {
         return item.id.hasPrefix(demoPrefix) || referencedIDs.contains { $0?.hasPrefix(demoPrefix) == true }
     }
 }
+#endif

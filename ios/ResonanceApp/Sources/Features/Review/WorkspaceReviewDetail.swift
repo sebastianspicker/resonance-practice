@@ -5,10 +5,11 @@ import SwiftUI
 
 struct WorkspaceReviewDetail: View {
     let entry: ReviewQueueEntry
-    let initialFeedbackContent: ScreenshotFeedbackContent?
+    let initialFeedback: FeedbackPrefill?
     let onFeedbackQueued: () -> Void
     var isFeedbackQueued: Bool = false
-    @EnvironmentObject private var appState: AppState
+    @Environment(\.apiClient) private var apiClient
+    @Environment(\.capturePresentation) private var usesIllustratedPlayback
     @EnvironmentObject private var authManager: AuthManager
     @State private var selectedArtifactId: String?
     @State private var player = AVPlayer()
@@ -16,8 +17,6 @@ struct WorkspaceReviewDetail: View {
     @State private var playbackError: String?
     /// Drives TimelineView refresh for audio transport (AVPlayer rate is not Observable).
     @State private var isAudioPlaying = false
-
-    private var usesIllustratedPlayback: Bool { ScreenshotScenario.current != nil }
 
     private var selectedArtifact: ArtifactResponse? {
         entry.artifacts.first { $0.id == selectedArtifactId }
@@ -51,7 +50,7 @@ struct WorkspaceReviewDetail: View {
                 entry: entry,
                 playbackTime: { player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0 },
                 onQueued: onFeedbackQueued,
-                initialContent: initialFeedbackContent,
+                prefill: initialFeedback,
                 presentation: .workspace
             )
             .frame(width: 340)
@@ -332,7 +331,7 @@ private extension WorkspaceReviewDetail {
         await loadSecureReviewArtifact(
             selectedArtifact,
             accessToken: authManager.session?.accessToken,
-            appState: appState,
+            apiClient: apiClient,
             player: player,
             state: SecureReviewArtifactLoadState(
                 isLoading: $isLoadingMedia,

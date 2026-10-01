@@ -8,15 +8,19 @@ struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var authManager: AuthManager
     @EnvironmentObject var syncManager: SyncManager
+    @EnvironmentObject var errorReporter: ErrorReporter
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.capturePresentation) private var capturePresentation
+#if RESONANCE_SCREENSHOTS
     @State private var didPrepareScreenshotData = false
+#endif
     @State private var activeLocalProfileUserId: String?
     @State private var conflictingProfileUserId: String?
 
     var body: some View {
         Group {
             if authManager.session == nil {
-                LoginView()
+                LoginView(universityName: DemoConfiguration.universityName)
             } else if let userId = conflictingProfileUserId {
                 LocalProfileConflictView(
                     continueWithAccount: {
@@ -26,7 +30,7 @@ struct ContentView: View {
                                 conflictingProfileUserId = nil
                                 activeLocalProfileUserId = userId
                             } catch {
-                                appState.reportError(error)
+                                errorReporter.report(error)
                             }
                         }
                     },
@@ -41,11 +45,13 @@ struct ContentView: View {
             }
         }
         .task {
+#if RESONANCE_SCREENSHOTS
             await prepareScreenshotModeIfNeeded()
+#endif
             if let userId = authManager.session?.userId {
                 prepareLocalProfile(userId: userId)
             }
-            if ScreenshotScenario.current == nil,
+            if !capturePresentation,
                conflictingProfileUserId == nil,
                activeLocalProfileUserId == authManager.session?.userId {
                 await syncManager.processQueue()
@@ -62,24 +68,24 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
-                guard ScreenshotScenario.current == nil,
+                guard !capturePresentation,
                       conflictingProfileUserId == nil,
                       activeLocalProfileUserId == authManager.session?.userId
                 else { return }
                 Task { await syncManager.processQueue() }
             }
         }
+#if RESONANCE_SCREENSHOTS
         .onReceive(appState.networkMonitor.$isOnline) { isOnline in
-            #if RESONANCE_SCREENSHOTS
             if isOnline, ScreenshotScenario.current?.needsOfflineGuidedPracticeState == true {
                 Task { @MainActor in appState.networkMonitor.isOnline = false }
             }
-            #endif
         }
-        .alert("Error", isPresented: $appState.showErrorAlert) {
-            Button("OK") { appState.clearError() }
+#endif
+        .alert("Error", isPresented: $errorReporter.showErrorAlert) {
+            Button("OK") { errorReporter.clear() }
         } message: {
-            if let message = appState.lastErrorMessage {
+            if let message = errorReporter.lastErrorMessage {
                 Text(message)
             }
         }
@@ -98,10 +104,11 @@ struct ContentView: View {
         } catch {
             activeLocalProfileUserId = nil
             conflictingProfileUserId = userId
-            appState.reportError(error)
+            errorReporter.report(error)
         }
     }
 
+#if RESONANCE_SCREENSHOTS
     private func prepareScreenshotModeIfNeeded() async {
         guard let scenario = ScreenshotScenario.current else {
             return
@@ -122,18 +129,17 @@ struct ContentView: View {
         do {
             try await authManager.signInForScreenshot(role: scenario.persona)
             try DemoDataManager(modelContext: modelContext).loadMockUniversityData(roleInCourse: scenario.roleInCourse)
-            #if RESONANCE_SCREENSHOTS
             if scenario.isGuidedPracticeScreen {
                 try GuidedPracticeScreenshotFixture.prepare(scenario: scenario, modelContext: modelContext)
                 if scenario.needsOfflineGuidedPracticeState {
                     appState.networkMonitor.isOnline = false
                 }
             }
-            #endif
         } catch {
-            appState.reportError(error)
+            errorReporter.report(error)
         }
     }
+#endif
 }
 
 private struct LocalProfileConflictView: View {

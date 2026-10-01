@@ -1,9 +1,5 @@
-import type { PrismaClient } from '@prisma/client';
-import {
-  artifactSessionCleanupAt,
-  type EntryTransaction,
-  queueStorageDeletion,
-} from '../../../entries/application/transaction.js';
+import type { Prisma, PrismaClient } from '@prisma/client';
+import { artifactSessionCleanupAt, queueStorageDeletion } from '../storageDeletion/schedule.js';
 import {
   isCandidateArtifactInState,
   lockAndFindArtifact,
@@ -48,7 +44,7 @@ async function expireStaleArtifactCandidates(prisma: PrismaClient, now: Date, li
 }
 
 async function expireStaleArtifactCandidate(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   candidate: ArtifactCandidate,
   now: Date
 ): Promise<number> {
@@ -123,7 +119,7 @@ function latestArtifactCleanupAt(
 }
 
 type AbandonedArtifactCleanup = {
-  tx: EntryTransaction;
+  tx: Prisma.TransactionClient;
   entryId: string;
   artifactStorageKey: string | null;
   sessions: AbandonedArtifactSession[];

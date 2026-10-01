@@ -1,13 +1,12 @@
 /** Transactional v1 entry-command handlers, executed in client FIFO order. */
-import type { PracticeEntry } from '@prisma/client';
+import type { PracticeEntry, Prisma } from '@prisma/client';
 import { ErrorCodes } from '../../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../../platform/http/errors.js';
-import { cascadeDeleteEntryInTransaction } from '../../../entries/application/deletion.js';
-import {
-  type EntryTransaction,
-  lockEntry,
-  lockEntryIdentity,
-} from '../../../entries/application/transaction.js';
+import { requireStudentOwner } from '../../../entries/application/authorization.js';
+import { deleteLockedEntry, lockEntryForDeletion } from '../../../entries/application/deletion.js';
+import { lockEntry, lockEntryIdentity } from '../../../entries/application/locks.js';
+import { queueEntryMediaRelease } from '../../../media/application/storageDeletion/entryRelease.js';
+import { deleteFeedbackForTargets } from '../../../reviews/application/feedbackDeletion.js';
 import type { SyncCommand, SyncCommandResult, SyncCommandStatus } from './contract.js';
 import {
   parseCaptureMarkers,
@@ -36,7 +35,7 @@ type EntryResourceInput = Pick<
 >;
 
 export async function createEntry(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   userId: string,
   command: SyncCommand
 ): Promise<SyncCommandResult> {
@@ -66,7 +65,7 @@ export async function createEntry(
 }
 
 export async function updateEntry(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   userId: string,
   command: SyncCommand
 ): Promise<SyncCommandResult> {
@@ -85,7 +84,7 @@ export async function updateEntry(
 }
 
 export async function replaceCaptureMarkers(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   userId: string,
   command: SyncCommand
 ): Promise<SyncCommandResult> {
@@ -141,7 +140,7 @@ export async function replaceCaptureMarkers(
 }
 
 export async function submitEntry(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   userId: string,
   command: SyncCommand
 ): Promise<SyncCommandResult> {
@@ -187,14 +186,18 @@ export async function submitEntry(
 }
 
 export async function deleteEntry(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   userId: string,
   command: SyncCommand
 ): Promise<SyncCommandResult> {
   const entry = await lockStudentEntry(tx, userId, command.entityId, 'delete');
   const versionResult = requireVersion(command, entry);
   if (versionResult) return versionResult;
-  await cascadeDeleteEntryInTransaction(tx, entry.id);
+  // Identity lock, then row lock, before media and feedback for the entry are enumerated.
+  await lockEntryForDeletion(tx, entry.id);
+  const artifactIds = await queueEntryMediaRelease(tx, entry.id);
+  await deleteFeedbackForTargets(tx, entry.id, artifactIds);
+  await deleteLockedEntry(tx, entry.id);
   return baseResult(command, 'applied');
 }
 
@@ -234,23 +237,18 @@ export function requireVersion(
 }
 
 async function lockStudentEntry(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   userId: string,
   entryId: string,
   action: string
 ): Promise<PracticeEntry> {
   const entry = await lockEntry(tx, entryId);
-  const membership = await tx.membership.findUnique({
-    where: { userId_courseId: { userId, courseId: entry.courseId } },
-  });
-  if (!membership || membership.roleInCourse !== 'student' || entry.studentId !== userId) {
-    throw new ApiError(403, ErrorCodes.STUDENT_ONLY, `Only the student owner can ${action}`);
-  }
+  await requireStudentOwner(tx, userId, entry, action);
   return entry;
 }
 
 async function requireMarkerArtifacts(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   entryId: string,
   rawArtifactIds: string[]
 ): Promise<void> {
@@ -273,7 +271,7 @@ async function requireMarkerArtifacts(
 }
 
 async function requireMarkerIdentities(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   entryId: string,
   userId: string,
   markerIds: string[]

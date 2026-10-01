@@ -1,8 +1,7 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { ErrorCodes } from '../../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../../platform/http/errors.js';
 import { isS3NotFoundError } from '../../../../platform/storage/s3.js';
-import type { EntryTransaction } from '../../../entries/application/transaction.js';
 import {
   isCandidateArtifactInState,
   lockAndFindArtifact,
@@ -75,7 +74,7 @@ export async function cleanupFailedArtifacts(
 
 async function transactionOrMissingEntry(
   prisma: PrismaClient,
-  operation: (tx: EntryTransaction) => Promise<number>
+  operation: (tx: Prisma.TransactionClient) => Promise<number>
 ): Promise<number> {
   try {
     return await prisma.$transaction(operation);
@@ -86,7 +85,7 @@ async function transactionOrMissingEntry(
 }
 
 async function cleanupFailedArtifactCandidate(
-  tx: EntryTransaction,
+  tx: Prisma.TransactionClient,
   candidate: ArtifactCandidate,
   failedBefore: Date
 ): Promise<number> {

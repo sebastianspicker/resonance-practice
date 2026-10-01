@@ -1,5 +1,8 @@
 #!/usr/bin/env node
-/** Validate the canonical v1 wire contract against both server and iOS source. */
+/**
+ * Validate the canonical v1 wire contract document and the iOS client's projection of it.
+ * The server side is checked behaviorally by server/tests/v1-api-contract*.test.ts.
+ */
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,16 +10,6 @@ import { fileURLToPath } from "node:url";
 const scriptDirectory = fileURLToPath(new URL(".", import.meta.url));
 const rootDirectory = new URL("..", `file://${scriptDirectory}`).pathname;
 const contractPath = join(rootDirectory, "contracts/v1-api-contract.json");
-const modulesDirectory = join(rootDirectory, "server/src/modules");
-const syncContractPath = join(
-  modulesDirectory,
-  "sync/application/sync/contract.ts",
-);
-const mediaRoutesPath = join(modulesDirectory, "media/http/routes.ts");
-const artifactSessionsPath = join(
-  modulesDirectory,
-  "media/application/artifactSessions.ts",
-);
 const swiftArtifactModelsPath = join(
   rootDirectory,
   "ios/ResonanceApp/Sources/Core/Networking/APIArtifactModels.swift",
@@ -57,24 +50,6 @@ function sourceFiles(directory, extension = ".ts") {
         ? [path]
         : [];
   });
-}
-
-function literalRoutes(directory) {
-  const routePattern = /app\.(get|post|put|patch|delete)\(\s*'([^']+)'/g;
-  return sourceFiles(directory).flatMap((file) => {
-    const routes = [];
-    for (const match of readFileSync(file, "utf8").matchAll(routePattern)) {
-      if (match[2].startsWith("/api/v1/"))
-        routes.push({ method: match[1].toUpperCase(), path: match[2] });
-    }
-    return routes;
-  });
-}
-
-function protocolValues(source, expression, label) {
-  const match = source.match(expression);
-  if (!match?.[1]) fail(`could not locate ${label} in server sync contract`);
-  return [...match[1].matchAll(/'([^']+)'/g)].map((item) => item[1]);
 }
 
 function assertEqualSet(actual, expected, label) {
@@ -130,10 +105,6 @@ if (JSON.stringify(reads.feedbackOrder) !== JSON.stringify(["createdAt:asc", "id
   fail("feedback ordering must be stable ascending createdAt and id");
 }
 assertEqualSet(reads.reviewQueueOmittedFields, ["captureMarkers"], "review summary omissions");
-const paginationSource = readFileSync(join(rootDirectory, "server/src/platform/http/pagination.ts"), "utf8");
-for (const [name, value] of [["DEFAULT_PAGE_SIZE", reads.defaultPageSize], ["MAX_PAGE_SIZE", reads.maxPageSize]]) {
-  if (!paginationSource.includes(`const ${name} = ${value};`)) fail(`server ${name} differs from contract`);
-}
 if (!sync || sync.commandPath !== "/api/v1/sync/commands")
   fail("sync commandPath must be the v1 sync endpoint");
 const commandFields = requireStringArray(
@@ -175,69 +146,6 @@ if (
   artifactSessions.checksumSha256?.decodedByteLength !== 32
 ) {
   fail("artifactSessions.checksumSha256 must be padded base64 of 32 bytes");
-}
-
-assertEqualSet(
-  literalRoutes(modulesDirectory).map(
-    (route) => `${route.method} ${route.path}`,
-  ),
-  contractRoutes,
-  "server v1 routes",
-);
-
-const serverSync = readFileSync(syncContractPath, "utf8");
-assertEqualSet(
-  protocolValues(
-    serverSync,
-    /const COMMAND_KINDS\s*=\s*\[([\s\S]*?)\]\s*as const/,
-    "command kinds",
-  ),
-  commandKinds,
-  "server sync command kinds",
-);
-assertEqualSet(
-  protocolValues(
-    serverSync,
-    /export type SyncCommandStatus\s*=\s*([^;]+);/,
-    "result statuses",
-  ),
-  resultStatuses,
-  "server sync result statuses",
-);
-for (const field of [...commandFields, ...resultFields]) {
-  if (!new RegExp(`\\b${field}\\??:`).test(serverSync))
-    fail(`server sync DTO is missing ${field}`);
-}
-
-const mediaRoutes = readFileSync(mediaRoutesPath, "utf8");
-const artifactSessionsSource = readFileSync(artifactSessionsPath, "utf8");
-assertEqualSet(
-  [...mediaRoutes.matchAll(/^\s*(\w+)\s*:[^\n]*body\.\1/gm)].map(
-    (item) => item[1],
-  ),
-  artifactSessionCreateRequestFields,
-  "server artifact create request fields",
-);
-if (
-  !mediaRoutes.includes("/^[A-Za-z0-9+/]{43}=$/") ||
-  !mediaRoutes.includes("Buffer.from(value, 'base64').length !== 32")
-) {
-  fail("server checksum validation must require padded 32-byte base64");
-}
-for (const field of artifactSessionCreateResponseFields) {
-  if (!new RegExp(`\\b${field}\\b`).test(artifactSessionsSource)) {
-    fail(`server artifact create response is missing ${field}`);
-  }
-}
-for (const field of artifactSessionCompleteResponseFields) {
-  if (!new RegExp(`\\b${field}\\b`).test(artifactSessionsSource)) {
-    fail(`server artifact complete response is missing ${field}`);
-  }
-}
-for (const field of artifactDownloadResponseFields) {
-  if (!new RegExp(`\\b${field}\\b`).test(mediaRoutes)) {
-    fail(`server artifact download response is missing ${field}`);
-  }
 }
 
 const swiftNetworkingSource = sourceFiles(swiftNetworkingDirectory, ".swift")

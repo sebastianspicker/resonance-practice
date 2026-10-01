@@ -105,7 +105,7 @@ struct PracticeAudioPlayback: View {
   }
 }
 
-extension EntryDetailScreen {
+extension EntryDetailView {
   var practiceAudio: some View {
     VStack(spacing: 12) {
       ForEach(entry.artifacts.sorted { $0.createdAt < $1.createdAt }) { artifact in
