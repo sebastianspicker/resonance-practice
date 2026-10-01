@@ -17,13 +17,13 @@ const fingerprint = createHash("sha256")
   .digest("hex");
 
 function swiftStrings(values) {
-  return values.map((value) => `      \"${value}\",`).join("\n");
+  return values.map((value) => `      \"${value}\"`).join(",\n");
 }
 
 function routeTuples(routes) {
   return routes
-    .map(({ method, path }) => `      (\"${method}\", \"${path}\"),`)
-    .join("\n");
+    .map(({ method, path }) => `      (\"${method}\", \"${path}\")`)
+    .join(",\n");
 }
 
 const projection = `${startMarker}

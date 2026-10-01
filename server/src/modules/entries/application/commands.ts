@@ -1,96 +1,116 @@
-/** Transactional v1 entry-command handlers, executed in client FIFO order. */
-import type { PracticeEntry, Prisma } from '@prisma/client';
-import { ErrorCodes } from '../../../../platform/http/errorCodes.js';
-import { ApiError } from '../../../../platform/http/errors.js';
-import { requireStudentOwner } from '../../../entries/application/authorization.js';
-import { deleteLockedEntry, lockEntryForDeletion } from '../../../entries/application/deletion.js';
-import { lockEntry, lockEntryIdentity } from '../../../entries/application/locks.js';
-import { queueEntryMediaRelease } from '../../../media/application/storageDeletion/entryRelease.js';
-import { deleteFeedbackForTargets } from '../../../reviews/application/feedbackDeletion.js';
-import type { SyncCommand, SyncCommandResult, SyncCommandStatus } from './contract.js';
+/** Transactional entry-command rules, executed by the sync gateway in client FIFO order. */
+import type { CourseRole, PracticeEntry, Prisma } from '@prisma/client';
+import { ErrorCodes } from '../../../platform/http/errorCodes.js';
+import { ApiError } from '../../../platform/http/errors.js';
+import { requireCourseMembership } from '../../courses/application/authorization.js';
+import { requireStudentOwner } from './authorization.js';
+import { lockEntry, lockEntryIdentity } from './locks.js';
 import {
   parseCaptureMarkers,
   parseEntryCreatePayload,
   parseEntryUpdatePayload,
 } from './payloads.js';
+import { requireEntryVersion } from './versionConflict.js';
 
-type EntryResourceInput = Pick<
-  PracticeEntry,
-  | 'id'
-  | 'courseId'
-  | 'studentId'
-  | 'version'
-  | 'status'
-  | 'kind'
-  | 'practiceDate'
-  | 'goalText'
-  | 'durationSeconds'
-  | 'tags'
-  | 'notes'
-  | 'consentConfirmedAt'
-  | 'consentScope'
-  | 'captureProfile'
-  | 'createdAt'
-  | 'updatedAt'
->;
+/** Client-generated target, optimistic version, and unparsed payload of one command. */
+export type EntryCommandInput = {
+  entityId: string;
+  baseVersion?: number;
+  payload: Record<string, unknown>;
+};
 
+/** Course role a stored command receipt requires before it may be replayed. */
+export type CommandReceiptScope = {
+  courseId: string;
+  requiredRole: CourseRole;
+  entryId?: string;
+};
+
+/** Receipt scope for createEntry, taken from the unparsed payload before the handler runs. */
+export function createEntryReceiptScope(
+  entityId: string,
+  payload: Record<string, unknown>
+): CommandReceiptScope {
+  const courseId = typeof payload.courseId === 'string' ? payload.courseId : undefined;
+  if (!courseId) {
+    throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid create entry receipt');
+  }
+  return { courseId, requiredRole: 'student' as const, entryId: entityId };
+}
+
+/** Receipt scope for commands that target an existing entry. */
+export async function entryReceiptScope(
+  tx: Prisma.TransactionClient,
+  entryId: string,
+  requiredRole: CourseRole
+): Promise<CommandReceiptScope> {
+  const entry = await tx.practiceEntry.findUnique({
+    where: { id: entryId },
+    select: { courseId: true },
+  });
+  if (!entry) throw new ApiError(404, ErrorCodes.ENTRY_NOT_FOUND, 'Entry not found');
+  return { courseId: entry.courseId, requiredRole, entryId };
+}
+
+/** Same ID with the same content is an idempotent success that returns the existing row. */
 export async function createEntry(
   tx: Prisma.TransactionClient,
   userId: string,
-  command: SyncCommand
-): Promise<SyncCommandResult> {
-  const input = parseEntryCreatePayload(command.payload);
-  await lockEntryIdentity(tx, command.entityId);
-  const membership = await tx.membership.findUnique({
-    where: { userId_courseId: { userId, courseId: input.courseId } },
-  });
-  if (!membership || membership.roleInCourse !== 'student') {
-    throw new ApiError(403, ErrorCodes.STUDENT_ONLY, 'Only course students can create entries');
-  }
-  const tombstone = await tx.deletedEntryTombstone.findUnique({ where: { id: command.entityId } });
+  { entityId, payload }: EntryCommandInput
+): Promise<PracticeEntry> {
+  const input = parseEntryCreatePayload(payload);
+  await lockEntryIdentity(tx, entityId);
+  await requireCourseMembership(
+    tx,
+    userId,
+    input.courseId,
+    'student',
+    'Only course students can create entries'
+  );
+  const tombstone = await tx.deletedEntryTombstone.findUnique({ where: { id: entityId } });
   if (tombstone) {
     throw new ApiError(410, ErrorCodes.ENTRY_DELETED, 'Entry ID has been deleted');
   }
-  const existing = await tx.practiceEntry.findUnique({ where: { id: command.entityId } });
+  const existing = await tx.practiceEntry.findUnique({ where: { id: entityId } });
   if (existing) {
     if (!matchesEntryCreate(existing, input, userId)) {
       throw new ApiError(409, ErrorCodes.ID_CONFLICT, 'Entry ID is already in use');
     }
-    return appliedEntryResult(command, existing);
+    return existing;
   }
-  const created = await tx.practiceEntry.create({
-    data: { id: command.entityId, studentId: userId, ...input, status: 'draft' },
+  return tx.practiceEntry.create({
+    data: { id: entityId, studentId: userId, ...input, status: 'draft' },
   });
-  return appliedEntryResult(command, created);
 }
 
 export async function updateEntry(
   tx: Prisma.TransactionClient,
   userId: string,
-  command: SyncCommand
-): Promise<SyncCommandResult> {
-  const entry = await lockStudentEntry(tx, userId, command.entityId, 'edit entries');
-  const versionResult = requireVersion(command, entry);
-  if (versionResult) return versionResult;
+  { entityId, baseVersion, payload }: EntryCommandInput
+): Promise<PracticeEntry> {
+  const entry = await lockOwnedEntryAtVersion(tx, userId, entityId, baseVersion, 'edit entries');
   if (entry.status !== 'draft') {
     throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Only draft entries can be edited');
   }
-  const data = parseEntryUpdatePayload(command.payload, entry);
-  const updated = await tx.practiceEntry.update({
+  const data = parseEntryUpdatePayload(payload, entry);
+  return tx.practiceEntry.update({
     where: { id: entry.id },
     data: { ...data, version: { increment: 1 } },
   });
-  return appliedEntryResult(command, updated);
 }
 
 export async function replaceCaptureMarkers(
   tx: Prisma.TransactionClient,
   userId: string,
-  command: SyncCommand
-): Promise<SyncCommandResult> {
-  const entry = await lockStudentEntry(tx, userId, command.entityId, 'sync capture markers');
-  const versionResult = requireVersion(command, entry);
-  if (versionResult) return versionResult;
+  { entityId, baseVersion, payload }: EntryCommandInput
+): Promise<PracticeEntry> {
+  const entry = await lockOwnedEntryAtVersion(
+    tx,
+    userId,
+    entityId,
+    baseVersion,
+    'sync capture markers'
+  );
   if (entry.kind !== 'teaching_lesson') {
     throw new ApiError(
       400,
@@ -101,7 +121,7 @@ export async function replaceCaptureMarkers(
   if (entry.status === 'reviewed') {
     throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Reviewed entries cannot be edited');
   }
-  const markers = parseCaptureMarkers(command.payload.markers);
+  const markers = parseCaptureMarkers(payload.markers);
   await requireMarkerArtifacts(
     tx,
     entry.id,
@@ -132,21 +152,18 @@ export async function replaceCaptureMarkers(
       ...(markers.length > 0 ? { id: { notIn: markers.map((marker) => marker.id) } } : {}),
     },
   });
-  const updated = await tx.practiceEntry.update({
+  return tx.practiceEntry.update({
     where: { id: entry.id },
     data: { version: { increment: 1 } },
   });
-  return appliedEntryResult(command, updated);
 }
 
 export async function submitEntry(
   tx: Prisma.TransactionClient,
   userId: string,
-  command: SyncCommand
-): Promise<SyncCommandResult> {
-  const entry = await lockStudentEntry(tx, userId, command.entityId, 'submit');
-  const versionResult = requireVersion(command, entry);
-  if (versionResult) return versionResult;
+  { entityId, baseVersion }: EntryCommandInput
+): Promise<PracticeEntry> {
+  const entry = await lockOwnedEntryAtVersion(tx, userId, entityId, baseVersion, 'submit');
   if (entry.status !== 'draft') {
     throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Only draft entries can be submitted');
   }
@@ -178,72 +195,26 @@ export async function submitEntry(
       'Teaching lesson entries require an uploaded video artifact'
     );
   }
-  const updated = await tx.practiceEntry.update({
+  return tx.practiceEntry.update({
     where: { id: entry.id },
     data: { status: 'submitted', version: { increment: 1 } },
   });
-  return appliedEntryResult(command, updated);
 }
 
-export async function deleteEntry(
-  tx: Prisma.TransactionClient,
-  userId: string,
-  command: SyncCommand
-): Promise<SyncCommandResult> {
-  const entry = await lockStudentEntry(tx, userId, command.entityId, 'delete');
-  const versionResult = requireVersion(command, entry);
-  if (versionResult) return versionResult;
-  // Identity lock, then row lock, before media and feedback for the entry are enumerated.
-  await lockEntryForDeletion(tx, entry.id);
-  const artifactIds = await queueEntryMediaRelease(tx, entry.id);
-  await deleteFeedbackForTargets(tx, entry.id, artifactIds);
-  await deleteLockedEntry(tx, entry.id);
-  return baseResult(command, 'applied');
-}
-
-export function baseResult(command: SyncCommand, status: SyncCommandStatus): SyncCommandResult {
-  return {
-    operationId: command.operationId,
-    entityId: command.entityId,
-    kind: command.kind,
-    status,
-  };
-}
-
-export function appliedEntryResult(
-  command: SyncCommand,
-  entry: EntryResourceInput
-): SyncCommandResult {
-  return {
-    ...baseResult(command, 'applied'),
-    currentVersion: entry.version,
-    resource: entryResource(entry),
-  };
-}
-
-/** Return a conflict result unless the command targets the current optimistic version. */
-export function requireVersion(
-  command: SyncCommand,
-  entry: PracticeEntry
-): SyncCommandResult | null {
-  if (entry.version === command.baseVersion) return null;
-  return {
-    ...baseResult(command, 'conflict'),
-    code: ErrorCodes.VERSION_CONFLICT,
-    message: 'Entry has changed on the server',
-    currentVersion: entry.version,
-    resource: entryResource(entry),
-  };
-}
-
-async function lockStudentEntry(
+/**
+ * Lock an entry, require its student owner, then require the optimistic
+ * version. A stale version throws `EntryVersionConflictError`.
+ */
+export async function lockOwnedEntryAtVersion(
   tx: Prisma.TransactionClient,
   userId: string,
   entryId: string,
+  baseVersion: number | undefined,
   action: string
 ): Promise<PracticeEntry> {
   const entry = await lockEntry(tx, entryId);
   await requireStudentOwner(tx, userId, entry, action);
+  requireEntryVersion(entry, baseVersion);
   return entry;
 }
 
@@ -284,27 +255,6 @@ async function requireMarkerIdentities(
   if (existing.some((marker) => marker.entryId !== entryId || marker.studentId !== userId)) {
     throw new ApiError(409, ErrorCodes.ID_CONFLICT, 'A capture marker ID belongs to another entry');
   }
-}
-
-function entryResource(entry: EntryResourceInput) {
-  return {
-    id: entry.id,
-    courseId: entry.courseId,
-    studentId: entry.studentId,
-    version: entry.version,
-    status: entry.status,
-    kind: entry.kind,
-    practiceDate: entry.practiceDate,
-    goalText: entry.goalText,
-    durationSeconds: entry.durationSeconds,
-    tags: entry.tags,
-    notes: entry.notes,
-    consentConfirmedAt: entry.consentConfirmedAt,
-    consentScope: entry.consentScope,
-    captureProfile: entry.captureProfile,
-    createdAt: entry.createdAt,
-    updatedAt: entry.updatedAt,
-  };
 }
 
 function matchesEntryCreate(

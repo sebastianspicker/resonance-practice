@@ -79,18 +79,6 @@ struct SyncCommand: Codable, Sendable {
     }
 }
 
-/// A persisted, strongly typed description of work to be sent to the command
-/// endpoint. `command` remains the single wire representation.
-enum SyncWork: Codable, Sendable {
-    case command(SyncCommand)
-
-    var command: SyncCommand {
-        switch self {
-        case let .command(command): return command
-        }
-    }
-}
-
 enum SyncCommandResultStatus: String, Codable, Sendable {
     case applied
     case duplicate

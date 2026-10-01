@@ -1,15 +1,16 @@
 /** Versioned course lists. Course membership authorization stays in this module. */
 import type { PrismaClient } from '@prisma/client';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
+import { authenticatedUser, type RequireAuth } from '../../../platform/http/authentication.js';
 
 export function registerCourseRoutes(
   app: FastifyInstance,
   prisma: PrismaClient,
-  requireAuth: (request: FastifyRequest) => Promise<void>
+  requireAuth: RequireAuth
 ) {
   app.get('/api/v1/courses', { preHandler: requireAuth }, async (request) => {
     const memberships = await prisma.membership.findMany({
-      where: { userId: request.user!.id },
+      where: { userId: authenticatedUser(request).id },
       include: { course: true },
       orderBy: { courseId: 'asc' },
     });

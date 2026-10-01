@@ -18,27 +18,27 @@ final class APIClientSyncCommandTests: APIRequestCaptureTestCase {
       ("POST", "/api/v1/artifact-sessions"),
       ("POST", "/api/v1/artifact-sessions/:sessionId/complete"),
       ("POST", "/api/v1/artifacts/:artifactId/download-session"),
-      ("POST", "/api/v1/sync/commands"),
+      ("POST", "/api/v1/sync/commands")
     ]
     static let commandFields = [
       "operationId",
       "entityId",
       "kind",
       "baseVersion",
-      "payload",
+      "payload"
     ]
     static let pageFields = [
       "items",
-      "nextCursor",
+      "nextCursor"
     ]
     static let defaultPageSize = 50
     static let maxPageSize = 200
     static let feedbackOrder = [
       "createdAt:asc",
-      "id:asc",
+      "id:asc"
     ]
     static let reviewQueueOmittedFields = [
-      "captureMarkers",
+      "captureMarkers"
     ]
     static let commandKinds = [
       "createEntry",
@@ -46,7 +46,7 @@ final class APIClientSyncCommandTests: APIRequestCaptureTestCase {
       "replaceCaptureMarkers",
       "submitEntry",
       "deleteEntry",
-      "createFeedback",
+      "createFeedback"
     ]
     static let resultFields = [
       "operationId",
@@ -56,14 +56,14 @@ final class APIClientSyncCommandTests: APIRequestCaptureTestCase {
       "code",
       "message",
       "currentVersion",
-      "resource",
+      "resource"
     ]
     static let resultStatuses = [
       "applied",
       "duplicate",
       "conflict",
       "rejected",
-      "retryable",
+      "retryable"
     ]
     static let artifactSessionCreateRequestFields = [
       "operationId",
@@ -73,7 +73,7 @@ final class APIClientSyncCommandTests: APIRequestCaptureTestCase {
       "durationSeconds",
       "sizeBytes",
       "checksumSha256",
-      "baseVersion",
+      "baseVersion"
     ]
     static let artifactSessionChecksumEncoding = "padded-base64"
     static let artifactSessionChecksumDecodedByteLength = 32
@@ -84,22 +84,22 @@ final class APIClientSyncCommandTests: APIRequestCaptureTestCase {
       "requiredHeaders",
       "expiresInSeconds",
       "currentVersion",
-      "completed",
+      "completed"
     ]
     static let artifactSessionCompleteResponseFields = [
       "artifact",
-      "currentVersion",
+      "currentVersion"
     ]
     static let artifactDownloadResponseFields = [
       "downloadUrl",
-      "expiresInSeconds",
+      "expiresInSeconds"
     ]
     static let errorFields = [
       "code",
       "message",
       "details",
       "requestId",
-      "currentVersion",
+      "currentVersion"
     ]
   }
   // v1-contract-projection:end
@@ -114,7 +114,7 @@ final class APIClientSyncCommandTests: APIRequestCaptureTestCase {
       ("POST", ServiceConfiguration.apiV1URL(path: "artifact-sessions").path),
       ("POST", ServiceConfiguration.apiV1URL(path: "artifact-sessions/session-1/complete").path),
       ("POST", ServiceConfiguration.apiV1URL(path: "artifacts/artifact-1/download-session").path),
-      ("POST", ServiceConfiguration.apiV1URL(path: "sync/commands").path),
+      ("POST", ServiceConfiguration.apiV1URL(path: "sync/commands").path)
     ]
     let concreteContractRoutes = V1APIContractProjection.routes.map { method, path in
       (method, path
@@ -132,14 +132,14 @@ final class APIClientSyncCommandTests: APIRequestCaptureTestCase {
       SyncCommandKind.replaceCaptureMarkers.rawValue,
       SyncCommandKind.submitEntry.rawValue,
       SyncCommandKind.deleteEntry.rawValue,
-      SyncCommandKind.createFeedback.rawValue,
+      SyncCommandKind.createFeedback.rawValue
     ])
     XCTAssertEqual(V1APIContractProjection.resultStatuses, [
       SyncCommandResultStatus.applied.rawValue,
       SyncCommandResultStatus.duplicate.rawValue,
       SyncCommandResultStatus.conflict.rawValue,
       SyncCommandResultStatus.rejected.rawValue,
-      SyncCommandResultStatus.retryable.rawValue,
+      SyncCommandResultStatus.retryable.rawValue
     ])
     XCTAssertEqual(V1APIContractProjection.pageFields, ["items", "nextCursor"])
     XCTAssertEqual(V1APIContractProjection.defaultPageSize, 50)
@@ -152,7 +152,11 @@ final class APIClientSyncCommandTests: APIRequestCaptureTestCase {
     let encodedCommand = try JSONSerialization.jsonObject(with: JSONEncoder().encode(command))
     let commandObject = try XCTUnwrap(encodedCommand as? [String: Any])
     XCTAssertEqual(Set(commandObject.keys), Set(V1APIContractProjection.commandFields))
+    try assertCommandResultMatchesProjection()
+    try assertErrorEnvelopeMatchesProjection()
+  }
 
+  private func assertCommandResultMatchesProjection() throws {
     let result = try JSONDecoder().decode(
       SyncCommandResult.self,
       from: Data(
@@ -165,9 +169,11 @@ final class APIClientSyncCommandTests: APIRequestCaptureTestCase {
     XCTAssertEqual(result.currentVersion, 4)
     XCTAssertEqual(result.code, "VERSION_CONFLICT")
     XCTAssertEqual(Set(V1APIContractProjection.resultFields), [
-      "operationId", "entityId", "kind", "status", "code", "message", "currentVersion", "resource",
+      "operationId", "entityId", "kind", "status", "code", "message", "currentVersion", "resource"
     ])
+  }
 
+  private func assertErrorEnvelopeMatchesProjection() throws {
     let error = try JSONDecoder().decode(
       APIError.self,
       from: Data(
@@ -180,7 +186,7 @@ final class APIClientSyncCommandTests: APIRequestCaptureTestCase {
     XCTAssertEqual(error.error.currentVersion, 4)
     XCTAssertEqual(error.error.details?["actual"], .integer(4))
     XCTAssertEqual(Set(V1APIContractProjection.errorFields), [
-      "code", "message", "details", "requestId", "currentVersion",
+      "code", "message", "details", "requestId", "currentVersion"
     ])
   }
 
@@ -283,6 +289,21 @@ final class APIClientSyncCommandTests: APIRequestCaptureTestCase {
     XCTAssertEqual(payload["artifactId"] as? String, artifact.id)
     XCTAssertEqual(payload["baseVersion"] as? Int, 7)
     XCTAssertEqual(payload["checksumSha256"] as? String, checksumSha256)
+    try assertArtifactSessionContractFields(
+      requestPayload: payload, checksumSha256: checksumSha256,
+      createResponse: createResponse, completionResponse: completionResponse)
+    XCTAssertEqual(requestedURLs, [createURL, completionURL])
+    XCTAssertEqual(created.currentVersion, 8)
+    XCTAssertEqual(completed.artifact.uploadState, "uploaded")
+    XCTAssertEqual(completed.currentVersion, 9)
+  }
+
+  private func assertArtifactSessionContractFields(
+    requestPayload payload: [String: Any],
+    checksumSha256: String,
+    createResponse: Data,
+    completionResponse: Data
+  ) throws {
     XCTAssertEqual(Set(payload.keys), Set(V1APIContractProjection.artifactSessionCreateRequestFields))
     XCTAssertEqual(V1APIContractProjection.artifactSessionChecksumEncoding, "padded-base64")
     XCTAssertEqual(
@@ -294,10 +315,6 @@ final class APIClientSyncCommandTests: APIRequestCaptureTestCase {
     XCTAssertEqual(
       Set(try XCTUnwrap(JSONSerialization.jsonObject(with: completionResponse) as? [String: Any]).keys),
       Set(V1APIContractProjection.artifactSessionCompleteResponseFields))
-    XCTAssertEqual(requestedURLs, [createURL, completionURL])
-    XCTAssertEqual(created.currentVersion, 8)
-    XCTAssertEqual(completed.artifact.uploadState, "uploaded")
-    XCTAssertEqual(completed.currentVersion, 9)
   }
 
   func testArtifactDownloadResponseUsesStableContractFields() throws {

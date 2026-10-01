@@ -7,7 +7,7 @@ extension APIClient {
     let body = [
       "code": code,
       "redirectUri": ServiceConfiguration.authCallbackURL.absoluteString,
-      "codeVerifier": codeVerifier,
+      "codeVerifier": codeVerifier
     ]
     let response: TokenResponse = try await send(
       url: url, method: "POST", body: body, accessToken: nil)

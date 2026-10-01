@@ -20,28 +20,19 @@ enum AppDemoDependencyFactory {
         return AuthManager(apiClient: client)
     }
 
-    static func makeLocalDataOwnerStore(
-        read: (() throws -> String?)?,
-        write: ((String) throws -> Void)?,
-        remove: (() throws -> Void)?
-    ) -> LocalDataOwnerStore {
+    static func makeLocalDataOwnerStore() -> LocalDataOwnerStore {
 #if RESONANCE_SCREENSHOTS
         if let scenario = ScreenshotScenario.current {
             let userId = scenario.persona == .teacher
                 ? DemoConfiguration.screenshotTeacherUserId
                 : DemoConfiguration.screenshotStudentUserId
             return LocalDataOwnerStore(
-                read: read ?? { userId },
-                write: write ?? { _ in },
-                remove: remove ?? {}
+                read: { userId },
+                write: { _ in },
+                remove: {}
             )
         }
 #endif
-        let defaults = KeychainStore.localDataOwnerStore()
-        return LocalDataOwnerStore(
-            read: read ?? defaults.read,
-            write: write ?? defaults.write,
-            remove: remove ?? defaults.remove
-        )
+        return KeychainStore.localDataOwnerStore()
     }
 }

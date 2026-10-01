@@ -1,8 +1,8 @@
-/** Typed payload parsing for v1 sync commands before transactional execution. */
+/** Typed entry-command payload parsing before transactional execution. */
 import type { PracticeEntry, Prisma } from '@prisma/client';
-import { limits } from '../../../../platform/config.js';
-import { ErrorCodes } from '../../../../platform/http/errorCodes.js';
-import { ApiError } from '../../../../platform/http/errors.js';
+import { limits } from '../../../platform/config.js';
+import { ErrorCodes } from '../../../platform/http/errorCodes.js';
+import { ApiError } from '../../../platform/http/errors.js';
 import {
   requireClientId,
   requireEnum,
@@ -11,7 +11,7 @@ import {
   requireString,
   requireStringArray,
   requireValidDate,
-} from '../../../../platform/http/input.js';
+} from '../../../platform/http/input.js';
 
 const ENTRY_KINDS = ['practice', 'teaching_lesson'] as const;
 const CONSENT_SCOPES = ['private_course_review'] as const;
@@ -143,61 +143,6 @@ export function parseCaptureMarkers(value: unknown) {
     throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Duplicate capture marker IDs');
   }
   return markers;
-}
-
-export function parseFeedbackPayload(payload: Record<string, unknown>) {
-  const rawMarkers = payload.markers === undefined ? [] : payload.markers;
-  if (!Array.isArray(rawMarkers) || rawMarkers.length > limits.maxMarkers) {
-    throw new ApiError(
-      400,
-      ErrorCodes.VALIDATION_ERROR,
-      `payload.markers must contain at most ${limits.maxMarkers} markers`
-    );
-  }
-  return {
-    targetType: requireEnum(payload.targetType, 'payload.targetType', [
-      'entry',
-      'artifact',
-    ] as const),
-    targetId: requireClientId(payload.targetId, 'payload.targetId'),
-    status: requireEnum(payload.status, 'payload.status', [
-      'ok',
-      'needs_revision',
-      'next_goal',
-    ] as const),
-    commentsText: requireString(payload.commentsText, 'payload.commentsText', {
-      minLength: 1,
-      max: limits.maxCommentsTextLength,
-    }),
-    markers: rawMarkers.map((raw, index) => {
-      const marker = requireRecord(raw, `payload.markers[${index}]`);
-      return {
-        id: requireClientId(marker.id, `payload.markers[${index}].id`),
-        timeSeconds: requireNumber(marker.timeSeconds, `payload.markers[${index}].timeSeconds`, {
-          integer: true,
-          min: 0,
-          max: limits.maxMarkerTimeSeconds,
-        }),
-        text: requireString(marker.text, `payload.markers[${index}].text`, {
-          minLength: 1,
-          max: limits.maxMarkerTextLength,
-        }),
-      };
-    }),
-  };
-}
-
-/** Canonicalize object-key order so idempotency hashes are stable across clients. */
-export function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value !== null && typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
 }
 
 function parseTags(value: unknown): string[] {

@@ -89,7 +89,7 @@ extension SyncManager {
         let currentProcessingGeneration = processingGeneration
         let backgroundTaskGeneration = UUID()
         self.backgroundTaskGeneration = backgroundTaskGeneration
-        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "ResonanceSync") {
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "ResonanceSync") { [weak self] in
             // Use DispatchQueue.main.async rather than Task { @MainActor } so
             // expiration does not queue behind the active sync operation.
             DispatchQueue.main.async { [weak self] in

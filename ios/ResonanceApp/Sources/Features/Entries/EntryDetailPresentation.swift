@@ -120,7 +120,10 @@ struct EntryConflictRecoverySection: View {
       .font(.headline)
       .foregroundStyle(.orange)
       Text(
-        "Reloading discards this device’s queued changes. Duplicating creates a new draft with the goal and notes; recordings are not copied."
+        """
+        Reloading discards this device’s queued changes. Duplicating creates a new draft with the goal and notes; \
+        recordings are not copied.
+        """
       )
       .font(.subheadline)
       .foregroundStyle(.secondary)

@@ -7,19 +7,7 @@ enum DemoDataFixtureLoader {
             throw DemoDataError.fixtureNotFound
         }
         let data = try Data(contentsOf: url)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .custom { decoder in
-            let container = try decoder.singleValueContainer()
-            let value = try container.decode(String.self)
-            let fractional = ISO8601DateFormatter()
-            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let standard = ISO8601DateFormatter()
-            standard.formatOptions = [.withInternetDateTime]
-            if let date = fractional.date(from: value) { return date }
-            if let date = standard.date(from: value) { return date }
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid ISO8601 date: \(value)")
-        }
-        return try decoder.decode(DemoFixture.self, from: data)
+        return try JSONDecoder.apiDecoder.decode(DemoFixture.self, from: data)
     }
 }
 
@@ -85,8 +73,6 @@ struct DemoArtifact: Decodable {
     let createdAt: Date
     let uploadState: String
     let syncPhase: String
-    let storageKey: String?
-    let remoteUrl: String?
     let localPath: String
 }
 

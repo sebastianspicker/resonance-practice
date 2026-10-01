@@ -11,6 +11,7 @@ final class LocalArtifact {
     var createdAt: Date
     var uploadStateRaw: String
     var syncPhaseRaw: String
+    // Retained only for local-store compatibility; no longer written from the wire.
     var storageKey: String?
     var remoteUrl: String?
     var localPath: String
@@ -23,5 +24,8 @@ final class LocalArtifact {
 
     var type: ArtifactType { get { ArtifactType(rawValue: typeRaw) ?? .audio } set { typeRaw = newValue.rawValue } }
     var uploadState: UploadState { get { UploadState(rawValue: uploadStateRaw) ?? .pending } set { uploadStateRaw = newValue.rawValue } }
-    var syncPhase: ArtifactSyncPhase { get { ArtifactSyncPhase(rawValue: syncPhaseRaw) ?? .queued } set { syncPhaseRaw = newValue.rawValue } }
+    var syncPhase: ArtifactSyncPhase {
+        get { ArtifactSyncPhase(rawValue: syncPhaseRaw) ?? .queued }
+        set { syncPhaseRaw = newValue.rawValue }
+    }
 }

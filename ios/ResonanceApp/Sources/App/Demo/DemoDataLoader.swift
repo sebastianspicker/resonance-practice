@@ -67,8 +67,6 @@ struct DemoDataLoader {
             localArtifact.createdAt = artifact.createdAt
             localArtifact.uploadState = UploadState(rawValue: artifact.uploadState) ?? .pending
             localArtifact.syncPhase = ArtifactSyncPhase(rawValue: artifact.syncPhase) ?? .queued
-            localArtifact.storageKey = artifact.storageKey
-            localArtifact.remoteUrl = artifact.remoteUrl
             localEntry.artifacts.append(localArtifact)
             modelContext.insert(localArtifact)
             artifactToEntry[artifact.id] = artifact.entryId

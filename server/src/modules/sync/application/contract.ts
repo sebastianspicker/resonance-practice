@@ -1,12 +1,12 @@
 /** Shared v1 sync-command contract parsing and response-result vocabulary. */
-import { ErrorCodes } from '../../../../platform/http/errorCodes.js';
-import { ApiError } from '../../../../platform/http/errors.js';
+import { ErrorCodes } from '../../../platform/http/errorCodes.js';
+import { ApiError } from '../../../platform/http/errors.js';
 import {
   requireClientId,
   requireEnum,
   requireNumber,
   requireRecord,
-} from '../../../../platform/http/input.js';
+} from '../../../platform/http/input.js';
 
 export const SYNC_COMMAND_KINDS = [
   'createEntry',
@@ -25,6 +25,9 @@ export type SyncCommand = {
   baseVersion?: number;
   payload: Record<string, unknown>;
 };
+/** A sync request carries between 1 and this many commands. */
+export const MAX_SYNC_COMMANDS_PER_BATCH = 25;
+
 export const SYNC_RESULT_STATUSES = [
   'applied',
   'duplicate',

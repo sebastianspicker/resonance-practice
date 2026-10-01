@@ -7,11 +7,11 @@ import contract from '../../contracts/v1-api-contract.json';
 import { buildServer } from '../src/server.js';
 import { ErrorCodes } from '../src/platform/http/errorCodes.js';
 import { ApiError, sendError } from '../src/platform/http/errors.js';
-import { parseSyncCommand } from '../src/modules/sync/application/commands.js';
 import {
+  parseSyncCommand,
   SYNC_COMMAND_KINDS,
   SYNC_RESULT_STATUSES,
-} from '../src/modules/sync/application/sync/contract.js';
+} from '../src/modules/sync/application/contract.js';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, cursorPage } from '../src/platform/http/pagination.js';
 
 const v1Contract = contract as {

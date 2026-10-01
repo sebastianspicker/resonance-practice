@@ -205,8 +205,6 @@ final class EntryReconciliationService {
             if let local = localById[response.id] {
                 local.durationSeconds = response.durationSeconds
                 local.uploadState = UploadState(rawValue: response.uploadState) ?? local.uploadState
-                local.storageKey = response.storageKey
-                local.remoteUrl = response.remoteUrl
             } else {
                 let artifact = LocalArtifact(
                     id: response.id,
@@ -217,8 +215,6 @@ final class EntryReconciliationService {
                 )
                 artifact.uploadState = UploadState(rawValue: response.uploadState) ?? .uploaded
                 artifact.syncPhase = artifact.uploadState == .uploaded ? .uploaded : .queued
-                artifact.storageKey = response.storageKey
-                artifact.remoteUrl = response.remoteUrl
                 entry.artifacts.append(artifact)
                 modelContext.insert(artifact)
             }

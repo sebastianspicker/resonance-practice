@@ -4,11 +4,11 @@ import {
   createSyncAdmission,
   MAX_SYNC_COMMANDS_PER_MINUTE,
   MAX_SYNC_REQUESTS_PER_MINUTE,
-} from '../src/modules/sync/application/sync/admission.js';
+} from '../src/modules/sync/application/admission.js';
 import {
   assertSyncReceiptCapacity,
   MAX_SYNC_RECEIPTS_PER_USER,
-} from '../src/modules/sync/application/commands.js';
+} from '../src/modules/sync/application/receipts.js';
 
 describe('sync admission and durable replay capacity', () => {
   it('bounds requests and commands per user, then resets at the time window', () => {

@@ -1,9 +1,13 @@
 /** Entry read projections shared by v1 entry and review adapters. */
 import type { Prisma, PrismaClient } from '@prisma/client';
+import { requireCourseRole } from '../../courses/application/authorization.js';
 import { requireVisibleCourseEntry } from './authorization.js';
 import { ErrorCodes } from '../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../platform/http/errors.js';
-import { cursorPage } from '../../../platform/http/pagination.js';
+import { requireEnum } from '../../../platform/http/input.js';
+import { cursorPage, parsePageLimit } from '../../../platform/http/pagination.js';
+
+const ENTRY_STATUSES = ['draft', 'submitted', 'reviewed'] as const;
 
 export async function readAccessibleEntry(prisma: PrismaClient, userId: string, entryId: string) {
   const entry = await prisma.practiceEntry.findUnique({
@@ -30,7 +34,42 @@ export async function readAccessibleEntryIdentity(
   return entry;
 }
 
-export async function readEntryPage(
+/**
+ * List course entries visible to the caller: students see their own entries,
+ * teachers see submitted or reviewed entries but never drafts. Raw query values
+ * are validated after membership so authorization errors keep precedence.
+ */
+export async function listCourseEntries(
+  prisma: PrismaClient,
+  userId: string,
+  courseId: string,
+  query: { status?: string; cursor?: string; limit?: string }
+) {
+  const role = await requireCourseRole(prisma, userId, courseId);
+  const status =
+    query.status === undefined ? undefined : requireEnum(query.status, 'status', ENTRY_STATUSES);
+  if (role === 'teacher' && status === 'draft') {
+    throw new ApiError(
+      403,
+      ErrorCodes.ENTRY_ACCESS_DENIED,
+      'Draft entries are not visible to teachers'
+    );
+  }
+  return readEntryPage(
+    prisma,
+    {
+      courseId,
+      deletedAt: null,
+      ...(role === 'student'
+        ? { studentId: userId, ...(status ? { status } : {}) }
+        : { status: status ?? 'submitted' }),
+    },
+    query.cursor,
+    parsePageLimit(query.limit)
+  );
+}
+
+async function readEntryPage(
   prisma: PrismaClient,
   visibleWhere: Prisma.PracticeEntryWhereInput,
   cursor: string | undefined,

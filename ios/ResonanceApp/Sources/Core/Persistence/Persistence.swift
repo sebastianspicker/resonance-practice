@@ -42,17 +42,48 @@ enum PersistenceController {
         return try ModelContainer(for: modelSchema(), configurations: [config])
     }
 
+    /// The single list of SwiftData model types, ordered parents before children.
+    static let modelTypes: [any PersistentModel.Type] = [
+        LocalCourse.self,
+        LocalPracticeEntry.self,
+        LocalArtifact.self,
+        LocalFeedback.self,
+        LocalMarker.self,
+        LocalCaptureMarker.self,
+        SyncQueueItem.self,
+        CalendarEvent.self
+    ]
+
+    /// Destructive paths remove children before the parents that reference them.
+    static var deletionOrder: [any PersistentModel.Type] {
+        modelTypes.reversed()
+    }
+
     static func modelSchema() -> Schema {
-        Schema([
-            LocalCourse.self,
-            LocalPracticeEntry.self,
-            LocalArtifact.self,
-            LocalFeedback.self,
-            LocalMarker.self,
-            LocalCaptureMarker.self,
-            SyncQueueItem.self,
-            CalendarEvent.self
-        ])
+        Schema(modelTypes)
+    }
+}
+
+extension ModelContext {
+    /// Deletes every stored instance of each type in order without saving.
+    func deleteAllModels(of types: [any PersistentModel.Type]) throws {
+        for type in types {
+            try deleteModels(type)
+        }
+    }
+
+    func containsModels(of types: [any PersistentModel.Type]) throws -> Bool {
+        try types.contains { try containsModels($0) }
+    }
+
+    private func deleteModels<T: PersistentModel>(_ type: T.Type) throws {
+        for model in try fetch(FetchDescriptor<T>()) {
+            delete(model)
+        }
+    }
+
+    private func containsModels<T: PersistentModel>(_ type: T.Type) throws -> Bool {
+        try !fetch(FetchDescriptor<T>()).isEmpty
     }
 }
 
@@ -142,40 +173,16 @@ enum LocalAlphaDataReset {
     }
 
     private static func removeSwiftDataModels(from modelContext: ModelContext) throws {
-        try deleteAll(CalendarEvent.self, from: modelContext)
-        try deleteAll(SyncQueueItem.self, from: modelContext)
-        try deleteAll(LocalCaptureMarker.self, from: modelContext)
-        try deleteAll(LocalMarker.self, from: modelContext)
-        try deleteAll(LocalFeedback.self, from: modelContext)
-        try deleteAll(LocalArtifact.self, from: modelContext)
-        try deleteAll(LocalPracticeEntry.self, from: modelContext)
-        try deleteAll(LocalCourse.self, from: modelContext)
+        try modelContext.deleteAllModels(of: PersistenceController.deletionOrder)
         try modelContext.save()
 
-        guard try containsNoModels(in: modelContext) else {
+        guard try !containsAnyModels(in: modelContext) else {
             throw LocalAlphaDataResetError.swiftDataModelsStillExist
         }
     }
 
-    private static func deleteAll<T: PersistentModel>(_ type: T.Type, from modelContext: ModelContext) throws {
-        for model in try modelContext.fetch(FetchDescriptor<T>()) {
-            modelContext.delete(model)
-        }
-    }
-
-    private static func containsNoModels(in modelContext: ModelContext) throws -> Bool {
-        try modelContext.fetch(FetchDescriptor<CalendarEvent>()).isEmpty &&
-            modelContext.fetch(FetchDescriptor<SyncQueueItem>()).isEmpty &&
-            modelContext.fetch(FetchDescriptor<LocalCaptureMarker>()).isEmpty &&
-            modelContext.fetch(FetchDescriptor<LocalMarker>()).isEmpty &&
-            modelContext.fetch(FetchDescriptor<LocalFeedback>()).isEmpty &&
-            modelContext.fetch(FetchDescriptor<LocalArtifact>()).isEmpty &&
-            modelContext.fetch(FetchDescriptor<LocalPracticeEntry>()).isEmpty &&
-            modelContext.fetch(FetchDescriptor<LocalCourse>()).isEmpty
-    }
-
     private static func containsAnyModels(in modelContext: ModelContext) throws -> Bool {
-        try !containsNoModels(in: modelContext)
+        try modelContext.containsModels(of: PersistenceController.deletionOrder)
     }
 }
 

@@ -36,8 +36,6 @@ struct ArtifactResponse: Decodable {
     let durationSeconds: Int
     let expectedSizeBytes: Int?
     let uploadState: String
-    let storageKey: String?
-    let remoteUrl: String?
 }
 
 struct ArtifactDownloadResponse: Decodable {

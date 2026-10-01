@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
+import { authenticatedUser, type RequireAuth } from '../../../../platform/http/authentication.js';
 import {
   consumeDevAuthCode,
   hashToken,
@@ -13,8 +14,6 @@ import { ErrorCodes } from '../../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../../platform/http/errors.js';
 import { consumeProdAuthCode } from '../../application/oidc.js';
 import { requireField, requireString } from '../../../../platform/http/input.js';
-
-type RequireAuth = (request: FastifyRequest) => Promise<void>;
 
 export function registerSessionRoutes(
   app: FastifyInstance,
@@ -71,7 +70,9 @@ function registerCurrentUserRoute(
   requireAuth: RequireAuth
 ) {
   app.get('/auth/me', { preHandler: requireAuth }, async (request) => {
-    const userRecord = await prisma.user.findUnique({ where: { id: request.user!.id } });
+    const userRecord = await prisma.user.findUnique({
+      where: { id: authenticatedUser(request).id },
+    });
     if (!userRecord) {
       throw new ApiError(404, ErrorCodes.USER_NOT_FOUND, 'User not found');
     }
@@ -109,7 +110,7 @@ function registerLogoutRoute(app: FastifyInstance, prisma: PrismaClient, require
 
     // Fall back to access-token-based logout.
     await requireAuth(request);
-    await revokeRefreshTokenFamily(prisma, request.user!.id);
+    await revokeRefreshTokenFamily(prisma, authenticatedUser(request).id);
     return { success: true };
   });
 }

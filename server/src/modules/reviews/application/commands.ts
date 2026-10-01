@@ -1,38 +1,65 @@
-/** Transactional v1 feedback-command handler for the sync command pipeline. */
+/** Transactional feedback-creation rules, executed by the sync gateway in client FIFO order. */
 import type { FeedbackTargetType, PracticeEntry, Prisma } from '@prisma/client';
-import { ErrorCodes } from '../../../../platform/http/errorCodes.js';
-import { ApiError } from '../../../../platform/http/errors.js';
-import { lockEntry } from '../../../entries/application/locks.js';
-import type { SyncCommand, SyncCommandResult } from './contract.js';
-import { appliedEntryResult, requireVersion } from './entryCommands.js';
+import { ErrorCodes } from '../../../platform/http/errorCodes.js';
+import { ApiError } from '../../../platform/http/errors.js';
+import { requireCourseMembership } from '../../courses/application/authorization.js';
+import {
+  entryReceiptScope,
+  type CommandReceiptScope,
+  type EntryCommandInput,
+} from '../../entries/application/commands.js';
+import { lockEntry } from '../../entries/application/locks.js';
+import { requireEntryVersion } from '../../entries/application/versionConflict.js';
 import { parseFeedbackPayload } from './payloads.js';
 
+/** Receipt scope for createFeedback, taken from the unparsed payload before the handler runs. */
+export async function feedbackReceiptScope(
+  tx: Prisma.TransactionClient,
+  payload: Record<string, unknown>
+): Promise<CommandReceiptScope> {
+  const targetId = typeof payload.targetId === 'string' ? payload.targetId : undefined;
+  if ((payload.targetType === 'entry' || payload.targetType === 'artifact') && targetId) {
+    const entryId = await resolveFeedbackEntryId(tx, payload.targetType, targetId);
+    return entryReceiptScope(tx, entryId, 'teacher');
+  }
+  throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid feedback receipt');
+}
+
+/**
+ * Create feedback and mark the entry reviewed. Returns the updated entry, or
+ * the current entry when identical feedback with this ID already exists.
+ */
 export async function createFeedback(
   tx: Prisma.TransactionClient,
   userId: string,
-  command: SyncCommand
-): Promise<SyncCommandResult> {
-  const input = parseFeedbackPayload(command.payload);
+  { entityId, baseVersion, payload }: EntryCommandInput
+): Promise<PracticeEntry> {
+  const input = parseFeedbackPayload(payload);
   const entryId = await resolveFeedbackEntryId(tx, input.targetType, input.targetId);
   const entry = await lockEntry(tx, entryId);
   await requireFeedbackTarget(tx, entry, input.targetType, input.targetId);
-  await requireFeedbackTeacher(tx, userId, entry.courseId);
-  const versionResult = requireVersion(command, entry);
-  if (versionResult) return versionResult;
+  await requireCourseMembership(
+    tx,
+    userId,
+    entry.courseId,
+    'teacher',
+    'Only course teachers can create feedback'
+  );
+  requireEntryVersion(entry, baseVersion);
   requireSubmittedEntry(entry);
   const existing = await tx.feedback.findUnique({
-    where: { id: command.entityId },
+    where: { id: entityId },
     include: { markers: true },
   });
   if (existing) {
     if (!matchesFeedback(existing, input, userId, entry.id)) {
       throw new ApiError(409, ErrorCodes.ID_CONFLICT, 'Feedback ID already exists');
     }
-    return appliedEntryResult(command, entry);
+    return entry;
   }
   await tx.feedback.create({
     data: {
-      id: command.entityId,
+      id: entityId,
       targetType: input.targetType,
       targetId: input.targetId,
       teacherId: userId,
@@ -42,24 +69,10 @@ export async function createFeedback(
       markers: { create: input.markers },
     },
   });
-  const updated = await tx.practiceEntry.update({
+  return tx.practiceEntry.update({
     where: { id: entry.id },
     data: { status: 'reviewed', version: { increment: 1 } },
   });
-  return appliedEntryResult(command, updated);
-}
-
-async function requireFeedbackTeacher(
-  tx: Prisma.TransactionClient,
-  userId: string,
-  courseId: string
-): Promise<void> {
-  const membership = await tx.membership.findUnique({
-    where: { userId_courseId: { userId, courseId } },
-  });
-  if (!membership || membership.roleInCourse !== 'teacher') {
-    throw new ApiError(403, ErrorCodes.TEACHER_ONLY, 'Only course teachers can create feedback');
-  }
 }
 
 function requireSubmittedEntry(entry: PracticeEntry): void {

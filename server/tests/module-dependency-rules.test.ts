@@ -1,6 +1,10 @@
+// Enforces the modular-monolith boundaries: platform independence, the feature DAG, and route ownership.
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
+
+const sourceRoot = join(process.cwd(), 'src');
+const modulesRoot = join(sourceRoot, 'modules');
 
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -9,96 +13,107 @@ function sourceFiles(directory: string): string[] {
   });
 }
 
-describe('modular-monolith dependency rules', () => {
-  const sourceRoot = join(process.cwd(), 'src');
+/** Resolve every relative static import, re-export, and dynamic import of a source file. */
+function relativeImports(file: string): string[] {
+  const source = readFileSync(file, 'utf8');
+  const pattern = /(?:\bfrom\s+|\bimport\s*\(\s*|^\s*import\s+)['"](\.[^'"]+)['"]/gm;
+  return [...source.matchAll(pattern)].map((match) =>
+    normalize(join(dirname(file), match[1]!)).replace(/\.js$/, '.ts')
+  );
+}
 
-  it('keeps platform independent of feature modules', () => {
+const ALLOWED_DEPENDENCIES: Record<string, readonly string[]> = {
+  courses: [],
+  entries: ['courses'],
+  identity: [],
+  media: ['entries'],
+  reviews: ['courses', 'entries'],
+  sync: ['courses', 'entries', 'media', 'reviews'],
+};
+
+const OWNED_ROUTES: Record<string, readonly string[]> = {
+  courses: ['GET /api/v1/courses'],
+  entries: ['GET /api/v1/courses/:courseId/entries', 'GET /api/v1/entries/:entryId'],
+  identity: [
+    'GET /auth/login',
+    'GET /auth/oidc/login',
+    'GET /auth/oidc/callback',
+    'POST /auth/session',
+    'POST /auth/refresh',
+    'GET /auth/me',
+    'POST /auth/logout',
+    'GET /dev/login',
+    'GET /dev/authorize',
+    'POST /dev/issue',
+  ],
+  media: [
+    'POST /api/v1/artifact-sessions',
+    'POST /api/v1/artifact-sessions/:sessionId/complete',
+    'POST /api/v1/artifacts/:artifactId/download-session',
+  ],
+  reviews: ['GET /api/v1/courses/:courseId/review-queue', 'GET /api/v1/entries/:entryId/feedback'],
+  sync: ['POST /api/v1/sync/commands'],
+};
+
+describe('modular-monolith dependency rules', () => {
+  it('keeps platform independent of feature modules and app composition', () => {
     for (const file of sourceFiles(join(sourceRoot, 'platform'))) {
-      expect(readFileSync(file, 'utf8')).not.toMatch(/modules\//);
-      expect(readFileSync(file, 'utf8')).not.toMatch(/app\//);
+      for (const target of relativeImports(file)) {
+        expect(relative(sourceRoot, target).split(sep)[0], file).toBe('platform');
+      }
     }
   });
 
   it('enforces the feature dependency DAG and application-only feature boundaries', () => {
-    const allowedDependencies: Record<string, readonly string[]> = {
-      courses: [],
-      entries: ['courses'],
-      identity: [],
-      media: ['entries'],
-      reviews: ['courses', 'entries'],
-      sync: ['entries', 'media', 'reviews'],
-    };
-    const importPattern = /from\s+['"]([^'"]+)['"]/g;
-
-    for (const file of sourceFiles(join(sourceRoot, 'modules'))) {
-      const fromFeature = relative(join(sourceRoot, 'modules'), file).split(sep)[0];
-      expect(fromFeature).toBeTruthy();
-      for (const match of readFileSync(file, 'utf8').matchAll(importPattern)) {
-        const specifier = match[1];
-        if (!specifier?.startsWith('.')) continue;
-        const target = normalize(join(dirname(file), specifier)).replace(/\.js$/, '.ts');
-        const moduleRelativePath = relative(join(sourceRoot, 'modules'), target);
-        if (moduleRelativePath.startsWith('..')) continue;
-        const [toFeature, layer] = moduleRelativePath.split(sep);
-        if (!toFeature || toFeature === fromFeature) continue;
-        expect(allowedDependencies[fromFeature] ?? []).toContain(toFeature);
-        expect(layer).toBe('application');
+    for (const file of sourceFiles(modulesRoot)) {
+      const fromFeature = relative(modulesRoot, file).split(sep)[0]!;
+      expect(Object.keys(ALLOWED_DEPENDENCIES)).toContain(fromFeature);
+      for (const target of relativeImports(file)) {
+        const fromSource = relative(sourceRoot, target).split(sep);
+        expect(fromSource[0], `${file} imports ${target}`).not.toBe('app');
+        if (fromSource[0] !== 'modules') continue;
+        const [, toFeature, layer] = fromSource;
+        if (toFeature === fromFeature) continue;
+        expect(ALLOWED_DEPENDENCIES[fromFeature], `${file} imports ${target}`).toContain(toFeature);
+        expect(layer, `${file} imports ${target}`).toBe('application');
       }
     }
 
     const visiting = new Set<string>();
     const visited = new Set<string>();
     const visit = (feature: string) => {
-      expect(visiting.has(feature)).toBe(false);
+      expect(visiting.has(feature), `cycle through ${feature}`).toBe(false);
       if (visited.has(feature)) return;
       visiting.add(feature);
-      for (const dependency of allowedDependencies[feature] ?? []) visit(dependency);
+      for (const dependency of ALLOWED_DEPENDENCIES[feature] ?? []) visit(dependency);
       visiting.delete(feature);
       visited.add(feature);
     };
-    for (const feature of Object.keys(allowedDependencies)) visit(feature);
+    for (const feature of Object.keys(ALLOWED_DEPENDENCIES)) visit(feature);
   });
 
-  it('keeps process composition as the only layer that wires feature adapters', () => {
-    const appSource = readFileSync(join(sourceRoot, 'app/serverRuntime.ts'), 'utf8');
-    expect(appSource).toMatch(/modules\/identity\/http/);
-    expect(appSource).toMatch(/modules\/sync\/http/);
-    expect(appSource).toMatch(/platform\//);
-  });
-
-  it('registers only versioned resource routes in their owning feature adapters', () => {
-    const expectedRoutes = new Map([
-      ['courses', new Set(['GET /api/v1/courses'])],
-      [
-        'entries',
-        new Set(['GET /api/v1/courses/:courseId/entries', 'GET /api/v1/entries/:entryId']),
-      ],
-      [
-        'media',
-        new Set([
-          'POST /api/v1/artifact-sessions',
-          'POST /api/v1/artifact-sessions/:sessionId/complete',
-          'POST /api/v1/artifacts/:artifactId/download-session',
-        ]),
-      ],
-      [
-        'reviews',
-        new Set([
-          'GET /api/v1/courses/:courseId/review-queue',
-          'GET /api/v1/entries/:entryId/feedback',
-        ]),
-      ],
-      ['sync', new Set(['POST /api/v1/sync/commands'])],
-    ]);
-
-    for (const [feature, routes] of expectedRoutes) {
-      const routeFile = join(sourceRoot, 'modules', feature, 'http/routes.ts');
-      const ownedRoutes = new Set(
-        [...readFileSync(routeFile, 'utf8').matchAll(/app\.(get|post)\(\s*['"]([^'"]+)/g)].map(
+  it('registers every route in exactly its owning feature http adapter', () => {
+    const routePattern =
+      /\bapp\.(get|post|put|patch|delete|head|options|route)\(\s*['"]?([^'",)\s]*)/g;
+    for (const feature of Object.keys(ALLOWED_DEPENDENCIES)) {
+      const registered = sourceFiles(join(modulesRoot, feature)).flatMap((file) => {
+        const routes = [...readFileSync(file, 'utf8').matchAll(routePattern)].map(
           ([, method, path]) => `${method!.toUpperCase()} ${path}`
-        )
-      );
-      expect(ownedRoutes).toEqual(routes);
+        );
+        if (routes.length > 0) expect(relative(modulesRoot, file).split(sep)[1], file).toBe('http');
+        return routes;
+      });
+      expect(new Set(registered), feature).toEqual(new Set(OWNED_ROUTES[feature]));
+    }
+  });
+
+  it('types the authenticated user once and never asserts it in feature adapters', () => {
+    for (const file of sourceFiles(sourceRoot)) {
+      const source = readFileSync(file, 'utf8');
+      expect(source.includes('request.user!'), file).toBe(false);
+      if (/interface FastifyRequest\b/.test(source)) {
+        expect(relative(sourceRoot, file)).toBe(join('platform', 'http', 'authentication.ts'));
+      }
     }
   });
 });

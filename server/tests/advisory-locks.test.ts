@@ -5,7 +5,7 @@ import { lockOperationIdentity } from '../src/platform/database/advisoryLocks.js
 import { lockEntry, lockEntryIdentity } from '../src/modules/entries/application/locks.js';
 import { lockArtifactSessionIdentity } from '../src/modules/media/application/completionClaims.js';
 import { lockArtifactQuotaIdentity } from '../src/modules/media/application/uploadQuota.js';
-import { admitSyncReceipt } from '../src/modules/sync/application/commands.js';
+import { admitSyncReceipt } from '../src/modules/sync/application/receipts.js';
 
 const lockOwner = new PrismaClient();
 const lockContender = new PrismaClient();

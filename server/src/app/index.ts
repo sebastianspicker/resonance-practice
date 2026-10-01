@@ -8,7 +8,7 @@ import {
 import { expireStaleArtifactUploads } from '../modules/media/application/cleanup/staleUploads.js';
 import { retryStorageDeletionJobs } from '../modules/media/application/storageDeletion/retry.js';
 import { settlesWithin, withDeadline } from '../platform/deadline.js';
-import { cleanupSyncReceipts } from '../modules/sync/application/commands.js';
+import { cleanupSyncReceipts } from '../modules/sync/application/receipts.js';
 import { cleanupRevokedRefreshTokens } from '../modules/identity/application/maintenance.js';
 import { createS3Client, ensureBucket } from '../platform/storage/s3.js';
 import { buildServer } from '../server.js';

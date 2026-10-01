@@ -55,7 +55,9 @@ export function installBasicSuite(options: { resetS3?: boolean } = {}) {
 
 export async function setupApp() {
   await prisma.$connect();
-  await app.ready();
+  // Listen once so supertest reuses this server instead of listening and closing
+  // it around every request, which races keep-alive sockets (ECONNRESET).
+  await app.listen({ port: 0, host: '127.0.0.1' });
 }
 
 export async function teardownApp() {

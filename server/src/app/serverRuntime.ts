@@ -4,9 +4,9 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import type { PrismaClient } from '@prisma/client';
-import Fastify from 'fastify';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { verifyAccessToken } from '../modules/identity/application/auth.js';
+import Fastify, { LogController } from 'fastify';
+import type { FastifyInstance } from 'fastify';
+import { requireAuth } from '../modules/identity/http/authenticate.js';
 import { config, limits } from '../platform/config.js';
 import { ErrorCodes } from '../platform/http/errorCodes.js';
 import { ApiError, sendError } from '../platform/http/errors.js';
@@ -17,11 +17,6 @@ import { registerEntryRoutes } from '../modules/entries/http/routes.js';
 import { registerReviewRoutes } from '../modules/reviews/http/routes.js';
 import { registerSyncRoutes } from '../modules/sync/http/routes.js';
 
-declare module 'fastify' {
-  interface FastifyRequest {
-    user?: { id: string; role: 'student' | 'teacher' };
-  }
-}
 import { withDeadline } from '../platform/deadline.js';
 import { checkBucketAvailable } from '../platform/storage/s3.js';
 
@@ -68,6 +63,7 @@ function classifyFastifyError(error: FastifyErrorShape) {
 
 export function createApiApp() {
   return Fastify({
+    logController: new LogController({ requestIdLogLabel: 'requestId' }),
     logger: {
       redact: [
         'req.headers.authorization',
@@ -78,7 +74,6 @@ export function createApiApp() {
       ],
     },
     requestIdHeader: 'x-request-id',
-    requestIdLogLabel: 'requestId',
     bodyLimit: limits.bodyLimitBytes,
   });
 }
@@ -184,20 +179,6 @@ export function registerTransport(app: FastifyInstance) {
   registerSecurityHeaders(app);
   registerRequestHooks(app);
   registerErrorHandlers(app);
-}
-
-async function requireAuth(request: FastifyRequest) {
-  const header = request.headers.authorization;
-  if (!header || !header.startsWith('Bearer ')) {
-    throw new ApiError(401, ErrorCodes.MISSING_AUTH, 'Missing or invalid Authorization header');
-  }
-  const payload = verifyAccessToken(header.slice(7));
-  const userId = payload.sub as string | undefined;
-  const role = payload.role as 'student' | 'teacher' | undefined;
-  if (!userId || !role) {
-    throw new ApiError(401, ErrorCodes.INVALID_TOKEN, 'Invalid token payload');
-  }
-  request.user = { id: userId, role };
 }
 
 export function registerStatusRoutes(app: FastifyInstance, checkDependencies: () => Promise<void>) {

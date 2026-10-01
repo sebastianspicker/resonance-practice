@@ -1,6 +1,6 @@
 /** Process-local admission control that protects ordered v1 sync execution. */
-import { ErrorCodes } from '../../../../platform/http/errorCodes.js';
-import { ApiError } from '../../../../platform/http/errors.js';
+import { ErrorCodes } from '../../../platform/http/errorCodes.js';
+import { ApiError } from '../../../platform/http/errors.js';
 
 const WINDOW_MS = 60_000;
 export const MAX_SYNC_REQUESTS_PER_MINUTE = 12;

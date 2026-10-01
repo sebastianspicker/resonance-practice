@@ -48,7 +48,7 @@ extension TaskExecutor {
 
         guard session.completed != true,
               session.artifact.uploadState != UploadState.uploaded.rawValue else {
-            markArtifactUploaded(artifact, from: session.artifact)
+            markArtifactUploaded(artifact)
             return
         }
 
@@ -60,7 +60,6 @@ extension TaskExecutor {
 
         artifact.uploadState = .uploading
         artifact.syncPhase = .uploading
-        artifact.storageKey = session.artifact.storageKey
         store.save()
 
         try await uploadFile(
@@ -78,7 +77,7 @@ extension TaskExecutor {
         )
         try Task.checkCancellation()
         entry.serverVersion = completion.currentVersion
-        markArtifactUploaded(artifact, from: completion.artifact)
+        markArtifactUploaded(artifact)
     }
 
     private func artifactSessionBaseVersion(
@@ -116,11 +115,9 @@ extension TaskExecutor {
         }
     }
 
-    private func markArtifactUploaded(_ artifact: LocalArtifact, from remoteArtifact: ArtifactResponse) {
+    private func markArtifactUploaded(_ artifact: LocalArtifact) {
         artifact.uploadState = .uploaded
         artifact.syncPhase = .uploaded
-        artifact.storageKey = remoteArtifact.storageKey
-        artifact.remoteUrl = remoteArtifact.remoteUrl
         store.save()
     }
 

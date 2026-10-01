@@ -1,7 +1,8 @@
 /** Versioned artifact session and authorized download transport. */
 import type { S3Client } from '@aws-sdk/client-s3';
 import type { PrismaClient } from '@prisma/client';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
+import { authenticatedUser, type RequireAuth } from '../../../platform/http/authentication.js';
 import { createDownloadSession } from '../application/downloads.js';
 import { completeArtifactSession } from '../application/sessionCompletion.js';
 import { createArtifactSession } from '../application/sessionCreation.js';
@@ -19,12 +20,12 @@ export function registerMediaRoutes(
   app: FastifyInstance,
   prisma: PrismaClient,
   s3: S3Client,
-  requireAuth: (request: FastifyRequest) => Promise<void>
+  requireAuth: RequireAuth
 ) {
   app.post('/api/v1/artifact-sessions', { preHandler: requireAuth }, async (request) => {
     const body = requireRecord(request.body, 'body');
     return createArtifactSession(prisma, s3, {
-      userId: request.user!.id,
+      userId: authenticatedUser(request).id,
       operationId: requireClientId(body.operationId, 'operationId'),
       entryId: requireClientId(body.entryId, 'entryId'),
       artifactId: requireClientId(body.artifactId, 'artifactId'),
@@ -51,7 +52,7 @@ export function registerMediaRoutes(
       completeArtifactSession(
         prisma,
         s3,
-        request.user!.id,
+        authenticatedUser(request).id,
         requireClientId((request.params as { sessionId: string }).sessionId, 'sessionId')
       )
   );
@@ -64,7 +65,12 @@ export function registerMediaRoutes(
         (request.params as { artifactId: string }).artifactId,
         'artifactId'
       );
-      const session = await createDownloadSession(prisma, s3, request.user!.id, artifactId);
+      const session = await createDownloadSession(
+        prisma,
+        s3,
+        authenticatedUser(request).id,
+        artifactId
+      );
       reply.header('Cache-Control', 'no-store');
       return session;
     }

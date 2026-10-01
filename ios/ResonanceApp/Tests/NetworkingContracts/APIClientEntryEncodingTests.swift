@@ -28,7 +28,7 @@ final class APIClientRequestEncodingTests: APIRequestCaptureTestCase {
             "kind": .string("teaching_lesson"),
             "consentConfirmedAt": .string("2026-02-23T12:01:00.000Z"),
             "consentScope": .string("private_course_review"),
-            "captureProfile": .string("teacher_learner"),
+            "captureProfile": .string("teacher_learner")
           ])
         )
       ]

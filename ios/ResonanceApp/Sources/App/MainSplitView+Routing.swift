@@ -206,7 +206,7 @@ extension MainSplitView {
         ArtifactResponse(
           id: $0.id, entryId: $0.entryId, type: $0.type.rawValue,
           durationSeconds: $0.durationSeconds, expectedSizeBytes: nil,
-          uploadState: $0.uploadState.rawValue, storageKey: $0.storageKey, remoteUrl: $0.remoteUrl)
+          uploadState: $0.uploadState.rawValue)
       })
   }
 
