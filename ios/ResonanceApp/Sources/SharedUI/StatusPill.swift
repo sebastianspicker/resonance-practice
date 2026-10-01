@@ -86,14 +86,6 @@ extension EntryStatus {
         }
     }
 
-    var lifecycleStatus: LifecycleStatus {
-        switch self {
-        case .draft: return .draft
-        case .submitted: return .submitted
-        case .reviewed: return .reviewed
-        }
-    }
-
     /// Student-facing lifecycle that elevates local-only drafts.
     func studentLifecycle(isRemoteBacked: Bool) -> LifecycleStatus {
         switch self {
@@ -115,10 +107,6 @@ extension ArtifactSyncPhase {
         case .uploaded: return .submitted
         case .failed: return .failed
         }
-    }
-
-    var displayLabel: String {
-        lifecycleStatus.label
     }
 }
 

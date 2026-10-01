@@ -29,13 +29,6 @@ extension APIClient {
     return (data, http)
   }
 
-  func sendNoContent(url: URL, method: String, accessToken: String?) async throws {
-    let request = makeRequest(url: url, method: method, accessToken: accessToken)
-    guard try await performResponse(request).response.statusCode == 204 else {
-      throw URLError(.badServerResponse)
-    }
-  }
-
   func send<Response: Decodable, Body: Encodable>(
     url: URL,
     method: String,

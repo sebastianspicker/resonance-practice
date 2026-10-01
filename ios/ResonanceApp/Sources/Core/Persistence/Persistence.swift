@@ -11,6 +11,8 @@ private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "resonanc
 enum PersistenceController {
     static let shared: Result<ModelContainer, Error> = createPersistentContainer()
 
+    // Used by tests and screenshot builds.
+    // swiftlint:disable:next unused_declaration
     static func createContainer(inMemory: Bool = false) -> ModelContainer {
         do {
             let container = try makeContainer(inMemory: inMemory)

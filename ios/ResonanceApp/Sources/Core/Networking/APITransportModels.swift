@@ -1,5 +1,3 @@
-import Foundation
-
 /// Typed server error envelope used instead of exposing arbitrary response bodies.
 struct APIError: Error, Decodable {
     let error: APIErrorBody

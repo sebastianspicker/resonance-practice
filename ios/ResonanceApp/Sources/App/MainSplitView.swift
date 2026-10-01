@@ -12,8 +12,6 @@ struct MainSplitView: View {
   @EnvironmentObject var errorReporter: ErrorReporter
   @Environment(\.capturePresentation) var capturePresentation
   @Query(sort: \LocalCourse.title) var courses: [LocalCourse]
-  @Query(sort: \LocalPracticeEntry.practiceDate, order: .reverse) var allEntries:
-    [LocalPracticeEntry]
   @State var selectionId: String?
   @State var showCalendar = false
   @State var showExport = false
@@ -22,6 +20,8 @@ struct MainSplitView: View {
   @State var isRefreshing = false
   @State var refreshGeneration = 0
 #if RESONANCE_SCREENSHOTS
+  @Query(sort: \LocalPracticeEntry.practiceDate, order: .reverse) var allEntries:
+    [LocalPracticeEntry]
   @State var didApplyScreenshotRoute = false
 #endif
 

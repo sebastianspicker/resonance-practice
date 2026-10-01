@@ -157,7 +157,10 @@ echo "Generating Prisma client..."
 echo "Running migrations..."
 (cd server && npm run prisma:migrate)
 
-echo "Typechecking..."
+echo "Typechecking sources, tests, seeds, and benchmarks..."
+(cd server && npm run typecheck)
+
+echo "Building..."
 (cd server && npm run build)
 
 echo "Running server readiness probe..."
@@ -184,10 +187,10 @@ echo "Linting Swift sources and tests..."
 ./scripts/lint-swift.sh lint
 
 echo "Running iOS simulator verification..."
-IOS_COMPILER_LOG_PATH="$LOG_DIR/resonance-xcodebuild.log" ./scripts/verify-ios.sh
+./scripts/verify-ios.sh
 
 echo "Analyzing compiled Swift..."
-./scripts/lint-swift.sh analyze "$LOG_DIR/resonance-xcodebuild.log"
+./scripts/lint-swift.sh analyze
 
 if xcrun --toolchain swift swift --version 2>/dev/null | grep -Fq "Swift version 6.3.3"; then
 	echo "Running exact Swift 6.3.3 simulator verification..."

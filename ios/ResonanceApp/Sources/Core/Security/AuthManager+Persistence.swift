@@ -62,10 +62,6 @@ extension AuthManager {
     try setSessionPersistenceUncertain(false)
   }
 
-  func clearLocalSession() throws {
-    _ = try clearLocalSessionReturningPreviousSession()
-  }
-
   func clearLocalSessionReturningPreviousSession() throws -> AuthSession? {
     let currentSession = session
     authAttemptID = nil

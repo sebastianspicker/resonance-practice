@@ -6,7 +6,6 @@ enum ServiceConfiguration {
     static let apiBaseURL = resolveAPIBaseURL(
         ProcessInfo.processInfo.environment["RESONANCE_API_BASE"]
     )
-    static let authLoginURL = apiBaseURL.appendingPathComponent("auth/login")
 
     /// Accepts a credential-free HTTP(S) origin/path or falls back to the loopback API.
     static func resolveAPIBaseURL(_ value: String?) -> URL {

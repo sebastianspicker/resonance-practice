@@ -138,7 +138,11 @@ const validateFixtureArtifacts = (fixture: DemoFixture): void => {
     if (!fixture.entries.some((entry) => entry.id === artifact.entryId)) {
       throw new Error(`Invalid demo fixture: artifact parent entry not found: ${artifact.entryId}`);
     }
-    if (!Number.isInteger(artifact.expectedSizeBytes) || artifact.expectedSizeBytes <= 0) {
+    if (
+      artifact.expectedSizeBytes === null ||
+      !Number.isInteger(artifact.expectedSizeBytes) ||
+      artifact.expectedSizeBytes <= 0
+    ) {
       throw new Error(
         `Invalid demo fixture: artifact expectedSizeBytes must be positive: ${artifact.id}`
       );

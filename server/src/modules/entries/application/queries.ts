@@ -69,7 +69,7 @@ export async function listCourseEntries(
   );
 }
 
-async function readEntryPage(
+export async function readEntryPage(
   prisma: PrismaClient,
   visibleWhere: Prisma.PracticeEntryWhereInput,
   cursor: string | undefined,

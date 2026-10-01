@@ -51,7 +51,6 @@ remove_temp_paths() {
 trap remove_temp_paths EXIT
 
 if [[ -n "${IOS_DERIVED_DATA_PATH:-}" ]]; then
-	[[ -z "${IOS_COMPILER_LOG_PATH:-}" ]] || fail "compiler analysis requires a clean build; omit IOS_DERIVED_DATA_PATH."
 	DERIVED_DATA_PATH="$IOS_DERIVED_DATA_PATH"
 else
 	DERIVED_DATA_PATH="$(mktemp -d "${TMPDIR:-/tmp}/resonance-ios-derived-data.XXXXXX")"
@@ -92,12 +91,7 @@ if [[ -n "${IOS_RESULT_BUNDLE_PATH:-}" ]]; then
 	XCODEBUILD_ARGS+=(-resultBundlePath "$IOS_RESULT_BUNDLE_PATH")
 fi
 
-if [[ -n "${IOS_COMPILER_LOG_PATH:-}" ]]; then
-	mkdir -p "$(dirname "$IOS_COMPILER_LOG_PATH")"
-	xcodebuild "${TOOLCHAIN_ARGS[@]}" "${XCODEBUILD_ARGS[@]}" 2>&1 | tee "$IOS_COMPILER_LOG_PATH"
-else
-	xcodebuild "${TOOLCHAIN_ARGS[@]}" "${XCODEBUILD_ARGS[@]}" -quiet
-fi
+xcodebuild "${TOOLCHAIN_ARGS[@]}" "${XCODEBUILD_ARGS[@]}" -quiet
 
 echo "iOS XCTest passed for $DESTINATION."
 
@@ -122,6 +116,7 @@ build_variant() {
 }
 
 build_variant "Release" -configuration Release
+# shellcheck disable=SC2016 # $(inherited) is an xcodebuild build-setting macro
 build_variant "Debug with RESONANCE_SCREENSHOTS" \
 	-configuration Debug \
 	'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) DEBUG RESONANCE_SCREENSHOTS'

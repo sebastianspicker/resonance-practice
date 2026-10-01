@@ -3,7 +3,6 @@ import SwiftUI
 struct EntryArtifactsSection: View {
   let entry: LocalPracticeEntry
   let player: AudioPlayer
-  let playingArtifactID: String?
   let playbackLoadingArtifactID: String?
   let playbackError: (LocalArtifact) -> String?
   let formatTime: (TimeInterval) -> String

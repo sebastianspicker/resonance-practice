@@ -98,15 +98,6 @@ final class QueueStore {
         return ready
     }
 
-    /// Return all items currently in the `failed` state.
-    func fetchFailed() throws -> [SyncQueueItem] {
-        let failedValue = SyncStatus.failed.rawValue
-        let descriptor = FetchDescriptor<SyncQueueItem>(
-            predicate: #Predicate { $0.status == failedValue }
-        )
-        return try modelContext.fetch(descriptor)
-    }
-
     /// Return counts for the published queue metrics.
     func counts(ownerId: String?) -> (pending: Int, failed: Int) {
         guard let ownerId, !ownerId.isEmpty else { return (0, 0) }

@@ -5,7 +5,7 @@ import {
   isSupportedMediaContainer,
 } from '../src/modules/media/application/mediaValidation.js';
 
-function box(type: string, payload = new Uint8Array(), extended = false): Uint8Array {
+function box(type: string, payload: Uint8Array = new Uint8Array(), extended = false): Uint8Array {
   const header = new Uint8Array(extended ? 16 : 8);
   const view = new DataView(header.buffer);
   if (extended) {

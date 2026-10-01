@@ -9,7 +9,6 @@ struct EntryDetailContent: View {
   let showsArtifacts: Bool
   let isConflicted: Bool
   let isLoadingFeedback: Bool
-  let playingArtifactID: String?
   let playbackLoadingArtifactID: String?
   let playbackError: (LocalArtifact) -> String?
   let feedbackStatusLabel: (FeedbackStatus) -> String
@@ -65,7 +64,7 @@ struct EntryDetailContent: View {
           )
           if showsArtifacts {
             EntryArtifactsSection(
-              entry: entry, player: player, playingArtifactID: playingArtifactID,
+              entry: entry, player: player,
               playbackLoadingArtifactID: playbackLoadingArtifactID, playbackError: playbackError,
               formatTime: formatTime, isPlaying: isPlaying, playbackTitle: playbackTitle,
               captureMarkers: captureMarkers, togglePlayback: togglePlayback,

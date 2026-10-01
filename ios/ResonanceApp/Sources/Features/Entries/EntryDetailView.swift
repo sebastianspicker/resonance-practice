@@ -23,8 +23,11 @@ struct EntryDetailView: View {
   @State var feedbackLoadGeneration = 0
   @State var showDeleteConfirmation = false
   @State var showSubmitConfirmation = false
+  // swiftlint:disable unused_declaration
+  // Read through their `$` binding projections, which the analyzer does not count.
   @State var showVideoImporter = false
   @State var showCameraCapture = false
+  // swiftlint:enable unused_declaration
   @State var showEditGoal = false
   @State var editGoalText = ""
   @State var playingArtifactID: String?
@@ -32,7 +35,6 @@ struct EntryDetailView: View {
   @State var playbackErrorArtifactID: String?
   @State var playbackErrorMessage: String?
   @State var playbackTask: Task<Void, Never>?
-  @State var scrollTarget: String?
   @State var practiceStage: PracticeEntryStage
   @State var reflectionText: String
   @State var reflectionError: String?
@@ -56,7 +58,6 @@ struct EntryDetailView: View {
   ) {
     self.entry = entry
     self.showsArtifacts = showsArtifacts
-    _scrollTarget = State(initialValue: initialSection)
     self.onFinish = onFinish
     startsWithRecording = initialSection == "guided-record"
     _reflectionText = State(initialValue: entry.notes ?? "")
@@ -102,7 +103,7 @@ struct EntryDetailView: View {
     EntryDetailContent(
       entry: entry, recorder: recorder, player: player, showsArtifacts: showsArtifacts,
       isConflicted: syncManager.conflictedEntryIDs.contains(entry.id),
-      isLoadingFeedback: isLoadingFeedback, playingArtifactID: playingArtifactID,
+      isLoadingFeedback: isLoadingFeedback,
       playbackLoadingArtifactID: playbackLoadingArtifactID, playbackError: playbackError,
       feedbackStatusLabel: feedbackStatusLabel, feedbackStatusColor: feedbackStatusColor,
       formatTime: formatTime, isPlaying: isPlaying, playbackTitle: playbackButtonTitle,

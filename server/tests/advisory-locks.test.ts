@@ -19,10 +19,10 @@ afterAll(async () => {
 });
 
 async function contenderAcquires(identity: string, seed: number): Promise<boolean> {
-  const [{ acquired }] = await lockContender.$queryRaw<Array<{ acquired: boolean }>>`
+  const rows = await lockContender.$queryRaw<Array<{ acquired: boolean }>>`
     SELECT pg_try_advisory_xact_lock(hashtextextended(${identity}, ${seed})) AS "acquired"
   `;
-  return acquired;
+  return rows[0]?.acquired === true;
 }
 
 /** Assert that `lock` holds exactly the (identity, seed) advisory key until commit. */

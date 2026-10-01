@@ -1,5 +1,3 @@
-import Foundation
-
 /// Keeps screenshot-only persistence and authentication behavior out of the
 /// production composition root while retaining deterministic demo scenarios.
 @MainActor

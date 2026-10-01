@@ -1,5 +1,4 @@
 #if DEBUG || RESONANCE_SCREENSHOTS
-import Foundation
 import SwiftData
 
 // Loads and removes deterministic mock-university data for local demos and screenshots.

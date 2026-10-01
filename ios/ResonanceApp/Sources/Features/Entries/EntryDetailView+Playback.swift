@@ -71,14 +71,6 @@ extension EntryDetailView {
     }
   }
 
-  func statusLabel(_ status: EntryStatus) -> String {
-    status.displayLabel
-  }
-
-  func statusColor(_ status: EntryStatus) -> Color {
-    status.lifecycleStatus.foreground
-  }
-
   func feedbackStatusLabel(_ status: FeedbackStatus) -> String {
     status.displayLabel
   }

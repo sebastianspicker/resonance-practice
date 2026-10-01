@@ -101,14 +101,10 @@ The iOS verifier supports:
 
 - `IOS_DESTINATION` to select a simulator destination;
 - `IOS_TOOLCHAIN` and `IOS_EXPECTED_SWIFT_VERSION` for an alternate toolchain;
-- `IOS_COMPILER_LOG_PATH` to retain an `xcodebuild` compiler log for
-  `./scripts/lint-swift.sh analyze <log>`;
 - `IOS_RESULT_BUNDLE_PATH` to retain an XCTest result bundle at a new path;
 - `IOS_DERIVED_DATA_PATH` to reuse a local build directory on focused reruns.
   Use a separate directory for each Xcode version and Swift toolchain. This
-  option cannot be combined with `IOS_COMPILER_LOG_PATH`, because compiler
-  analysis needs the complete log from a clean build. CI keeps clean build
-  directories.
+  CI keeps clean build directories.
 
 GitHub CI runs the bundled and exact Swift compiler lanes as independent jobs.
 The aggregate `iOS Build` check succeeds only when both pass. Server test files

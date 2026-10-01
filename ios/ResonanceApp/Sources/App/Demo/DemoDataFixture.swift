@@ -25,7 +25,6 @@ enum DemoDataError: LocalizedError {
 struct DemoFixture: Decodable {
     let users: [DemoUser]
     let courses: [DemoCourse]
-    let memberships: [DemoMembership]
     let entries: [DemoEntry]
     let artifacts: [DemoArtifact]
     let feedback: [DemoFeedback]
@@ -40,12 +39,6 @@ struct DemoUser: Decodable {
 struct DemoCourse: Decodable {
     let id: String
     let title: String
-}
-
-struct DemoMembership: Decodable {
-    let userId: String
-    let courseId: String
-    let roleInCourse: String
 }
 
 struct DemoEntry: Decodable {

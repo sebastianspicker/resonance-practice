@@ -1,10 +1,7 @@
 import Foundation
-import os
 import Security
 
 // Encapsulates device-bound keychain reads, writes, and error translation for sensitive local state.
-
-private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "resonance", category: "KeychainStore")
 
 /// Verified persistence operations for the local-data owner marker.
 struct LocalDataOwnerStore {
@@ -104,31 +101,6 @@ enum KeychainStore {
 
     private static func itemQuery(accountKey: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: accountKey]
-    }
-
-    static func set(_ value: String, for key: String) {
-        do {
-            try store(value, for: key)
-        } catch {
-            logger.error("Keychain store error for \(accountKey(for: key)): \(error.localizedDescription)")
-        }
-    }
-
-    static func get(_ key: String) -> String? {
-        do {
-            return try read(key)
-        } catch {
-            logger.error("Keychain get error for \(accountKey(for: key)): \(error.localizedDescription)")
-            return nil
-        }
-    }
-
-    static func remove(_ key: String) {
-        do {
-            try removeStoredValue(for: key)
-        } catch {
-            logger.error("Keychain remove error for \(accountKey(for: key)): \(error.localizedDescription)")
-        }
     }
 }
 

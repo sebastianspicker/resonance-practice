@@ -1,6 +1,5 @@
 import AuthenticationServices
 import Foundation
-import os
 
 // Owns authenticated identity, secure credential dependencies, and browser-session state.
 

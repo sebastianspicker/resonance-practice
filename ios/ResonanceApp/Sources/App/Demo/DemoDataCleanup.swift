@@ -1,5 +1,4 @@
 #if DEBUG || RESONANCE_SCREENSHOTS
-import Foundation
 import SwiftData
 
 // Removes only fixture-owned rows and associated local media from the demo domain.

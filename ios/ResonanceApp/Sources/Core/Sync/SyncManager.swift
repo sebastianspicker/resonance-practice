@@ -1,6 +1,5 @@
 import Foundation
 import os
-import SwiftData
 import UIKit
 
 @MainActor

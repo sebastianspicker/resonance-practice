@@ -7,32 +7,37 @@ import XCTest
 final class SyncQueueWindowTests: XCTestCase {
   @MainActor
   func testLargeOutboxFetchesOnlyOwnerReadyFIFOWindowAndCountsInStore() throws {
-    let outbox = try makeLargeOutbox()
-    let (container, store, now) = (outbox.container, outbox.store, outbox.now)
-    defer { withExtendedLifetime(container) {} }
+    try withLargeOutbox { store, now in
+      let ready = try store.fetchReady(now: now, ownerId: "student-1")
 
-    let ready = try store.fetchReady(now: now, ownerId: "student-1")
-
-    XCTAssertEqual(ready.count, 50)
-    XCTAssertEqual(ready.map(\.id), (0..<50).map { String(format: "ready-%04d", $0) })
-    XCTAssertEqual(store.counts(ownerId: "student-1").pending, 1_000)
-    XCTAssertEqual(store.counts(ownerId: "student-2").pending, 80)
+      XCTAssertEqual(ready.count, 50)
+      XCTAssertEqual(ready.map(\.id), (0..<50).map { String(format: "ready-%04d", $0) })
+      XCTAssertEqual(store.counts(ownerId: "student-1").pending, 1_000)
+      XCTAssertEqual(store.counts(ownerId: "student-2").pending, 80)
+    }
   }
 
   @MainActor
   func testLargeOutboxReadyWindowPerformance() throws {
-    let outbox = try makeLargeOutbox()
-    let (container, store, now) = (outbox.container, outbox.store, outbox.now)
-    defer { withExtendedLifetime(container) {} }
-
-    measure(metrics: [XCTClockMetric()]) {
-      do {
-        let ready = try store.fetchReady(now: now, ownerId: "student-1")
-        XCTAssertEqual(ready.count, 50)
-        XCTAssertEqual(store.counts(ownerId: "student-1").pending, 1_000)
-      } catch {
-        XCTFail("Fetching the seeded outbox failed: \(error)")
+    try withLargeOutbox { store, now in
+      measure(metrics: [XCTClockMetric()]) {
+        do {
+          let ready = try store.fetchReady(now: now, ownerId: "student-1")
+          XCTAssertEqual(ready.count, 50)
+          XCTAssertEqual(store.counts(ownerId: "student-1").pending, 1_000)
+        } catch {
+          XCTFail("Fetching the seeded outbox failed: \(error)")
+        }
       }
+    }
+  }
+
+  /// Runs `body` against a seeded outbox while keeping its in-memory container alive.
+  @MainActor
+  private func withLargeOutbox(_ body: (QueueStore, Date) throws -> Void) throws {
+    let outbox = try makeLargeOutbox()
+    try withExtendedLifetime(outbox.container) {
+      try body(outbox.store, outbox.now)
     }
   }
 

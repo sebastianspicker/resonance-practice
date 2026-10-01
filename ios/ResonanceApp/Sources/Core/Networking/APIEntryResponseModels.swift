@@ -15,7 +15,8 @@ struct EntryResponse: Decodable {
     let consentConfirmedAt: Date?
     let consentScope: String?
     let captureProfile: String?
-    let captureMarkers: [CaptureMarkerResponse]?
+    // swiftlint:disable:next unused_declaration
+    let captureMarkers: [CaptureMarkerResponse]? // Decoded server field, not yet consumed.
     let artifacts: [ArtifactResponse]?
     let createdAt: Date?
     let updatedAt: Date?
@@ -24,6 +25,8 @@ struct EntryResponse: Decodable {
 
 struct ReviewQueueEntry: Decodable {
     let id: String
+    // swiftlint:disable unused_declaration
+    // Decoded server fields that the review UI does not read.
     let courseId: String
     let studentId: String
     let studentName: String
@@ -35,6 +38,7 @@ struct ReviewQueueEntry: Decodable {
     let consentScope: String?
     let captureProfile: String?
     let captureMarkerCount: Int?
+    // swiftlint:enable unused_declaration
     let artifacts: [ArtifactResponse]
 }
 
@@ -56,6 +60,8 @@ struct MarkerResponse: Decodable {
 }
 
 struct CaptureMarkerResponse: Decodable {
+    // swiftlint:disable unused_declaration
+    // Decoded server fields; the client does not consume capture markers from responses yet.
     let id: String
     let entryId: String
     let artifactId: String
@@ -64,4 +70,5 @@ struct CaptureMarkerResponse: Decodable {
     let kind: String
     let note: String?
     let createdAt: Date
+    // swiftlint:enable unused_declaration
 }

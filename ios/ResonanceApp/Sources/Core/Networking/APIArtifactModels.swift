@@ -9,7 +9,8 @@ struct ArtifactSessionCreateResponse: Decodable, Sendable {
     let completed: Bool?
     let uploadUrl: String?
     let requiredHeaders: [String: String]?
-    let expiresInSeconds: Int?
+    // swiftlint:disable:next unused_declaration
+    let expiresInSeconds: Int? // Decoded wire field (v1 contract).
     let currentVersion: Int
 }
 
@@ -25,20 +26,24 @@ struct ArtifactSessionRequest {
 
 /// Final artifact state returned after the server validates an upload session.
 struct ArtifactSessionCompletionResponse: Decodable, Sendable {
-    let artifact: ArtifactResponse
+    // swiftlint:disable:next unused_declaration
+    let artifact: ArtifactResponse // Decoded wire field (v1 contract).
     let currentVersion: Int
 }
 
 struct ArtifactResponse: Decodable {
     let id: String
-    let entryId: String
+    // swiftlint:disable:next unused_declaration
+    let entryId: String // Decoded server field, validated on decode.
     let type: String
     let durationSeconds: Int
-    let expectedSizeBytes: Int?
+    // swiftlint:disable:next unused_declaration
+    let expectedSizeBytes: Int? // Decoded server field (optional).
     let uploadState: String
 }
 
 struct ArtifactDownloadResponse: Decodable {
     let downloadUrl: URL
-    let expiresInSeconds: Int
+    // swiftlint:disable:next unused_declaration
+    let expiresInSeconds: Int // Decoded wire field (v1 contract).
 }

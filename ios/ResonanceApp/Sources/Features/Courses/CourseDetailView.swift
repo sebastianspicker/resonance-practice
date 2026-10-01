@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 // Displays the selected course and switches between its student and teacher workflows.
 

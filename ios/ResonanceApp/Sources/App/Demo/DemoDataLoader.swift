@@ -1,5 +1,4 @@
 #if DEBUG || RESONANCE_SCREENSHOTS
-import Foundation
 import SwiftData
 
 // Materializes a decoded fixture while preserving the local offline queue payload contract.

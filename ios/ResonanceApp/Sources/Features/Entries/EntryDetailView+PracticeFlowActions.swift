@@ -1,5 +1,6 @@
+// AVFoundation re-exports the AVFAudio symbols used here; the analyzer does not attribute them.
+// swiftlint:disable:next unused_import
 import AVFoundation
-import SwiftUI
 
 extension EntryDetailView {
   /// Keep visible submissions moving through the existing queue's upload dependencies and retry policy.

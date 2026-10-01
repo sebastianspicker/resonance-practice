@@ -125,7 +125,11 @@ jobs:
         working-directory: server
         run: npm run prisma:migrate
 
-      - name: Build (typecheck)
+      - name: Typecheck sources, tests, seeds, and benchmarks
+        working-directory: server
+        run: npm run typecheck
+
+      - name: Build
         working-directory: server
         run: npm run build
 
@@ -194,13 +198,11 @@ jobs:
 
       - name: Build and test with Xcode-bundled Swift
         if: matrix.toolchain == 'xcode'
-        env:
-          IOS_COMPILER_LOG_PATH: ${{ runner.temp }}/resonance-xcodebuild.log
         run: ./scripts/verify-ios.sh
 
       - name: Analyze compiled Swift
         if: matrix.toolchain == 'xcode'
-        run: ./scripts/lint-swift.sh analyze "${{ runner.temp }}/resonance-xcodebuild.log"
+        run: ./scripts/lint-swift.sh analyze
 
       - name: Install exact Swift 6.3.3 toolchain
         if: matrix.toolchain == 'swift'

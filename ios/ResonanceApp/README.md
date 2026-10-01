@@ -72,7 +72,7 @@ The verifier selects an available iPhone Simulator unless `IOS_DESTINATION` is
 set, creates temporary DerivedData, runs the source-layer check, and executes
 XCTest through the shared scheme. It then compiles a Release build and a Debug
 build with `RESONANCE_SCREENSHOTS` for a generic simulator. It also accepts
-`IOS_TOOLCHAIN`, `IOS_EXPECTED_SWIFT_VERSION`, `IOS_COMPILER_LOG_PATH`,
+`IOS_TOOLCHAIN`, `IOS_EXPECTED_SWIFT_VERSION`,
 `IOS_RESULT_BUNDLE_PATH`, and `IOS_DERIVED_DATA_PATH`.
 
 ## Demo data and screenshot capture

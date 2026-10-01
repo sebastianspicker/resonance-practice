@@ -26,7 +26,8 @@
   },
   "scripts": {
     "dev": "tsx watch src/app/index.ts",
-    "build": "rm -rf dist && tsc -p tsconfig.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
     "clean": "rm -rf dist node_modules",
     "start": "node dist/app/index.js",
     "test": "vitest run",
