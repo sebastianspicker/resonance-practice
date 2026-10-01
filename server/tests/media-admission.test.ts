@@ -1,9 +1,7 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { describe, expect, it } from 'vitest';
-import {
-  assertSupportedMediaContainer,
-  isSupportedMediaContainer,
-} from '../src/modules/media/application/mediaValidation.js';
+import { assertSupportedMediaContainer } from '../src/modules/media/application/mediaValidation.js';
+import { ApiError } from '../src/platform/http/errors.js';
 
 function box(type: string, payload: Uint8Array = new Uint8Array(), extended = false): Uint8Array {
   const header = new Uint8Array(extended ? 16 : 8);
@@ -47,21 +45,49 @@ function fixture(type: 'audio' | 'video'): Uint8Array {
   );
 }
 
+/** Serve ranged GETs of `media` from a stub S3 client, as production storage would. */
+function rangedStorage(media: Uint8Array, ranges: string[] = []) {
+  return {
+    send: async (command: GetObjectCommand) => {
+      const range = command.input.Range!;
+      ranges.push(range);
+      const match = /^bytes=(\d+)-(\d+)$/.exec(range)!;
+      return { Body: media.slice(Number(match[1]), Number(match[2]) + 1) };
+    },
+  };
+}
+
+/** Run the production probe; true when admitted, false when rejected as unsupported media. */
+async function isAdmitted(media: Uint8Array, type: 'audio' | 'video'): Promise<boolean> {
+  try {
+    await assertSupportedMediaContainer(
+      rangedStorage(media) as never,
+      'fixture',
+      type,
+      media.length
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'UPLOAD_INVALID') return false;
+    throw error;
+  }
+}
+
 describe('structural ISO-BMFF media admission', () => {
-  it('accepts minimal bounded audio and video fixtures', () => {
-    expect(isSupportedMediaContainer(fixture('audio'), 'audio')).toBe(true);
-    expect(isSupportedMediaContainer(fixture('video'), 'video')).toBe(true);
+  it('accepts minimal bounded audio and video fixtures', async () => {
+    expect(await isAdmitted(fixture('audio'), 'audio')).toBe(true);
+    expect(await isAdmitted(fixture('video'), 'video')).toBe(true);
   });
 
-  it('rejects marker-only payloads and wrong handlers without scanning arbitrary bytes', () => {
+  it('rejects marker-only payloads and wrong handlers without scanning arbitrary bytes', async () => {
     const markerOnly = Buffer.from('\0\0\0\x18ftypM4A \0\0\0\0M4A soun');
     const wrongAudio = join(
       ftyp('M4A ', 'M4A '),
       box('moov', box('trak', box('mdia', hdlr('vide')))),
       box('mdat', Uint8Array.of(1))
     );
-    expect(isSupportedMediaContainer(markerOnly, 'audio')).toBe(false);
-    expect(isSupportedMediaContainer(wrongAudio, 'audio')).toBe(false);
+    expect(await isAdmitted(markerOnly, 'audio')).toBe(false);
+    expect(await isAdmitted(wrongAudio, 'audio')).toBe(false);
   });
 
   it.each([
@@ -87,17 +113,26 @@ describe('structural ISO-BMFF media admission', () => {
         new Uint8Array([255, 255, 255, 255, 255, 255, 255, 255])
       ),
     ],
-  ])('rejects %s', (_name, value) => {
-    expect(isSupportedMediaContainer(value, 'audio')).toBe(false);
+    [
+      'duplicate ftyp',
+      join(
+        ftyp('M4A ', 'M4A '),
+        ftyp('M4A ', 'M4A '),
+        box('moov', box('trak', box('mdia', hdlr('soun')))),
+        box('mdat', Uint8Array.of(1))
+      ),
+    ],
+  ])('rejects %s', async (_name, value) => {
+    expect(await isAdmitted(value, 'audio')).toBe(false);
   });
 
-  it('accepts a deliberate 64-bit extended mdat size when structurally bounded', () => {
+  it('accepts a deliberate 64-bit extended mdat size when structurally bounded', async () => {
     const media = join(
       ftyp('M4A ', 'M4A '),
       box('moov', box('trak', box('mdia', hdlr('soun')))),
       box('mdat', Uint8Array.of(1), true)
     );
-    expect(isSupportedMediaContainer(media, 'audio')).toBe(true);
+    expect(await isAdmitted(media, 'audio')).toBe(true);
   });
 
   it('reduces the 66-request top-level probe baseline to one cached range request', async () => {
@@ -108,14 +143,7 @@ describe('structural ISO-BMFF media admission', () => {
       box('mdat', Uint8Array.of(1))
     );
     const ranges: string[] = [];
-    const s3 = {
-      send: async (command: GetObjectCommand) => {
-        const range = command.input.Range!;
-        ranges.push(range);
-        const match = /^bytes=(\d+)-(\d+)$/.exec(range)!;
-        return { Body: media.slice(Number(match[1]), Number(match[2]) + 1) };
-      },
-    };
+    const s3 = rangedStorage(media, ranges);
 
     await expect(
       assertSupportedMediaContainer(s3 as never, 'fixture', 'audio', media.length)

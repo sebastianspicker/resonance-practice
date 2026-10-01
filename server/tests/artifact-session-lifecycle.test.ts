@@ -46,6 +46,19 @@ describe('artifact-session lifecycle', () => {
     expect(replay.body).toMatchObject({ completed: true, uploadUrl: null, requiredHeaders: null });
   });
 
+  it('rejects a stale baseVersion with the entry version-conflict envelope', async () => {
+    await seedEntry('upload-entry', 'student-1', { version: 3 });
+    const stale = await createSession(await login('student'), sessionPayload());
+    expect(stale.status).toBe(409);
+    expect(stale.body.error).toMatchObject({
+      code: 'VERSION_CONFLICT',
+      message: 'Entry has changed on the server',
+      details: { actual: 3 },
+      currentVersion: 3,
+    });
+    expect(await prisma.artifact.count()).toBe(0);
+  });
+
   it('maps exhausted per-entry and per-user session quotas to RATE_LIMITED before admission', async () => {
     const token = await login('student');
     const allocate = async (entryId: string, index: number, baseVersion: number) =>

@@ -1,11 +1,11 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { artifactSessionCleanupAt, queueStorageDeletion } from '../storageDeletion/schedule.js';
+import { bumpEntryVersion } from '../../../entries/application/versionConflict.js';
 import {
   isCandidateArtifactInState,
   lockAndFindArtifact,
   type ArtifactCandidate,
   type LockedArtifact,
-  incrementEntryVersion,
 } from './artifactTransaction.js';
 import { resolveCleanupOptions, type CleanupOptions } from './shared.js';
 
@@ -84,7 +84,7 @@ async function expireStaleArtifactCandidate(
   await tx.artifactUploadSession.deleteMany({
     where: { artifactId: artifact.id, completedAt: null, expiresAt: { lte: now } },
   });
-  await incrementEntryVersion(tx, candidate.entryId);
+  await bumpEntryVersion(tx, candidate.entryId);
   return 1;
 }
 

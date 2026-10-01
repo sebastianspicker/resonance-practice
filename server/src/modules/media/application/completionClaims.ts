@@ -9,6 +9,7 @@ import { ErrorCodes } from '../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../platform/http/errors.js';
 import { requireStudentOwner } from '../../entries/application/authorization.js';
 import { assertEntryActive, lockEntry } from '../../entries/application/locks.js';
+import { bumpEntryVersion } from '../../entries/application/versionConflict.js';
 import { artifactFinalKey } from './artifactIdentity.js';
 import { artifactCompletionClaimLeaseEnd } from './completionLease.js';
 import { artifactSessionCleanupAt, queueStorageDeletion } from './storageDeletion/schedule.js';
@@ -194,10 +195,7 @@ export async function finalizeArtifactCompletionClaim(
         completionClaimedAt: null,
       },
     });
-    const updated = await tx.practiceEntry.update({
-      where: { id: entry.id },
-      data: { version: { increment: 1 } },
-    });
+    const updated = await bumpEntryVersion(tx, entry.id);
     const artifact = await tx.artifact.findUniqueOrThrow({ where: { id: current.artifactId } });
     return { expired: false as const, artifact, currentVersion: updated.version };
   });

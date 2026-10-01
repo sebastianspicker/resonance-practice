@@ -1,42 +1,23 @@
 ## Summary
 
-- What changed?
-- Why is it needed?
-- Which user or public release surface changes?
+<!-- What changed, and why? -->
 
-## Testing
+## Affected behavior
 
-- [ ] Full local CI: `./scripts/ci-local.sh --with-docker`
-- [ ] If full local CI cannot run, I recorded the exact skipped gate and reason below.
-- [ ] Docs and release notes are accurate for the source-only public alpha (`0.1.0-alpha.1`).
-- [ ] Documentation links and commands touched by this PR were checked locally.
-- [ ] API, security, support, migration, and release documentation match the implemented behavior.
-- [ ] iOS screenshots, when changed, are current, reviewed, redacted, and stored only in `docs/assets/screenshots/approved/`.
-- [ ] Publication-boundary guard: `./scripts/check-no-build-artifacts.sh`
+<!-- Users, API, data, security, or operations touched by this change. -->
 
-## Verification Notes
+## Verification
 
-- Commands run and results:
-- Skipped checks and reason:
+<!-- Commands you ran and their results, plus checks you could not run and why. -->
 
-## Risk
+## Review notes
 
-- Runtime/API/storage/schema behavior changed?
-- Migration, auth, sync, media, or data-retention impact?
-- Rollback or manual verification notes?
-
-## Release impact
-
-- Version or changelog impact:
-- Screenshot or public-doc impact:
-- GitHub release, tag, or repository-metadata follow-up:
+<!-- Migrations, auth, sync, media, privacy, retention, compatibility, rollback, docs, changelog. -->
 
 ## Checklist
 
-- [ ] No secrets/PII in logs or commits
-- [ ] Docs updated (README/RUNBOOK/SECURITY as needed)
-- [ ] `CHANGELOG.md` and applicable release notes are updated
-- [ ] Superseded public docs are updated, removed, or intentionally retained with current context
-- [ ] Local workspace notes and generated analysis files are not tracked
-- [ ] No private, editor, analyzer-state, binary, or unapproved screenshot files are included
-- [ ] I did not include credentials, signed URLs, environment values, private recordings, or real personal data
+- [ ] The change is focused and preserves unrelated work.
+- [ ] Tests cover the changed behavior and important failure paths.
+- [ ] Public documentation matches the implementation.
+- [ ] No credentials, private media, personal data, generated output, or local tool state is included.
+- [ ] `./scripts/verify-repository.sh` passes.

@@ -112,8 +112,8 @@ The same tour is available as a gallery on the
 | [`ios/ResonanceApp/`](ios/ResonanceApp/README.md) | Offline SwiftUI client: local persistence, capture, review, and synchronization | iOS/iPadOS 17+, built and tested with Xcode |
 | [`server/`](server/README.md) | Fastify API: identity, authorization, persistence, media sessions, and synchronization | Private Node.js 24 package, built and run as one server monolith |
 | [`demo/site/`](demo/site/README.md) | Presentation-only browser walkthrough | Dependency-free static files, published independently with GitHub Pages |
-| [`contracts/`](contracts/v1-api-contract.json) | Canonical v1 routes and cross-client wire vocabulary | Validated against the TypeScript routes and Swift networking models |
-| [`infra/`](infra/docker-compose.yml) | Disposable PostgreSQL and MinIO dependencies | Loopback-only Docker Compose for development and CI, not production |
+| [`contracts/`](contracts/v1-api-contract.json) | Canonical v1 routes and cross-client wire vocabulary | Checked against live server responses (Vitest) and the Swift networking models |
+| [`infra/`](infra/docker-compose.yml) | Disposable PostgreSQL and S3-compatible storage (SeaweedFS) | Loopback-only Docker Compose for development and CI, not production |
 
 The client and server build independently and share the v1 HTTP contract. Neither
 is published as a reusable library. The
@@ -123,7 +123,7 @@ runtime flows.
 ## Prerequisites
 
 - Node.js 24.x and npm 10 or later
-- Docker with Docker Compose for local PostgreSQL and MinIO
+- Docker with Docker Compose for local PostgreSQL and S3-compatible storage
 - macOS, Xcode, `xcrun`, `xcodebuild`, `jq`, and an available iPhone Simulator
   for the iOS verification lane
 
@@ -158,7 +158,7 @@ Run commands from the repository root unless a different directory is shown.
 | Purpose | Command |
 | --- | --- |
 | Repository contracts, docs, fixtures, and publication hygiene | `./scripts/verify-repository.sh` |
-| Server build and type-check | `cd server && npm run build` |
+| Server type-check and build | `cd server && npm run typecheck && npm run build` |
 | Server tests | `cd server && npm test` |
 | Server lint, dead-code, and duplication checks | `cd server && npm run quality` |
 | Server formatting check | `cd server && npm run format:check` |

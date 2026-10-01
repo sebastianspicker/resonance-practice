@@ -1,17 +1,10 @@
-/** Process entry point that owns dependency lifecycle and background maintenance. */
+/** Process entry point that owns dependency lifecycle and schedules background maintenance. */
 import { PrismaClient } from '@prisma/client';
 import { config } from '../platform/config.js';
-import {
-  cleanupCompletedArtifactSessions,
-  cleanupFailedArtifacts,
-} from '../modules/media/application/cleanup/artifactCleanup.js';
-import { expireStaleArtifactUploads } from '../modules/media/application/cleanup/staleUploads.js';
-import { retryStorageDeletionJobs } from '../modules/media/application/storageDeletion/retry.js';
 import { settlesWithin, withDeadline } from '../platform/deadline.js';
-import { cleanupSyncReceipts } from '../modules/sync/application/receipts.js';
-import { cleanupRevokedRefreshTokens } from '../modules/identity/application/maintenance.js';
 import { createS3Client, ensureBucket } from '../platform/storage/s3.js';
 import { buildServer } from '../server.js';
+import { createMaintenanceRunner, maintenanceJobs } from './maintenance.js';
 
 const prisma = new PrismaClient();
 const s3 = createS3Client();
@@ -20,48 +13,7 @@ const SHUTDOWN_GRACE_MS = 5_000;
 
 const app = buildServer(prisma, s3);
 
-let activeStorageCleanup: Promise<void> | null = null;
-/** Coalesce interval and startup cleanup so slow storage never overlaps itself. */
-function retryStorageCleanupSafely(): Promise<void> {
-  if (activeStorageCleanup) return activeStorageCleanup;
-  const cleanup = (async () => {
-    try {
-      await expireStaleArtifactUploads(prisma);
-    } catch (err) {
-      app.log.error({ err }, 'Failed to expire stale artifact uploads');
-    }
-    try {
-      await cleanupFailedArtifacts(prisma);
-    } catch (err) {
-      app.log.error({ err }, 'Failed to prune retained failed artifacts');
-    }
-    try {
-      await cleanupCompletedArtifactSessions(prisma);
-    } catch (err) {
-      app.log.error({ err }, 'Failed to prune completed artifact upload sessions');
-    }
-    try {
-      await retryStorageDeletionJobs(prisma, s3, app.log);
-    } catch (err) {
-      app.log.error({ err }, 'Failed to process queued S3 deletions');
-    }
-    try {
-      await cleanupSyncReceipts(prisma);
-    } catch (err) {
-      app.log.error({ err }, 'Failed to expire sync command receipts');
-    }
-    try {
-      await cleanupRevokedRefreshTokens(prisma);
-    } catch (err) {
-      app.log.error({ err }, 'Failed to expire revoked refresh tokens');
-    }
-  })();
-  activeStorageCleanup = cleanup;
-  void cleanup.finally(() => {
-    if (activeStorageCleanup === cleanup) activeStorageCleanup = null;
-  });
-  return cleanup;
-}
+const maintenance = createMaintenanceRunner(maintenanceJobs(prisma, s3, app.log), app.log);
 
 let storageCleanupTimer: ReturnType<typeof setInterval> | null = null;
 let shuttingDown = false;
@@ -84,8 +36,9 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
     app.log.info({ signal }, 'Received signal, shutting down gracefully');
     if (storageCleanupTimer) clearInterval(storageCleanupTimer);
     await waitForShutdownStep(app.close(), 'HTTP server shutdown');
-    if (activeStorageCleanup) {
-      await waitForShutdownStep(activeStorageCleanup, 'storage cleanup shutdown');
+    const activeMaintenance = maintenance.inFlight();
+    if (activeMaintenance) {
+      await waitForShutdownStep(activeMaintenance, 'storage cleanup shutdown');
     }
     await waitForShutdownStep(prisma.$disconnect(), 'PostgreSQL disconnect');
     process.exit(0);
@@ -107,10 +60,10 @@ try {
   await app.listen({ port: config.port, host: config.host });
   app.log.info(`Server running at ${config.host}:${config.port}`);
   storageCleanupTimer = setInterval(() => {
-    void retryStorageCleanupSafely();
+    void maintenance.run();
   }, STORAGE_CLEANUP_INTERVAL_MS);
   storageCleanupTimer.unref();
-  void retryStorageCleanupSafely();
+  void maintenance.run();
 } catch (err) {
   app.log.error(err);
   await waitForShutdownStep(prisma.$disconnect(), 'PostgreSQL disconnect');

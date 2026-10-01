@@ -15,13 +15,6 @@ export async function lockAndFindArtifact(
   return tx.artifact.findUnique({ where: { id: candidate.id } });
 }
 
-export async function incrementEntryVersion(tx: Prisma.TransactionClient, entryId: string) {
-  await tx.practiceEntry.update({
-    where: { id: entryId },
-    data: { version: { increment: 1 } },
-  });
-}
-
 export function isCandidateArtifactInState(
   artifact: Pick<LockedArtifact, 'entryId' | 'uploadState'>,
   candidate: Pick<ArtifactCandidate, 'entryId'>,

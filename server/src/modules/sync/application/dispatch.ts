@@ -137,9 +137,7 @@ export function apiErrorResult(command: SyncCommand, error: ApiError): SyncComma
       resource: entryResource(error.entry),
     };
   }
-  const status: SyncCommandStatus =
-    error.code === ErrorCodes.VERSION_CONFLICT ? 'conflict' : 'rejected';
-  return { ...baseResult(command, status), code: error.code, message: error.message };
+  return { ...baseResult(command, 'rejected'), code: error.code, message: error.message };
 }
 
 export function retryableResult(command: SyncCommand, message: string): SyncCommandResult {

@@ -2,12 +2,12 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import { ErrorCodes } from '../../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../../platform/http/errors.js';
 import { isS3NotFoundError } from '../../../../platform/storage/s3.js';
+import { bumpEntryVersion } from '../../../entries/application/versionConflict.js';
 import {
   isCandidateArtifactInState,
   lockAndFindArtifact,
   type ArtifactCandidate,
   type LockedArtifact,
-  incrementEntryVersion,
 } from './artifactTransaction.js';
 import { resolveCleanupOptions, type CleanupOptions } from './shared.js';
 
@@ -94,7 +94,7 @@ async function cleanupFailedArtifactCandidate(
   if (!isRetainedFailedArtifact(artifact, candidate, failedBefore)) return 0;
 
   await tx.artifact.delete({ where: { id: artifact.id } });
-  await incrementEntryVersion(tx, candidate.entryId);
+  await bumpEntryVersion(tx, candidate.entryId);
   return 1;
 }
 

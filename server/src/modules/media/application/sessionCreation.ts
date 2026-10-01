@@ -9,6 +9,10 @@ import { ApiError } from '../../../platform/http/errors.js';
 import { requireStudentOwner } from '../../entries/application/authorization.js';
 import { toArtifactResponseDto } from '../../entries/application/dto.js';
 import { assertEntryActive, lockEntry } from '../../entries/application/locks.js';
+import {
+  bumpEntryVersion,
+  requireEntryVersion,
+} from '../../entries/application/versionConflict.js';
 import { artifactSessionPayloadHash, artifactStagingKey } from './artifactIdentity.js';
 import { lockArtifactSessionIdentity } from './completionClaims.js';
 import { artifactCompletionClaimLeaseEnd } from './completionLease.js';
@@ -109,11 +113,7 @@ async function prepareNewArtifactSession(
   const entry = await lockEntry(tx, input.entryId);
   assertEntryActive(entry);
   await requireStudentOwner(tx, input.userId, entry, 'upload artifacts');
-  if (entry.version !== input.baseVersion) {
-    throw new ApiError(409, ErrorCodes.VERSION_CONFLICT, 'Entry has changed on the server', {
-      actual: entry.version,
-    });
-  }
+  requireEntryVersion(entry, input.baseVersion);
   if (entry.status !== 'draft') {
     throw new ApiError(
       409,
@@ -149,10 +149,7 @@ async function prepareNewArtifactSession(
       expiresAt,
     },
   });
-  const updated = await tx.practiceEntry.update({
-    where: { id: entry.id },
-    data: { version: { increment: 1 } },
-  });
+  const updated = await bumpEntryVersion(tx, entry.id);
   return { session, artifact, version: updated.version, completed: false };
 }
 

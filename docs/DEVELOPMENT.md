@@ -31,7 +31,8 @@ npm run prisma:seed
 npm run dev
 ```
 
-Compose starts loopback-only PostgreSQL and MinIO. The development server
+Compose starts loopback-only PostgreSQL and SeaweedFS, an S3-compatible store
+on port 9000 that enforces the development credentials. The development server
 defaults to `127.0.0.1:4000`; `GET /health` checks process liveness and
 `GET /ready` checks PostgreSQL and S3 availability.
 
@@ -57,9 +58,10 @@ From the repository root, with Docker running:
 node scripts/demo/validate-fixture.mjs
 ```
 
-The bootstrap validates the fixture, starts PostgreSQL and MinIO, installs
-server dependencies, applies migrations, and seeds mock records. It verifies
-MinIO; API readiness is reported only when the API is already running. In the
+The bootstrap validates the fixture, starts PostgreSQL and S3 storage and waits
+for both to report healthy, installs server dependencies, applies migrations,
+and seeds mock records. API readiness is reported only when the API is already
+running. In the
 app, sign in through development login and use **Settings > Debug > Load Mock
 Demo Data**.
 
@@ -77,23 +79,25 @@ Run commands from the repository root unless the command changes directory.
 | Scope | Command | Notes |
 | --- | --- | --- |
 | Pure repository checks | `./scripts/verify-repository.sh` | Checks Node version, the v1 contract and generated projection, fixtures, static demo, Markdown links and images, secrets, and committed build artifacts. |
-| Server build/type-check | `cd server && npm run build` | Removes and recreates generated `server/dist/`. |
+| Server type-check | `cd server && npm run typecheck` | Checks `src`, `tests`, `prisma`, and `benchmarks` without emitting. |
+| Server build | `cd server && npm run build` | Removes and recreates generated `server/dist/` from `src`. |
 | Server tests | `cd server && npm test` | Uses Vitest with real Prisma/PostgreSQL and mocked S3. |
 | Server contract tests | `cd server && npm run test:contracts` | Checks the v1 route contract and module dependency rules. |
 | Server lint and quality | `cd server && npm run quality` | Runs ESLint, Knip, and cross-language duplication checks. |
 | Server format check | `cd server && npm run format:check` | Run `npm run format` only when you intend to rewrite TypeScript formatting. |
 | Swift lint | `./scripts/lint-swift.sh lint` | Requires SwiftLint 0.63.2. |
-| iOS build and test | `./scripts/verify-ios.sh` | Runs the layering guard and XCTest through the shared Xcode scheme. |
+| Swift analysis | `./scripts/lint-swift.sh analyze` | Builds with the legacy Swift driver, then runs the unused-declaration and unused-import analyzer rules; fails if no files were analyzed. |
+| iOS build and test | `./scripts/verify-ios.sh` | Runs the source-layer check, XCTest through the shared scheme, and Release and screenshot-capture builds. |
 | Public Markdown links and images | `node scripts/validate-public-docs.mjs` | Checks repository containment, existence, and publication eligibility. Images need alt text. |
 | Full local CI | `./scripts/ci-local.sh --with-docker` | Provisions disposable services, runs the server and iOS lanes, and stops Compose on exit. |
 
 `./scripts/ci-local.sh` without `--with-docker` still needs a running Docker
 daemon for Compose validation, ShellCheck, and actionlint, but expects
-PostgreSQL and MinIO to be supplied separately.
+PostgreSQL and S3 storage to be supplied separately.
 
-The full lane reads the required server configuration from the process
-environment or from the valid `server/.env` created during setup, including both
-distinct JWT secrets. A direct `cd server && npm test` is a focused rerun: it
+The full lane exports local-only defaults for the required server configuration,
+including two distinct JWT secrets; values already set in the process
+environment take precedence, and `server/.env` never overrides them. A direct `cd server && npm test` is a focused rerun: it
 expects the guarded `resonance_test` database to exist with current migrations
 already applied.
 
@@ -148,8 +152,13 @@ The separate development reset is deliberately destructive:
 
 ```bash
 cd server
+AUTH_MODE=dev \
+DATABASE_URL=postgresql://resonance:resonance@localhost:5432/resonance \
 RESONANCE_CONFIRM_DEV_DB_RESET=RESET_DEVELOPMENT_DATABASE npm run db:reset
 ```
+
+All three values must be in the process environment; the guard does not read
+`server/.env`.
 
 It refuses any mode except `AUTH_MODE=dev` and any database other than a loopback
 `resonance` database using the `public` schema. Demo reset and test database

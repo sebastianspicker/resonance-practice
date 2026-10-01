@@ -1,11 +1,14 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Documentation index
-    url: https://github.com/sebastianspicker/resonance/blob/main/docs/INDEX.md
-    about: Start here for canonical product, architecture, API, security, and release docs.
-  - name: Alpha support guide
-    url: https://github.com/sebastianspicker/resonance/blob/main/SUPPORT.md
-    about: Check the source-alpha support boundary and choose the right issue type.
+  - name: Read the README first
+    url: https://github.com/sebastianspicker/resonance-practice/blob/main/README.md
+    about: Project overview, components, quick start, and the documentation index.
+  - name: Setup and development guide
+    url: https://github.com/sebastianspicker/resonance-practice/blob/main/docs/DEVELOPMENT.md
+    about: Local setup, demo data, tests, and the validation matrix.
+  - name: Support boundaries
+    url: https://github.com/sebastianspicker/resonance-practice/blob/main/SUPPORT.md
+    about: What this project does and does not support, and how to get help.
   - name: Security policy
-    url: https://github.com/sebastianspicker/resonance/blob/main/SECURITY.md
-    about: Report vulnerabilities privately; do not open a public issue.
+    url: https://github.com/sebastianspicker/resonance-practice/blob/main/SECURITY.md
+    about: Report vulnerabilities privately. Do not open a public issue.

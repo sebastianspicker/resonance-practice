@@ -102,8 +102,9 @@ them:
 `RESONANCE_DEMO_UNIVERSITY_NAME` overrides the university name on the sign-in
 screen in every build.
 
-The full local CI lane additionally runs SwiftLint analysis against the compiler
-log and verifies with the exact Swift 6.3.3 toolchain.
+The full local CI lane additionally runs `./scripts/lint-swift.sh analyze`, which
+builds the app and applies the SwiftLint analyzer rules, and verifies with the
+exact Swift 6.3.3 toolchain.
 
 ## Generated and local files
 

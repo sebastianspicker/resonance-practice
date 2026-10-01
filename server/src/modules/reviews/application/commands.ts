@@ -9,7 +9,10 @@ import {
   type EntryCommandInput,
 } from '../../entries/application/commands.js';
 import { lockEntry } from '../../entries/application/locks.js';
-import { requireEntryVersion } from '../../entries/application/versionConflict.js';
+import {
+  bumpEntryVersion,
+  requireEntryVersion,
+} from '../../entries/application/versionConflict.js';
 import { parseFeedbackPayload } from './payloads.js';
 
 /** Receipt scope for createFeedback, taken from the unparsed payload before the handler runs. */
@@ -69,10 +72,7 @@ export async function createFeedback(
       markers: { create: input.markers },
     },
   });
-  return tx.practiceEntry.update({
-    where: { id: entry.id },
-    data: { status: 'reviewed', version: { increment: 1 } },
-  });
+  return bumpEntryVersion(tx, entry.id, { status: 'reviewed' });
 }
 
 function requireSubmittedEntry(entry: PracticeEntry): void {

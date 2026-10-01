@@ -102,25 +102,6 @@ async function collectTopLevelBox(
   metadata.metadataBytes += bytes.length;
 }
 
-/** Pure structural parser for fixtures and regression tests. */
-export function isSupportedMediaContainer(data: Uint8Array, type: ArtifactType): boolean {
-  try {
-    const boxes = parseChildren(data, 0, data.length, 0);
-    const ftyp = boxes.find((box) => box.type === 'ftyp');
-    const moov = boxes.find((box) => box.type === 'moov');
-    const hasMdat = boxes.some((box) => box.type === 'mdat' && box.end > box.headerSize);
-    return Boolean(
-      ftyp &&
-      moov &&
-      hasMdat &&
-      hasSupportedFtypBox(data, ftyp, type) &&
-      hasExpectedTrackBox(data, moov, type)
-    );
-  } catch {
-    return false;
-  }
-}
-
 function hasSupportedFtyp(ftyp: Uint8Array, type: ArtifactType): boolean {
   const box = parseBox(ftyp, 0, ftyp.length, ftyp.length);
   return Boolean(box && box.end === ftyp.length && hasSupportedFtypBox(ftyp, box, type));

@@ -37,27 +37,53 @@ server, or data stores.
 
 ## Server
 
-`server/src/server.ts` is the public composition entry point. `server/src/app/`
-assembles process lifecycle, transport middleware, readiness, and route
-registration. `server/src/platform/` owns configuration, HTTP error and input
-contracts, deadlines, and the S3 adapter.
+`server/src/server.ts` exports `buildServer(prisma, s3)`, which both the process
+entry point and the tests use. `server/src/app/` owns the process lifecycle
+(`index.ts`: connections, listening, shutdown; `maintenance.ts`: the ordered
+background jobs) and the
+Fastify assembly (`serverRuntime.ts`: transport policy, readiness, route
+registration). `server/src/platform/` holds code no feature owns:
+configuration, the HTTP error, input, pagination, and authenticated-request
+contracts, deadlines, PostgreSQL advisory locks, and the S3 adapter.
 
-| Module | Responsibility |
+| Module | Owns |
 | --- | --- |
-| `identity` | Development login, OIDC, token sessions, and issuer-scoped identity mapping. |
-| `courses` | Course membership authorization and course reads. |
-| `entries` | Course-scoped entry lists, entry reads, ownership, lifecycle queries, and deletion. |
-| `media` | Artifact sessions, completion, protected download sessions, and cleanup. |
-| `reviews` | Course review queues, feedback reads, and review-facing projections. |
-| `sync` | Typed v1 command parsing, admission, receipts, idempotency, and ordered execution. |
+| `identity` | Development login, OIDC, native PKCE code exchange, token sessions, issuer-scoped identity mapping, and the bearer-token `preHandler`. |
+| `courses` | Course membership lookups, course-role authorization, and course lists. |
+| `entries` | The practice-entry aggregate: entry commands and their rules (create, update, capture markers, submit), optimistic versions, entry locks, visibility and ownership, list and detail reads, and removal of the entry row. |
+| `media` | Artifacts and their storage lifecycle: upload sessions, quotas, completion claims, container validation, download sessions, storage-deletion scheduling, and cleanup jobs. |
+| `reviews` | Feedback: the create-feedback command and its rules, feedback reads, the review queue, and feedback removal. |
+| `sync` | The v1 command gateway: envelope parsing, admission limits, durable receipts and replay, dispatch to the owning module, and mapping outcomes to sync results. |
 
-Each module splits an `http/` adapter from an `application/` boundary: HTTP code
-validates transport data and invokes application code, while application code
-owns authorization and persistence transactions. The feature dependency graph
-is acyclic — Entries may use Courses; Media may use Entries; Reviews may use
-Courses and Entries; Sync may use Entries — and Identity and Courses otherwise
-stand alone. Cross-feature imports target `application/` only. Modules may
-depend on `platform`; `platform` never depends on modules or `app`.
+Each module splits an `http/` adapter from an `application/` boundary. HTTP code
+parses transport input and maps responses; application code owns rules,
+authorization, and transactions. Commands throw `ApiError`s; a stale
+`baseVersion` throws `EntryVersionConflictError`, which sync reports as a
+`conflict` result carrying the current entry.
+
+The feature dependency graph is acyclic and only reaches into `application/`:
+
+| Module | May use |
+| --- | --- |
+| `identity`, `courses` | no other module |
+| `entries` | `courses` |
+| `media` | `entries` |
+| `reviews` | `courses`, `entries` |
+| `sync` | `courses`, `entries`, `media`, `reviews` |
+
+Sync dispatches each command to its owning module and composes the one use case
+that spans modules. Deleting an entry runs, in one
+transaction: lock and authorize the entry, queue its media for storage deletion
+(media), delete feedback targeting it (reviews), then delete the entry and keep a
+tombstone (entries). `platform` never imports modules or `app`.
+`server/tests/module-dependency-rules.test.ts` enforces these rules, plus route
+ownership per module and the single authenticated-request type. The rules
+govern imports; artifact, feedback, and marker rows are children of the entry in
+the database, so entry and review rules may read them inside the entry lock
+(for example, submission requires uploaded artifacts) while their lifecycle
+stays with the owning module. Sync's `entryResource` is the command-result
+projection of an entry, deliberately without artifacts; entry reads use
+`entries/application/dto.ts`.
 
 ## Client
 
@@ -65,13 +91,20 @@ The SwiftUI target is organized under `ios/ResonanceApp/Sources/`:
 
 | Directory | Responsibility |
 | --- | --- |
-| `App` | Composition, app state, navigation, and demo dependencies. |
-| `Core` | Domain models, persistence, networking, security, media, calendar, export, and synchronization. |
-| `Features` | Course, capture, entry, feedback, review, authentication, settings, and sync-status workflows. |
+| `App` | Composition (`AppState`), navigation, and the demo and screenshot wiring. |
+| `Core` | Domain models, persistence and the local-profile lifecycle, networking, security, media, calendar, export, and synchronization. No SwiftUI; UIKit only as platform adapters (background tasks, the web-auth presentation anchor, PDF rendering). |
+| `Features` | Course, capture, entry, export, feedback, review, authentication, settings, and sync-status workflows, plus the environment they need from App (`FeatureEnvironment.swift`). |
 | `SharedUI` | Reusable theme and presentation primitives. |
 
-Features may depend on Core and SharedUI; Core must not depend on Features. App
-composes features rather than holding domain logic. The durable Core outbox
+Core depends on nothing above it; SharedUI may use Core; Features may use Core
+and SharedUI; only App sees everything. App injects services into features
+through the SwiftUI environment (`ErrorReporter`, `apiClient`,
+`capturePresentation`) rather than features reaching into App.
+`scripts/check-ios-layers.mjs` derives each layer's declared types and rejects
+any reference against this direction; it runs in `verify-repository.sh` and
+`verify-ios.sh`. Screenshot capture code compiles only with the
+`RESONANCE_SCREENSHOTS` condition and demo-data loading only in Debug or
+capture builds, so Release builds contain neither. The durable Core outbox
 holds typed, versioned commands bound to the authenticated local owner.
 
 ## Principal runtime flows
@@ -172,13 +205,13 @@ operator migration procedure.
 - The server is a private Node.js package. TypeScript compiles to `server/dist/`,
   and `dist/app/index.js` starts the one server process.
 - The iOS app and XCTest bundle build from the tracked Xcode project and shared
-  scheme. The Swift package manifest describes the same targets but is not a
-  published library contract.
+  scheme, the only iOS build definition. Its folder-synchronized groups include
+  every file under `Sources/` and `Tests/`.
 - `contracts/v1-api-contract.json` is the hand-maintained cross-component
   contract. A generated region in the Swift networking contract test projects
   its route and payload vocabulary.
 - `infra/docker-compose.yml` supplies disposable loopback development
-  dependencies. The repository has no production server image, infrastructure
+  dependencies: PostgreSQL and SeaweedFS as the S3-compatible store. The repository has no production server image, infrastructure
   provisioning, application signing, TestFlight, backup, or monitoring workflow.
 - `demo/site/` is the only deployed artifact described by repository automation;
   GitHub Pages publishes those static files independently.
@@ -189,13 +222,18 @@ not features implemented here.
 
 ## Where new code belongs
 
-- Add an endpoint in the owning module's `http/` directory.
+- Add an endpoint in the owning module's `http/` directory and add it to the
+  route-ownership list in `module-dependency-rules.test.ts`.
 - Put business rules, DTOs, authorization, and transactions in the owning
-  module's `application/` directory.
-- Put Fastify-wide behavior, configuration, errors, deadlines, and storage
-  adapters in `platform/`.
-- Put iOS workflow UI in `Features`, reusable transport and state in `Core`, and
-  generic visuals in `SharedUI`.
+  module's `application/` directory. A new resource mutation is a new sync
+  command kind whose handler lives in the owning module; sync only dispatches
+  it and maps its outcome.
+- Put Fastify-wide behavior, configuration, errors, deadlines, locks, and
+  storage adapters in `platform/`. Keep advisory-lock namespaces in
+  `platform/database/advisoryLocks.ts`; their values are persisted lock keys.
+- Put iOS workflow UI in `Features`, reusable domain rules, transport, persistence,
+  and sync in `Core`, generic visuals in `SharedUI`, and composition,
+  navigation, demo, and screenshot wiring in `App`.
 - Update [API](./API.md), tests, and Swift transport/outbox models when a public
   contract changes.
 

@@ -31,7 +31,7 @@
     "clean": "rm -rf dist node_modules",
     "start": "node dist/app/index.js",
     "test": "vitest run",
-    "test:contracts": "vitest run tests/v1-api-contract.test.ts tests/module-dependency-rules.test.ts",
+    "test:contracts": "vitest run tests/v1-api-contract.test.ts tests/v1-api-contract-responses.test.ts tests/module-dependency-rules.test.ts",
     "benchmark:reads": "NODE_ENV=test tsx benchmarks/read-pages.ts",
     "verify:contracts": "node ../scripts/validate-v1-contract.mjs",
     "lint": "eslint .",

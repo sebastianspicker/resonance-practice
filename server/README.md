@@ -12,7 +12,7 @@ library.
 - PostgreSQL
 - S3-compatible object storage
 
-The repository Compose file supplies disposable loopback PostgreSQL and MinIO
+The repository Compose file supplies disposable loopback PostgreSQL and SeaweedFS (S3)
 for development. It is not a production deployment.
 
 ## Setup and run
@@ -72,17 +72,19 @@ exactly. See [OIDC integration](../docs/SSO_BRIDGE.md).
 
 ## Runtime behavior
 
-`src/server.ts` is the public Fastify composition entry point.
-`src/app/index.ts` owns PostgreSQL and S3 startup, listening, graceful shutdown,
-and background maintenance. `src/app/serverRuntime.ts` owns transport policy,
-health/readiness, authentication, and route registration.
+`src/server.ts` exports `buildServer(prisma, s3)`, shared by the process entry
+point and the tests. `src/app/index.ts` owns PostgreSQL and S3 startup,
+listening, graceful shutdown, and the maintenance timer; `src/app/maintenance.ts`
+lists the maintenance jobs and runs them in order without overlapping passes.
+`src/app/serverRuntime.ts` owns transport policy, health/readiness, and route
+registration; bearer authentication comes from the identity module.
 
 - `GET /health` reports process liveness.
 - `GET /ready` checks PostgreSQL and the configured S3 bucket and returns `503`
   when either dependency is unavailable.
 - Maintenance runs at startup and every minute to expire stale uploads, prune
   retained sessions, retry durable storage deletions, and remove sync receipts
-  and revoked refresh tokens older than 30 days. Token retention runs in bounded
+  older than 7 days and revoked refresh tokens older than 30 days. Token retention runs in bounded
   batches outside authentication requests.
 
 Storage deletion workers claim one job immediately before contacting S3 and
@@ -123,11 +125,12 @@ Run these from `server/`:
 | Purpose | Command |
 | --- | --- |
 | Watch development server | `npm run dev` |
-| Build and type-check | `npm run build` |
+| Type-check sources, tests, seeds, and benchmarks | `npm run typecheck` |
+| Build `dist/` from `src/` | `npm run build` |
 | Run tests | `npm test` |
-| Run contract and dependency tests | `npm run test:contracts` |
+| Run contract and module-boundary tests | `npm run test:contracts` |
 | Measure synthetic read projections and query plans | `npm run benchmark:reads` |
-| Validate the cross-client contract | `npm run verify:contracts` |
+| Validate the contract document and the iOS projection | `npm run verify:contracts` |
 | Run ESLint, Knip, and duplication checks | `npm run quality` |
 | Check formatting | `npm run format:check` |
 | Generate Prisma client | `npm run prisma:generate` |

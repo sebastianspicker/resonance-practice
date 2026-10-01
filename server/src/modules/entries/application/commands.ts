@@ -10,7 +10,7 @@ import {
   parseEntryCreatePayload,
   parseEntryUpdatePayload,
 } from './payloads.js';
-import { requireEntryVersion } from './versionConflict.js';
+import { bumpEntryVersion, requireEntryVersion } from './versionConflict.js';
 
 /** Client-generated target, optimistic version, and unparsed payload of one command. */
 export type EntryCommandInput = {
@@ -93,10 +93,7 @@ export async function updateEntry(
     throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Only draft entries can be edited');
   }
   const data = parseEntryUpdatePayload(payload, entry);
-  return tx.practiceEntry.update({
-    where: { id: entry.id },
-    data: { ...data, version: { increment: 1 } },
-  });
+  return bumpEntryVersion(tx, entry.id, data);
 }
 
 export async function replaceCaptureMarkers(
@@ -152,10 +149,7 @@ export async function replaceCaptureMarkers(
       ...(markers.length > 0 ? { id: { notIn: markers.map((marker) => marker.id) } } : {}),
     },
   });
-  return tx.practiceEntry.update({
-    where: { id: entry.id },
-    data: { version: { increment: 1 } },
-  });
+  return bumpEntryVersion(tx, entry.id);
 }
 
 export async function submitEntry(
@@ -195,10 +189,7 @@ export async function submitEntry(
       'Teaching lesson entries require an uploaded video artifact'
     );
   }
-  return tx.practiceEntry.update({
-    where: { id: entry.id },
-    data: { status: 'submitted', version: { increment: 1 } },
-  });
+  return bumpEntryVersion(tx, entry.id, { status: 'submitted' });
 }
 
 /**

@@ -65,8 +65,12 @@ has an `operationId`, `entityId`, `kind`, `payload`, and, where needed, a
 `baseVersion`. Supported kinds are `createEntry`, `updateEntry`,
 `replaceCaptureMarkers`, `submitEntry`, `deleteEntry`, and `createFeedback`.
 
-Each result reports the operation, entity, kind, and a status such as `applied`,
-`duplicate`, `conflict`, `rejected`, or `retryable`. Do not add unversioned
+Each result reports the operation, entity, kind, and a status: `applied`,
+`duplicate`, `conflict`, `rejected`, or `retryable`. Entry-changing results carry
+`currentVersion` and the entry `resource`; a `conflict` for a stale
+`baseVersion` carries the server's current version and entry so the client can
+recover. `rejected` and `retryable` results carry an error `code` and
+`message`. Do not add unversioned
 resource-mutation routes; the command contract is what provides ordering,
 idempotency, ownership, and optimistic-concurrency guarantees.
 
@@ -80,7 +84,37 @@ idempotency, ownership, and optimistic-concurrency guarantees.
 
 These operations require authentication and enforce media visibility through the
 owning entry and course. Creation requires the requested type, size, and a
-padded-base64 SHA-256 checksum, and the signed upload fixes content type, length,
-and checksum. Completion verifies those properties and bounded ISO-BMFF M4A/MP4
-brand and audio/video-track evidence before publication. Do not log the returned
+padded-base64 SHA-256 checksum. The response's `uploadUrl` must be used with
+exactly the returned `requiredHeaders` (`Content-Type`, `Content-Length`,
+`x-amz-checksum-sha256`); length and checksum are part of the signature, so the
+storage service rejects a request that omits or alters them. Completion
+verifies those properties and bounded ISO-BMFF M4A/MP4 brand and
+audio/video-track evidence before publication, and returns exactly `artifact`
+and `currentVersion`. Do not log the returned
 download URL.
+
+## Errors
+
+HTTP errors use one envelope:
+`{ "error": { "code", "message", "details", "requestId", "currentVersion"? } }`.
+`details` exposes only `field`, `reason`, `expected`, and `actual`;
+`currentVersion` appears on version conflicts. Every response carries an
+`x-request-id` header. Inside `POST /api/v1/sync/commands`, client errors are
+returned per command as `rejected` or `conflict` results with the same `code`
+values, and the request itself still succeeds.
+
+| Status | Codes |
+| --- | --- |
+| 400 | `VALIDATION_ERROR` (also 413 for oversized bodies and 415 for non-JSON bodies), `INVALID_ROLE` |
+| 401 | `MISSING_AUTH`, `INVALID_TOKEN`, `INVALID_CODE`, `INVALID_REFRESH`, `REFRESH_REVOKED`, `REFRESH_MISMATCH`, `REFRESH_ALREADY_USED`, `USER_NOT_FOUND` |
+| 403 | `COURSE_ACCESS_DENIED`, `ENTRY_ACCESS_DENIED`, `STUDENT_ONLY`, `TEACHER_ONLY`, `DEV_AUTH_LOCAL_ONLY` |
+| 404 | `NOT_FOUND`, `ENTRY_NOT_FOUND`, `ARTIFACT_NOT_FOUND`, `USER_NOT_FOUND` (development login) |
+| 409 | `VERSION_CONFLICT`, `ID_CONFLICT`, `OPERATION_REUSED`, `ENTRY_LOCKED`, `ENTRY_NOT_SUBMITTED`, `CONSENT_REQUIRED`, `ARTIFACTS_NOT_UPLOADED`, `UPLOAD_INVALID` |
+| 410 | `ENTRY_DELETED` |
+| 429 | `RATE_LIMITED` (request rate, sync admission, receipt and upload quotas) |
+| 500 | `INTERNAL_ERROR` |
+| 501 | `AUTH_NOT_CONFIGURED` |
+| 503 | `STORAGE_UNAVAILABLE` |
+
+`server/src/platform/http/errorCodes.ts` is the source of truth for the codes;
+field-level validation limits live with each module's payload parser.
