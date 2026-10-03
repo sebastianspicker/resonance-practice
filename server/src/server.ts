@@ -16,7 +16,11 @@ import {
 export function buildServer(prisma: PrismaClient, s3: S3Client) {
   const app = createApiApp();
   registerTransport(app);
-  registerStatusRoutes(app, createDependencyCheck(prisma, s3));
-  registerResourceRoutes(app, prisma, s3);
+  app.after(() => {
+    // The rate-limit plugin installs route hooks during registration, so routes
+    // must be declared only after transport plugins are ready.
+    registerStatusRoutes(app, createDependencyCheck(prisma, s3));
+    registerResourceRoutes(app, prisma, s3);
+  });
   return app;
 }

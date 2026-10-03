@@ -5,7 +5,13 @@ import { requireVisibleCourseEntry } from './authorization.js';
 import { ErrorCodes } from '../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../platform/http/errors.js';
 import { requireEnum } from '../../../platform/http/input.js';
-import { cursorPage, parsePageLimit } from '../../../platform/http/pagination.js';
+import {
+  collectPageWithinByteBudget,
+  MAX_ENTRY_ROWS_PER_FETCH,
+  MAX_NESTED_ROWS_PER_FETCH,
+  parsePageLimit,
+} from '../../../platform/http/pagination.js';
+import { toEntryResponseDto, toEntrySummaryDto } from './dto.js';
 
 const ENTRY_STATUSES = ['draft', 'submitted', 'reviewed'] as const;
 
@@ -75,11 +81,17 @@ export async function readEntryPage(
   cursor: string | undefined,
   limit: number
 ) {
-  const entries = await prisma.practiceEntry.findMany({
-    ...(await entryPageQuery(prisma, visibleWhere, cursor, limit)),
-    include: { artifacts: true, captureMarkers: true },
-  });
-  return cursorPage(entries, limit);
+  return collectPageWithinByteBudget(
+    cursor,
+    limit,
+    MAX_ENTRY_ROWS_PER_FETCH,
+    async (batchCursor, take) =>
+      prisma.practiceEntry.findMany({
+        ...(await entryBatchQuery(prisma, visibleWhere, batchCursor, take)),
+        include: { artifacts: true, captureMarkers: true },
+      }),
+    toEntryResponseDto
+  );
 }
 
 /** Review lists need marker counts, while detail reads retain the complete collection. */
@@ -89,19 +101,29 @@ export async function readReviewQueuePage(
   cursor: string | undefined,
   limit: number
 ) {
-  const entries = await prisma.practiceEntry.findMany({
-    ...(await entryPageQuery(
-      prisma,
-      { courseId, status: 'submitted', deletedAt: null },
-      cursor,
-      limit
-    )),
-    include: { artifacts: true, _count: { select: { captureMarkers: true } } },
-  });
-  return cursorPage(entries, limit);
+  const visibleWhere = {
+    courseId,
+    status: 'submitted',
+    deletedAt: null,
+  } satisfies Prisma.PracticeEntryWhereInput;
+  return collectPageWithinByteBudget(
+    cursor,
+    limit,
+    MAX_NESTED_ROWS_PER_FETCH,
+    async (batchCursor, take) =>
+      prisma.practiceEntry.findMany({
+        ...(await entryBatchQuery(prisma, visibleWhere, batchCursor, take)),
+        include: { artifacts: true, _count: { select: { captureMarkers: true } } },
+      }),
+    (entry) => ({
+      ...toEntrySummaryDto(entry),
+      studentName: '',
+      captureMarkerCount: entry._count.captureMarkers,
+    })
+  );
 }
 
-async function entryPageQuery(
+async function entryBatchQuery(
   prisma: PrismaClient,
   visibleWhere: Prisma.PracticeEntryWhereInput,
   cursor: string | undefined,
@@ -115,7 +137,7 @@ async function entryPageQuery(
       { createdAt: 'desc' },
       { id: 'desc' },
     ] satisfies Prisma.PracticeEntryOrderByWithRelationInput[],
-    take: limit + 1,
+    take: limit,
   };
 }
 

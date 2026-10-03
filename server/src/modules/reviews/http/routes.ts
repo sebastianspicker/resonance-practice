@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { authenticatedUser, type RequireAuth } from '../../../platform/http/authentication.js';
 import { readAccessibleEntryIdentity } from '../../entries/application/queries.js';
 import { toEntrySummaryDto } from '../../entries/application/dto.js';
-import { parsePageLimit } from '../../../platform/http/pagination.js';
+import { fitPageToByteBudget, parsePageLimit } from '../../../platform/http/pagination.js';
 import { requireClientId } from '../../../platform/http/input.js';
 import { serializeFeedback } from '../application/dto.js';
 import { readEntryFeedback, readReviewQueue } from '../application/queries.js';
@@ -28,14 +28,14 @@ export function registerReviewRoutes(
         courseId,
         request.query as { cursor?: string; limit?: string }
       );
-      return {
+      return fitPageToByteBudget({
         ...page,
         items: page.items.map(({ entry, studentName, captureMarkerCount }) => ({
           ...toEntrySummaryDto(entry),
           studentName,
           captureMarkerCount,
         })),
-      };
+      });
     }
   );
 
@@ -52,6 +52,6 @@ export function registerReviewRoutes(
       query.cursor,
       parsePageLimit(query.limit)
     );
-    return { ...page, items: serializeFeedback(page.items) };
+    return fitPageToByteBudget({ ...page, items: serializeFeedback(page.items) });
   });
 }

@@ -81,6 +81,10 @@ lightweight version of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security and operations
 
+- Rate-limit dependency readiness probes, scan tracked environment files for
+  credential patterns, and bound nested API pages and iOS response buffering.
+  Paginated reads may return fewer items than requested and must follow
+  `nextCursor` until it is `null`.
 - Require distinct, non-placeholder production JWT access and refresh signing
   secrets with at least 32 bytes of base64 or base64url key material.
 - Guard the development database reset behind an exact local target,

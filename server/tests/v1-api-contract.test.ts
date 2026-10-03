@@ -58,10 +58,10 @@ describe('v1 API contract', () => {
   it('registers every canonical v1 route with its declared method', async () => {
     const app = buildServer({} as PrismaClient, {} as S3Client);
     try {
+      await app.ready();
       for (const route of v1Contract.routes) {
         expect(app.hasRoute({ method: route.method, url: route.path })).toBe(true);
       }
-      await app.ready();
       const registered = registeredRoutes(app.printRoutes({ commonPrefix: false })).filter(
         (route) => route.split(' ')[1]!.startsWith('/api/v1/')
       );

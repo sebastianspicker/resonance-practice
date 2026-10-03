@@ -64,10 +64,13 @@ func testRequestBodyData(_ request: URLRequest) -> Data? {
 }
 
 @MainActor
-func makeCapturingAPIClient() -> APIClient {
+func makeCapturingAPIClient(
+  maxResponseBytes: Int = APIClient.defaultMaxResponseBytes
+) -> APIClient {
   let configuration = URLSessionConfiguration.ephemeral
   configuration.protocolClasses = [APIClientCaptureURLProtocol.self]
-  return APIClient(session: URLSession(configuration: configuration))
+  return APIClient(
+    session: URLSession(configuration: configuration), maxResponseBytes: maxResponseBytes)
 }
 
 @MainActor

@@ -2,9 +2,14 @@
 import type { PrismaClient } from '@prisma/client';
 import { requireCourseRole } from '../../courses/application/authorization.js';
 import { readReviewQueuePage } from '../../entries/application/queries.js';
-import { cursorPage, parsePageLimit } from '../../../platform/http/pagination.js';
+import {
+  collectPageWithinByteBudget,
+  MAX_NESTED_ROWS_PER_FETCH,
+  parsePageLimit,
+} from '../../../platform/http/pagination.js';
 import { ApiError } from '../../../platform/http/errors.js';
 import { ErrorCodes } from '../../../platform/http/errorCodes.js';
+import { serializeFeedback } from './dto.js';
 
 /**
  * Teacher-only queue of submitted entries with student names and marker
@@ -46,31 +51,40 @@ export async function readEntryFeedback(
   cursor: string | undefined,
   limit: number
 ) {
-  const anchor = cursor
-    ? await prisma.feedback.findFirst({
-        where: { id: cursor, entryId },
-        select: { id: true, createdAt: true },
-      })
-    : null;
-  if (cursor && !anchor) throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid cursor');
-  const rows = await prisma.feedback.findMany({
-    where: {
-      entryId,
-      ...(anchor
-        ? {
-            OR: [
-              { createdAt: { gt: anchor.createdAt } },
-              { createdAt: anchor.createdAt, id: { gt: anchor.id } },
-            ],
-          }
-        : {}),
+  return collectPageWithinByteBudget(
+    cursor,
+    limit,
+    MAX_NESTED_ROWS_PER_FETCH,
+    async (batchCursor, take) => {
+      const anchor = batchCursor
+        ? await prisma.feedback.findFirst({
+            where: { id: batchCursor, entryId },
+            select: { id: true, createdAt: true },
+          })
+        : null;
+      if (batchCursor && !anchor) {
+        throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid cursor');
+      }
+      return prisma.feedback.findMany({
+        where: {
+          entryId,
+          ...(anchor
+            ? {
+                OR: [
+                  { createdAt: { gt: anchor.createdAt } },
+                  { createdAt: anchor.createdAt, id: { gt: anchor.id } },
+                ],
+              }
+            : {}),
+        },
+        include: {
+          markers: true,
+          teacher: { select: { displayName: true } },
+        },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take,
+      });
     },
-    include: {
-      markers: true,
-      teacher: { select: { displayName: true } },
-    },
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-    take: limit + 1,
-  });
-  return cursorPage(rows, limit);
+    (feedback) => serializeFeedback([feedback])[0]!
+  );
 }

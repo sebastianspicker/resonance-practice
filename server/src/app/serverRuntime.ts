@@ -116,7 +116,9 @@ function registerRateLimit(app: FastifyInstance) {
     max: 100,
     timeWindow: '1 minute',
     allowList: (request, _key) => {
-      if (request.url === '/health' || request.url === '/ready') return true;
+      const path = request.url.split('?', 1)[0];
+      if (path === '/health') return true;
+      if (path === '/ready') return false;
       return config.authMode === 'dev' && isLoopback(request.ip);
     },
   });

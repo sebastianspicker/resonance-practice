@@ -5,6 +5,7 @@ import { authenticatedUser, type RequireAuth } from '../../../platform/http/auth
 import { listCourseEntries, readAccessibleEntry } from '../application/queries.js';
 import { toEntryResponseDto } from '../application/dto.js';
 import { requireClientId } from '../../../platform/http/input.js';
+import { fitPageToByteBudget } from '../../../platform/http/pagination.js';
 
 export function registerEntryRoutes(
   app: FastifyInstance,
@@ -19,7 +20,7 @@ export function registerEntryRoutes(
       courseId,
       request.query as { status?: string; cursor?: string; limit?: string }
     );
-    return { ...page, items: page.items.map(toEntryResponseDto) };
+    return fitPageToByteBudget({ ...page, items: page.items.map(toEntryResponseDto) });
   });
 
   app.get('/api/v1/entries/:entryId', { preHandler: requireAuth }, async (request) => {

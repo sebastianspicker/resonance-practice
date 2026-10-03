@@ -24,7 +24,7 @@ scan_failed=0
 candidate_files=()
 while IFS= read -r -d '' path; do
   case "$path" in
-  .env | .env.* | */.env | */.env.* | scripts/secret-scan.sh)
+  scripts/secret-scan.sh)
     continue
     ;;
   esac
@@ -94,5 +94,4 @@ if [ "$found" -ne 0 ]; then
   exit 1
 fi
 
-echo "Environment files were excluded from content inspection and require manual review."
 echo "Secret scan passed."

@@ -45,7 +45,9 @@ last page. Pass `limit` (default 50, maximum 200) and the returned `cursor` to
 load the next page. Feedback is ordered by ascending creation time and ID; entry
 lists and review queues use descending practice date, creation time, and ID. A
 cursor must belong to the same visible collection. An invalid or removed cursor
-returns a validation error, so restart from the first page.
+returns a validation error, so restart from the first page. A response may
+contain fewer than `limit` items when nested entry or feedback data approaches
+the transport byte budget; follow `nextCursor` until it is `null`.
 
 Review queue items include `captureMarkerCount` and artifact summaries but omit
 `captureMarkers`; fetch entry detail for the complete marker array. Feedback uses

@@ -1,5 +1,10 @@
 import Foundation
 
+func smallerPageLimit(after attemptedLimit: Int?) -> Int? {
+  let attemptedLimit = attemptedLimit ?? 50
+  return attemptedLimit > 1 ? max(1, attemptedLimit / 2) : nil
+}
+
 extension APIClient {
   struct EmptyBody: Encodable {}
 
@@ -18,8 +23,25 @@ extension APIClient {
   }
 
   private func performResponse(_ request: URLRequest) async throws -> (data: Data, response: HTTPURLResponse) {
-    let (data, response) = try await session.data(for: request)
+    let (bytes, response) = try await session.bytes(for: request)
     guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+    if http.expectedContentLength > maxResponseBytes {
+      bytes.task.cancel()
+      throw URLError(.dataLengthExceedsMaximum)
+    }
+
+    var data = Data()
+    if http.expectedContentLength > 0 {
+      data.reserveCapacity(min(Int(http.expectedContentLength), maxResponseBytes))
+    }
+    for try await byte in bytes {
+      if data.count == maxResponseBytes {
+        bytes.task.cancel()
+        throw URLError(.dataLengthExceedsMaximum)
+      }
+      data.append(byte)
+    }
+
     if http.statusCode >= 400 {
       if let apiError = try? JSONDecoder.apiDecoder.decode(APIError.self, from: data) {
         throw apiError
@@ -27,6 +49,28 @@ extension APIClient {
       throw URLError(.badServerResponse)
     }
     return (data, http)
+  }
+
+  func sendPage<Response: Decodable>(
+    accessToken: String,
+    path: String,
+    limit requestedLimit: Int?,
+    cursor: String?
+  ) async throws -> PaginatedResponse<Response> {
+    var limit = requestedLimit
+    while true {
+      var queryItems: [URLQueryItem] = []
+      if let limit { queryItems.append(URLQueryItem(name: "limit", value: String(limit))) }
+      if let cursor { queryItems.append(URLQueryItem(name: "cursor", value: cursor)) }
+      let url = try makeURL(ServiceConfiguration.apiV1URL(path: path), queryItems: queryItems)
+      do {
+        return try await send(
+          url: url, method: "GET", body: Optional<EmptyBody>.none, accessToken: accessToken)
+      } catch let error as URLError where error.code == .dataLengthExceedsMaximum {
+        guard let retryLimit = smallerPageLimit(after: limit) else { throw error }
+        limit = retryLimit
+      }
+    }
   }
 
   func send<Response: Decodable, Body: Encodable>(
