@@ -13,7 +13,7 @@ import type { SyncCommand, SyncCommandResult } from './contract.js';
 import { baseResult } from './dispatch.js';
 
 const SYNC_RECEIPT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-export const MAX_SYNC_RECEIPTS_PER_USER = 500;
+const MAX_SYNC_RECEIPTS_PER_USER = 500;
 const SYNC_RECEIPT_CLEANUP_BATCH = 1_000;
 
 type StoredSyncReceipt = SyncCommandResult & { authorization: CommandReceiptScope };
@@ -95,10 +95,7 @@ export async function cleanupSyncReceipts(
 }
 
 /** Advisory lock makes receipt cleanup and quota admission atomic per user. */
-export async function admitSyncReceipt(
-  tx: Prisma.TransactionClient,
-  userId: string
-): Promise<void> {
+async function admitSyncReceipt(tx: Prisma.TransactionClient, userId: string): Promise<void> {
   // A per-user advisory lock makes count-and-admit enforcement deterministic
   // across concurrent operation IDs for the same authenticated user.
   await advisoryTransactionLock(tx, userId, AdvisoryLockNamespace.userQuota);
@@ -107,7 +104,7 @@ export async function admitSyncReceipt(
   assertSyncReceiptCapacity(await tx.syncReceipt.count({ where: { userId } }));
 }
 
-export function assertSyncReceiptCapacity(receiptCount: number): void {
+function assertSyncReceiptCapacity(receiptCount: number): void {
   if (receiptCount >= MAX_SYNC_RECEIPTS_PER_USER) {
     throw new ApiError(
       429,

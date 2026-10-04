@@ -125,12 +125,10 @@ Run these from `server/`:
 | Purpose | Command |
 | --- | --- |
 | Watch development server | `npm run dev` |
-| Type-check sources, tests, seeds, and benchmarks | `npm run typecheck` |
+| Type-check sources, seeds, and benchmarks | `npm run typecheck` |
 | Build `dist/` from `src/` | `npm run build` |
-| Run tests | `npm test` |
-| Run contract and module-boundary tests | `npm run test:contracts` |
 | Measure synthetic read projections and query plans | `npm run benchmark:reads` |
-| Validate the contract document and the iOS projection | `npm run verify:contracts` |
+| Validate the contract document | `npm run verify:contracts` |
 | Run ESLint, Knip, and duplication checks | `npm run quality` |
 | Check formatting | `npm run format:check` |
 | Generate Prisma client | `npm run prisma:generate` |

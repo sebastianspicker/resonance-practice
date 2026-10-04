@@ -140,7 +140,7 @@ function requireProductionHttps(name: string, rawUrl: string): void {
  * Only `resonance://` (app custom scheme) and `http://localhost` are permitted.
  * Exported for testing.
  */
-export function validateDevCallbackUrl(url: string): string {
+function validateDevCallbackUrl(url: string): string {
   let parsed: URL;
   try {
     parsed = new URL(url);

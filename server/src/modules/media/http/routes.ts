@@ -15,7 +15,12 @@ import {
   requireNumber,
   requireRecord,
 } from '../../../platform/http/input.js';
-import { apiRateLimit } from '../../../platform/http/rateLimit.js';
+import {
+  apiLimiter,
+  apiRateLimit,
+  rejectRateLimited,
+  requestCost,
+} from '../../../platform/http/rateLimit.js';
 
 export function registerMediaRoutes(
   app: FastifyInstance,
@@ -27,6 +32,7 @@ export function registerMediaRoutes(
     '/api/v1/artifact-sessions',
     { preHandler: requireAuth, config: { rateLimit: apiRateLimit } },
     async (request) => {
+      await apiLimiter.consume(request.ip, requestCost(request)).catch(rejectRateLimited);
       const body = requireRecord(request.body, 'body');
       return createArtifactSession(prisma, s3, {
         userId: authenticatedUser(request).id,
@@ -53,19 +59,22 @@ export function registerMediaRoutes(
   app.post(
     '/api/v1/artifact-sessions/:sessionId/complete',
     { preHandler: requireAuth, config: { rateLimit: apiRateLimit } },
-    async (request) =>
-      completeArtifactSession(
+    async (request) => {
+      await apiLimiter.consume(request.ip, requestCost(request)).catch(rejectRateLimited);
+      return completeArtifactSession(
         prisma,
         s3,
         authenticatedUser(request).id,
         requireClientId((request.params as { sessionId: string }).sessionId, 'sessionId')
-      )
+      );
+    }
   );
 
   app.post(
     '/api/v1/artifacts/:artifactId/download-session',
     { preHandler: requireAuth, config: { rateLimit: apiRateLimit } },
     async (request, reply) => {
+      await apiLimiter.consume(request.ip, requestCost(request)).catch(rejectRateLimited);
       const artifactId = requireClientId(
         (request.params as { artifactId: string }).artifactId,
         'artifactId'

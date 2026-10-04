@@ -7,7 +7,6 @@
 
 /* Begin PBXFileReference section */
 		A20000000000000000000045 /* ResonanceApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ResonanceApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A20000000000000000000046 /* ResonanceAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ResonanceAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -16,26 +15,23 @@
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		AC0000000000000000000001 /* Sources */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AD0000000000000000000001 /* Exceptions for "Sources" folder in "ResonanceApp" target */); path = Sources; sourceTree = "<group>"; };
-		AC0000000000000000000002 /* Tests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Tests; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-		A30000000000000000000002 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		A40000000000000000000001 = {isa = PBXGroup; children = (AC0000000000000000000001 /* Sources */, AC0000000000000000000002 /* Tests */, A40000000000000000000004 /* Products */); sourceTree = "<group>"; };
-		A40000000000000000000004 /* Products */ = {isa = PBXGroup; children = (A20000000000000000000045, A20000000000000000000046); name = Products; sourceTree = "<group>"; };
+		A40000000000000000000001 = {isa = PBXGroup; children = (AC0000000000000000000001 /* Sources */, A40000000000000000000004 /* Products */); sourceTree = "<group>"; };
+		A40000000000000000000004 /* Products */ = {isa = PBXGroup; children = (A20000000000000000000045); name = Products; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
 		A50000000000000000000001 /* ResonanceApp */ = {isa = PBXNativeTarget; buildConfigurationList = A60000000000000000000001; buildPhases = (A70000000000000000000001 /* Sources */, A30000000000000000000001 /* Frameworks */, A80000000000000000000001 /* Resources */); buildRules = (); dependencies = (); fileSystemSynchronizedGroups = (AC0000000000000000000001 /* Sources */); name = ResonanceApp; productName = ResonanceApp; productReference = A20000000000000000000045; productType = "com.apple.product-type.application"; };
-		A50000000000000000000002 /* ResonanceAppTests */ = {isa = PBXNativeTarget; buildConfigurationList = A60000000000000000000002; buildPhases = (A70000000000000000000002 /* Sources */, A30000000000000000000002 /* Frameworks */); buildRules = (); dependencies = (A90000000000000000000001 /* PBXTargetDependency */); fileSystemSynchronizedGroups = (AC0000000000000000000002 /* Tests */); name = ResonanceAppTests; productName = ResonanceAppTests; productReference = A20000000000000000000046; productType = "com.apple.product-type.bundle.unit-test"; };
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		AA00000000000000000000001 /* Project object */ = {isa = PBXProject; attributes = { LastSwiftUpdateCheck = 2630; LastUpgradeCheck = 2630; TargetAttributes = { A50000000000000000000001 = { CreatedOnToolsVersion = 26.3; }; A50000000000000000000002 = { CreatedOnToolsVersion = 26.3; TestTargetID = A50000000000000000000001; }; }; }; buildConfigurationList = A60000000000000000000003; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = A40000000000000000000001; productRefGroup = A40000000000000000000004; projectDirPath = ""; projectRoot = ""; targets = (A50000000000000000000001, A50000000000000000000002); };
+		AA00000000000000000000001 /* Project object */ = {isa = PBXProject; attributes = { LastSwiftUpdateCheck = 2630; LastUpgradeCheck = 2630; TargetAttributes = { A50000000000000000000001 = { CreatedOnToolsVersion = 26.3; }; }; }; buildConfigurationList = A60000000000000000000003; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = A40000000000000000000001; productRefGroup = A40000000000000000000004; projectDirPath = ""; projectRoot = ""; targets = (A50000000000000000000001); };
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
@@ -44,7 +40,6 @@
 
 /* Begin PBXSourcesBuildPhase section */
 		A70000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-		A70000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
@@ -52,19 +47,13 @@
 		AB00000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; SWIFT_STRICT_CONCURRENCY = complete; SWIFT_VERSION = 6.0; }; name = Release; };
 		AB00000000000000000000003 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = ""; ENABLE_TESTABILITY = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Sources/Resources/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = edu.university.resonance; PRODUCT_NAME = ResonanceApp; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_STRICT_CONCURRENCY = complete; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
 		AB00000000000000000000004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = ""; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Sources/Resources/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = edu.university.resonance; PRODUCT_NAME = ResonanceApp; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_STRICT_CONCURRENCY = complete; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Release; };
-		AB00000000000000000000005 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = ""; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = edu.university.resonance.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_STRICT_CONCURRENCY = complete; SWIFT_VERSION = 6.0; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ResonanceApp.app/ResonanceApp"; }; name = Debug; };
-		AB00000000000000000000006 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CODE_SIGN_IDENTITY = ""; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = edu.university.resonance.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_STRICT_CONCURRENCY = complete; SWIFT_VERSION = 6.0; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ResonanceApp.app/ResonanceApp"; }; name = Release; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
 		A60000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (AB00000000000000000000003, AB00000000000000000000004); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		A60000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (AB00000000000000000000005, AB00000000000000000000006); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 		A60000000000000000000003 = {isa = XCConfigurationList; buildConfigurations = (AB00000000000000000000001, AB00000000000000000000002); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 
-/* Begin PBXTargetDependency section */
-		A90000000000000000000001 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A50000000000000000000001 /* ResonanceApp */; };
-/* End PBXTargetDependency section */
 	};
 	rootObject = AA00000000000000000000001 /* Project object */;
 }

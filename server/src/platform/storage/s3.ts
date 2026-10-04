@@ -85,7 +85,7 @@ function isBucketAlreadyOwnedByYouError(err: unknown): boolean {
  * rejects that field. Keep the input compatible with both AWS and local
  * S3-compatible stores.
  */
-export function buildCreateBucketInput(bucket: string, region: string): CreateBucketCommandInput {
+function buildCreateBucketInput(bucket: string, region: string): CreateBucketCommandInput {
   if (region === 'us-east-1') {
     return { Bucket: bucket };
   }

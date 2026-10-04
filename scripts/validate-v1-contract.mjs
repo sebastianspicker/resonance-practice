@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /**
  * Validate the canonical v1 wire contract document and the iOS client's projection of it.
- * The server side is checked behaviorally by server/tests/v1-api-contract*.test.ts.
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";

@@ -34,7 +34,7 @@ export async function completeArtifactSession(
     currentVersion: completed.currentVersion,
   };
 }
-export async function copyArtifactCompletionClaim(
+async function copyArtifactCompletionClaim(
   prisma: PrismaClient,
   s3: S3Client,
   sessionId: string,

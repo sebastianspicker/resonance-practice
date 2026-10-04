@@ -2,7 +2,12 @@
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { authenticatedUser, type RequireAuth } from '../../../platform/http/authentication.js';
-import { apiRateLimit } from '../../../platform/http/rateLimit.js';
+import {
+  apiLimiter,
+  apiRateLimit,
+  rejectRateLimited,
+  requestCost,
+} from '../../../platform/http/rateLimit.js';
 
 export function registerCourseRoutes(
   app: FastifyInstance,
@@ -13,6 +18,7 @@ export function registerCourseRoutes(
     '/api/v1/courses',
     { preHandler: requireAuth, config: { rateLimit: apiRateLimit } },
     async (request) => {
+      await apiLimiter.consume(request.ip, requestCost(request)).catch(rejectRateLimited);
       const memberships = await prisma.membership.findMany({
         where: { userId: authenticatedUser(request).id },
         include: { course: true },

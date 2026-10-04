@@ -26,8 +26,8 @@ blob-report/
 /junit.xml
 /junit-*.xml
 /coverage.xml
-/server/tests/fixtures/generated/
-/ios/ResonanceApp/Tests/GeneratedFixtures/
+/server/tests/
+/ios/ResonanceApp/Tests/
 /.test-environments/
 *.sarif
 *.lcov

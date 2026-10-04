@@ -196,15 +196,10 @@ export async function getOidcClient(): Promise<Client> {
   return _client;
 }
 
-/** Reset cached client for tests only. */
-export function _resetOidcClientForTesting() {
-  _client = null;
-}
-
 // ── User identity helpers ────────────────────────────────────────────────────
 
 /** Stable internal IDs derive from issuer and subject without exposing either in user IDs. */
-export function issuerScopedSsoUserId(issuer: string, subject: string): string {
+function issuerScopedSsoUserId(issuer: string, subject: string): string {
   return `sso:${crypto.createHash('sha256').update(`${issuer}\u0000${subject}`).digest('base64url').slice(0, 32)}`;
 }
 

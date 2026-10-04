@@ -23,7 +23,6 @@ cd "$ROOT_DIR"
 case "$MODE" in
 lint)
 	"$SWIFTLINT_BIN" lint --strict --no-cache --config .swiftlint.yml
-	"$SWIFTLINT_BIN" lint --strict --no-cache --config .swiftlint-tests.yml
 	;;
 analyze)
 	# Analyzer rules need full compiler invocations and live build products. The

@@ -14,7 +14,13 @@ import { ErrorCodes } from '../../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../../platform/http/errors.js';
 import { consumeProdAuthCode } from '../../application/oidc.js';
 import { requireField, requireString } from '../../../../platform/http/input.js';
-import { apiRateLimit } from '../../../../platform/http/rateLimit.js';
+import {
+  apiLimiter,
+  apiRateLimit,
+  authLimiter,
+  rejectRateLimited,
+  requestCost,
+} from '../../../../platform/http/rateLimit.js';
 
 export function registerSessionRoutes(
   app: FastifyInstance,
@@ -29,6 +35,7 @@ export function registerSessionRoutes(
 
 function registerSessionExchangeRoute(app: FastifyInstance, prisma: PrismaClient) {
   app.post('/auth/session', { config: { rateLimit: authRateLimit } }, async (request, reply) => {
+    await authLimiter.consume(request.ip, requestCost(request)).catch(rejectRateLimited);
     const body = request.body as { code?: string; codeVerifier?: string; redirectUri?: string };
     const code = requireString(requireField(body?.code, 'code'), 'code', {
       max: limits.maxAuthCodeLength,
@@ -55,6 +62,7 @@ function registerSessionExchangeRoute(app: FastifyInstance, prisma: PrismaClient
 
 function registerRefreshRoute(app: FastifyInstance, prisma: PrismaClient) {
   app.post('/auth/refresh', { config: { rateLimit: authRateLimit } }, async (request) => {
+    await authLimiter.consume(request.ip, requestCost(request)).catch(rejectRateLimited);
     const body = request.body as { refreshToken?: string };
     const refreshToken = requireString(
       requireField(body?.refreshToken, 'refreshToken'),
@@ -74,6 +82,7 @@ function registerCurrentUserRoute(
     '/auth/me',
     { preHandler: requireAuth, config: { rateLimit: apiRateLimit } },
     async (request) => {
+      await apiLimiter.consume(request.ip, requestCost(request)).catch(rejectRateLimited);
       const userRecord = await prisma.user.findUnique({
         where: { id: authenticatedUser(request).id },
       });
@@ -91,6 +100,7 @@ function registerCurrentUserRoute(
 
 function registerLogoutRoute(app: FastifyInstance, prisma: PrismaClient, requireAuth: RequireAuth) {
   app.post('/auth/logout', { config: { rateLimit: apiRateLimit } }, async (request) => {
+    await apiLimiter.consume(request.ip, requestCost(request)).catch(rejectRateLimited);
     if (!isOptionalObject(request.body)) {
       throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid request body');
     }

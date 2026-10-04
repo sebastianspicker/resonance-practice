@@ -12,11 +12,6 @@ scripts/                    @sebastianspicker
 server/src/                 @sebastianspicker
 ios/ResonanceApp/Sources/   @sebastianspicker
 
-# Test contracts and repository policy checks
-server/tests/               @sebastianspicker
-ios/ResonanceApp/Tests/     @sebastianspicker
-tests/                      @sebastianspicker
-
 # Infrastructure and deployment
 infra/                      @sebastianspicker
 

@@ -69,11 +69,11 @@ Run from the repository root:
 ```
 
 The verifier selects an available iPhone Simulator unless `IOS_DESTINATION` is
-set, creates temporary DerivedData, runs the source-layer check, and executes
-XCTest through the shared scheme. It then compiles a Release build and a Debug
+set, creates temporary DerivedData, runs the source-layer check, and builds
+the Debug configuration through the shared scheme. It then compiles a Release build and a Debug
 build with `RESONANCE_SCREENSHOTS` for a generic simulator. It also accepts
 `IOS_TOOLCHAIN`, `IOS_EXPECTED_SWIFT_VERSION`,
-`IOS_RESULT_BUNDLE_PATH`, and `IOS_DERIVED_DATA_PATH`.
+and `IOS_DERIVED_DATA_PATH`.
 
 ## Demo data and screenshot capture
 
@@ -110,15 +110,6 @@ exact Swift 6.3.3 toolchain.
 
 Do not commit SwiftPM output, DerivedData, user workspace state, result bundles,
 compiler logs, or local screenshots.
-
-`Tests/NetworkingContracts/APIClientSyncCommandTests.swift` contains a marked
-projection generated from `../../contracts/v1-api-contract.json`. Do not edit
-that region directly. After an intentional contract change, update it from the
-repository root:
-
-```bash
-node scripts/generate-v1-contract-projection.mjs --write
-```
 
 ## Interface constraints
 

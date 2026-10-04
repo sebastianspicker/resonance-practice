@@ -8,7 +8,12 @@ import { fitPageToByteBudget, parsePageLimit } from '../../../platform/http/pagi
 import { requireClientId } from '../../../platform/http/input.js';
 import { serializeFeedback } from '../application/dto.js';
 import { readEntryFeedback, readReviewQueue } from '../application/queries.js';
-import { apiRateLimit } from '../../../platform/http/rateLimit.js';
+import {
+  apiLimiter,
+  apiRateLimit,
+  rejectRateLimited,
+  requestCost,
+} from '../../../platform/http/rateLimit.js';
 
 export function registerReviewRoutes(
   app: FastifyInstance,
@@ -23,6 +28,7 @@ export function registerReviewRoutes(
         (request.params as { courseId: string }).courseId,
         'courseId'
       );
+      await apiLimiter.consume(request.ip, requestCost(request)).catch(rejectRateLimited);
       const page = await readReviewQueue(
         prisma,
         authenticatedUser(request).id,
@@ -44,6 +50,7 @@ export function registerReviewRoutes(
     '/api/v1/entries/:entryId/feedback',
     { preHandler: requireAuth, config: { rateLimit: apiRateLimit } },
     async (request) => {
+      await apiLimiter.consume(request.ip, requestCost(request)).catch(rejectRateLimited);
       const entry = await readAccessibleEntryIdentity(
         prisma,
         authenticatedUser(request).id,

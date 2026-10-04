@@ -3,8 +3,8 @@ import { ErrorCodes } from '../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../platform/http/errors.js';
 
 const WINDOW_MS = 60_000;
-export const MAX_SYNC_REQUESTS_PER_MINUTE = 12;
-export const MAX_SYNC_COMMANDS_PER_MINUTE = 100;
+const MAX_SYNC_REQUESTS_PER_MINUTE = 12;
+const MAX_SYNC_COMMANDS_PER_MINUTE = 100;
 
 type WindowUsage = { startedAt: number; requests: number; commands: number };
 

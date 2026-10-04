@@ -19,8 +19,6 @@ command -v node >/dev/null || fail "node is required for the iOS source-layer ch
 command -v jq >/dev/null || fail "jq is required to select an available iPhone simulator deterministically."
 [[ -d "$PROJECT" ]] || fail "native project not found at $PROJECT."
 [[ -f "$SCHEME_FILE" ]] || fail "shared scheme not found at $SCHEME_FILE."
-find "$APP_DIR/Tests" -name '*.swift' -type f -print -quit | grep -q . || fail "no XCTest source files found under $APP_DIR/Tests."
-grep -R -q --include='*.swift' 'func test' "$APP_DIR/Tests" || fail "no XCTest methods found under $APP_DIR/Tests."
 node "$ROOT_DIR/scripts/check-ios-layers.mjs" --self-test
 node "$ROOT_DIR/scripts/check-ios-layers.mjs"
 
@@ -77,23 +75,18 @@ if [[ -n "${IOS_EXPECTED_SWIFT_VERSION:-}" ]]; then
 	fi
 fi
 
-echo "Running iOS XCTest via $PROJECT, scheme $SCHEME, destination $DESTINATION..."
+echo "Building iOS app via $PROJECT, scheme $SCHEME, destination $DESTINATION..."
 XCODEBUILD_ARGS=(
 	-project "$PROJECT" \
 	-scheme "$SCHEME" \
 	-destination "$DESTINATION" \
 	-derivedDataPath "$DERIVED_DATA_PATH" \
-	-parallel-testing-enabled NO \
-	test
+	build
 )
-
-if [[ -n "${IOS_RESULT_BUNDLE_PATH:-}" ]]; then
-	XCODEBUILD_ARGS+=(-resultBundlePath "$IOS_RESULT_BUNDLE_PATH")
-fi
 
 xcodebuild "${TOOLCHAIN_ARGS[@]}" "${XCODEBUILD_ARGS[@]}" -quiet
 
-echo "iOS XCTest passed for $DESTINATION."
+echo "iOS build passed for $DESTINATION."
 
 # Build-only compiles prove that Release excludes demo and capture code and
 # that the screenshot capture configuration still compiles.

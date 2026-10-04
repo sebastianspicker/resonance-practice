@@ -159,10 +159,9 @@ Run commands from the repository root unless a different directory is shown.
 | --- | --- |
 | Repository contracts, docs, fixtures, and publication hygiene | `./scripts/verify-repository.sh` |
 | Server type-check and build | `cd server && npm run typecheck && npm run build` |
-| Server tests | `cd server && npm test` |
 | Server lint, dead-code, and duplication checks | `cd server && npm run quality` |
 | Server formatting check | `cd server && npm run format:check` |
-| iOS layering, build, and XCTest | `./scripts/verify-ios.sh` |
+| iOS layering and build | `./scripts/verify-ios.sh` |
 | Public Markdown links and images | `node scripts/validate-public-docs.mjs` |
 | Full local CI with disposable services | `./scripts/ci-local.sh --with-docker` |
 

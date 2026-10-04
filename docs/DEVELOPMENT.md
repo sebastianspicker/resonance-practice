@@ -78,16 +78,14 @@ Run commands from the repository root unless the command changes directory.
 
 | Scope | Command | Notes |
 | --- | --- | --- |
-| Pure repository checks | `./scripts/verify-repository.sh` | Checks Node version, the v1 contract and generated projection, fixtures, static demo, Markdown links and images, secrets, and committed build artifacts. |
-| Server type-check | `cd server && npm run typecheck` | Checks `src`, `tests`, `prisma`, and `benchmarks` without emitting. |
+| Pure repository checks | `./scripts/verify-repository.sh` | Checks Node version, the v1 contract, fixtures, static demo, Markdown links and images, secrets, and committed build artifacts. |
+| Server type-check | `cd server && npm run typecheck` | Checks `src`, `prisma`, and `benchmarks` without emitting. |
 | Server build | `cd server && npm run build` | Removes and recreates generated `server/dist/` from `src`. |
-| Server tests | `cd server && npm test` | Uses Vitest with real Prisma/PostgreSQL and mocked S3. |
-| Server contract tests | `cd server && npm run test:contracts` | Checks the v1 route contract and module dependency rules. |
 | Server lint and quality | `cd server && npm run quality` | Runs ESLint, Knip, and cross-language duplication checks. |
 | Server format check | `cd server && npm run format:check` | Run `npm run format` only when you intend to rewrite TypeScript formatting. |
 | Swift lint | `./scripts/lint-swift.sh lint` | Requires SwiftLint 0.63.2. |
 | Swift analysis | `./scripts/lint-swift.sh analyze` | Builds with the legacy Swift driver, then runs the unused-declaration and unused-import analyzer rules; fails if no files were analyzed. |
-| iOS build and test | `./scripts/verify-ios.sh` | Runs the source-layer check, XCTest through the shared scheme, and Release and screenshot-capture builds. |
+| iOS build | `./scripts/verify-ios.sh` | Runs the source-layer check, a Debug build through the shared scheme, and Release and screenshot-capture builds. |
 | Public Markdown links and images | `node scripts/validate-public-docs.mjs` | Checks repository containment, existence, and publication eligibility. Images need alt text. |
 | Full local CI | `./scripts/ci-local.sh --with-docker` | Provisions disposable services, runs the server and iOS lanes, and stops Compose on exit. |
 
@@ -97,15 +95,12 @@ PostgreSQL and S3 storage to be supplied separately.
 
 The full lane exports local-only defaults for the required server configuration,
 including two distinct JWT secrets; values already set in the process
-environment take precedence, and `server/.env` never overrides them. A direct `cd server && npm test` is a focused rerun: it
-expects the guarded `resonance_test` database to exist with current migrations
-already applied.
+environment take precedence, and `server/.env` never overrides them.
 
 The iOS verifier supports:
 
 - `IOS_DESTINATION` to select a simulator destination;
 - `IOS_TOOLCHAIN` and `IOS_EXPECTED_SWIFT_VERSION` for an alternate toolchain;
-- `IOS_RESULT_BUNDLE_PATH` to retain an XCTest result bundle at a new path;
 - `IOS_DERIVED_DATA_PATH` to reuse a local build directory on focused reruns.
   Use a separate directory for each Xcode version and Swift toolchain. This
   CI keeps clean build directories.
@@ -120,8 +115,7 @@ Run `npm run benchmark:reads` from `server/` with `DATABASE_URL` pointed
 explicitly at the guarded loopback `resonance_test` database after migrations.
 The benchmark inserts 10,000 synthetic entries and 50 capture markers per
 first-page entry inside a transaction, then rolls the whole fixture back. It
-does not truncate existing tables. Run it separately from the test suite, which
-does truncate shared test fixtures.
+does not truncate existing tables.
 
 The JSON output records the runtime, fixture size and timestamp, three warmup
 runs, twenty alternating measured runs, minimum/median/p95/maximum milliseconds,
@@ -133,11 +127,7 @@ planner estimates may not reflect its synthetic distribution. Capture comparable
 runs before and after index changes on the same PostgreSQL version and machine;
 realistic deployment data can produce different plans.
 
-Focused media tests exercise delayed response bodies, the complete validation
-budget, and range-request counts for synthetic containers. iOS tests cover large
-outbox selection, paged reconciliation, cancellation, and file preparation.
-Retain XCTest results with `IOS_RESULT_BUNDLE_PATH`, and use Instruments on a
-device for UI hitches, peak memory, and energy during multi-minute media
+Use Instruments on a device for UI hitches, peak memory, and energy during multi-minute media
 workflows. Host-side functional checks do not establish device latency or
 battery gains.
 
@@ -170,11 +160,5 @@ Do not commit `server/.env`, dependencies, `server/dist/`, SwiftPM or
 DerivedData output, coverage reports, Compose volumes, analyzer indexes, test
 results, or local screenshots.
 
-`contracts/v1-api-contract.json` is hand-maintained, and the marked projection in
-`ios/ResonanceApp/Tests/NetworkingContracts/APIClientSyncCommandTests.swift` is
-generated. Verify it with `./scripts/verify-repository.sh` and update it only
-after an intentional contract change:
-
-```bash
-node scripts/generate-v1-contract-projection.mjs --write
-```
+`contracts/v1-api-contract.json` is hand-maintained. Verify it with
+`./scripts/verify-repository.sh`.

@@ -12,7 +12,12 @@ import {
   parseSyncCommand,
   type SyncCommandResult,
 } from '../application/contract.js';
-import { apiRateLimit } from '../../../platform/http/rateLimit.js';
+import {
+  apiLimiter,
+  apiRateLimit,
+  rejectRateLimited,
+  requestCost,
+} from '../../../platform/http/rateLimit.js';
 
 export function registerSyncRoutes(
   app: FastifyInstance,
@@ -24,6 +29,7 @@ export function registerSyncRoutes(
     '/api/v1/sync/commands',
     { preHandler: requireAuth, config: { rateLimit: apiRateLimit } },
     async (request) => {
+      await apiLimiter.consume(request.ip, requestCost(request)).catch(rejectRateLimited);
       admission.admitRequest(authenticatedUser(request).id);
       const body = requireRecord(request.body, 'body');
       if (

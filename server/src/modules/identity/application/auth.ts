@@ -21,7 +21,7 @@ export function hashToken(token: string) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-export function signAccessToken(user: User) {
+function signAccessToken(user: User) {
   const expiresIn = config.accessTokenTtlMinutes * 60;
   return jwt.sign({ sub: user.id, role: user.globalRole }, config.jwtSecret, {
     expiresIn,
@@ -31,7 +31,7 @@ export function signAccessToken(user: User) {
   });
 }
 
-export function signRefreshToken(user: User, tokenId: string) {
+function signRefreshToken(user: User, tokenId: string) {
   const expiresIn = config.refreshTokenTtlDays * 24 * 60 * 60;
   return jwt.sign({ sub: user.id, jti: tokenId }, config.jwtRefreshSecret, {
     expiresIn,
@@ -53,7 +53,7 @@ export function verifyAccessToken(token: string) {
   }
 }
 
-export function verifyRefreshToken(token: string) {
+function verifyRefreshToken(token: string) {
   try {
     return jwt.verify(token, config.jwtRefreshSecret, {
       algorithms: [JWT_ALGORITHM],

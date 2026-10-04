@@ -8,7 +8,7 @@ import {
   requireRecord,
 } from '../../../platform/http/input.js';
 
-export const SYNC_COMMAND_KINDS = [
+const SYNC_COMMAND_KINDS = [
   'createEntry',
   'updateEntry',
   'replaceCaptureMarkers',
@@ -28,14 +28,7 @@ export type SyncCommand = {
 /** A sync request carries between 1 and this many commands. */
 export const MAX_SYNC_COMMANDS_PER_BATCH = 25;
 
-export const SYNC_RESULT_STATUSES = [
-  'applied',
-  'duplicate',
-  'conflict',
-  'rejected',
-  'retryable',
-] as const;
-export type SyncCommandStatus = (typeof SYNC_RESULT_STATUSES)[number];
+export type SyncCommandStatus = 'applied' | 'duplicate' | 'conflict' | 'rejected' | 'retryable';
 export type SyncCommandResult = {
   operationId: string;
   entityId: string;

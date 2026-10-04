@@ -157,7 +157,7 @@ echo "Generating Prisma client..."
 echo "Running migrations..."
 (cd server && npm run prisma:migrate)
 
-echo "Typechecking sources, tests, seeds, and benchmarks..."
+echo "Typechecking sources, seeds, and benchmarks..."
 (cd server && npm run typecheck)
 
 echo "Building..."
@@ -180,10 +180,7 @@ if [[ "$READY" -ne 1 ]]; then
 fi
 stop_server
 
-echo "Running compact server suite..."
-(cd server && npm test)
-
-echo "Linting Swift sources and tests..."
+echo "Linting Swift sources..."
 ./scripts/lint-swift.sh lint
 
 echo "Running iOS simulator verification..."

@@ -4,7 +4,7 @@ import { config } from '../../../platform/config.js';
 const COMPLETION_CLAIM_SETTLEMENT_MS = 5_000;
 
 /** Keep a completion claim alive across the whole storage budget plus settlement. */
-export function artifactCompletionClaimLeaseMs() {
+function artifactCompletionClaimLeaseMs() {
   return config.dependencyTimeoutMs + COMPLETION_CLAIM_SETTLEMENT_MS;
 }
 

@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { PrismaClient, Prisma } from '@prisma/client';
-import { assertTestDatabaseUrl } from '../tests/support/databaseSafety.js';
+import { assertTestDatabaseUrl } from '../../scripts/assert-database-target.mjs';
 
 assertTestDatabaseUrl(process.env.DATABASE_URL);
 

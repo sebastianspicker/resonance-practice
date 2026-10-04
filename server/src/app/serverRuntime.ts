@@ -10,7 +10,7 @@ import { requireAuth } from '../modules/identity/http/authenticate.js';
 import { config, limits } from '../platform/config.js';
 import { ErrorCodes } from '../platform/http/errorCodes.js';
 import { ApiError, sendError } from '../platform/http/errors.js';
-import { apiRateLimit } from '../platform/http/rateLimit.js';
+import { apiRateLimit, isLoopback } from '../platform/http/rateLimit.js';
 import { registerMediaRoutes } from '../modules/media/http/routes.js';
 import { registerAuthRoutes } from '../modules/identity/http/routes.js';
 import { registerCourseRoutes } from '../modules/courses/http/routes.js';
@@ -106,10 +106,6 @@ export function createDependencyCheck(prisma: PrismaClient, s3: S3Client): () =>
     );
     return check;
   };
-}
-
-function isLoopback(ip: string | undefined) {
-  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 }
 
 function registerRateLimit(app: FastifyInstance) {

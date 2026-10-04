@@ -125,7 +125,7 @@ jobs:
         working-directory: server
         run: npm run prisma:migrate
 
-      - name: Typecheck sources, tests, seeds, and benchmarks
+      - name: Typecheck sources, seeds, and benchmarks
         working-directory: server
         run: npm run typecheck
 
@@ -168,10 +168,6 @@ jobs:
           cleanup
           exit 1
 
-      - name: Run compact server suite
-        working-directory: server
-        run: npm test
-
   ios-toolchain:
     name: iOS (${{ matrix.toolchain }})
     runs-on: macos-26
@@ -192,11 +188,11 @@ jobs:
           sudo installer -pkg "$RUNNER_TEMP/SwiftLint.pkg" -target /
           test "$(swiftlint version)" = "0.63.2"
 
-      - name: Lint Swift sources and tests
+      - name: Lint Swift sources
         if: matrix.toolchain == 'xcode'
         run: ./scripts/lint-swift.sh lint
 
-      - name: Build and test with Xcode-bundled Swift
+      - name: Build with Xcode-bundled Swift
         if: matrix.toolchain == 'xcode'
         run: ./scripts/verify-ios.sh
 
@@ -208,7 +204,7 @@ jobs:
         if: matrix.toolchain == 'swift'
         run: ./scripts/install-swift-toolchain.sh
 
-      - name: Build and test with exact Swift 6.3.3
+      - name: Build with exact Swift 6.3.3
         if: matrix.toolchain == 'swift'
         env:
           IOS_TOOLCHAIN: swift

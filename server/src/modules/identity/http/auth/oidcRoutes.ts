@@ -14,10 +14,16 @@ import {
   resolveIssuerScopedIdentity,
 } from '../../application/oidc.js';
 import { validateAppCodeChallenge } from '../../application/auth.js';
-import { apiRateLimit } from '../../../../platform/http/rateLimit.js';
+import {
+  apiLimiter,
+  apiRateLimit,
+  rejectRateLimited,
+  requestCost,
+} from '../../../../platform/http/rateLimit.js';
 
 export function registerOidcRoutes(app: FastifyInstance, prisma: PrismaClient) {
   app.get('/auth/oidc/login', { config: { rateLimit: apiRateLimit } }, async (request, reply) => {
+    await apiLimiter.consume(request.ip, requestCost(request)).catch(rejectRateLimited);
     const client = await requireOidcClient();
     const appCodeChallenge = validateAppCodeChallenge(
       (request.query as { app_code_challenge?: unknown }).app_code_challenge
@@ -38,6 +44,7 @@ export function registerOidcRoutes(app: FastifyInstance, prisma: PrismaClient) {
     '/auth/oidc/callback',
     { config: { rateLimit: apiRateLimit } },
     async (request, reply) => {
+      await apiLimiter.consume(request.ip, requestCost(request)).catch(rejectRateLimited);
       const client = await requireOidcClient();
       const params = client.callbackParams(request.raw);
       const state = typeof params.state === 'string' ? params.state : undefined;

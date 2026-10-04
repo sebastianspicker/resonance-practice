@@ -10,7 +10,7 @@ Before you edit, read the [architecture](docs/ARCHITECTURE.md) and the live
 module. Keep server transport in a module's `http/` directory and business
 rules, authorization, DTOs, and transactions in its `application/` directory.
 A module may only import the `application/` code of the modules it is allowed
-to use; `server/tests/module-dependency-rules.test.ts` lists them. Keep iOS
+to use (see the architecture document). Keep iOS
 wiring in `App`, reusable services and transport in `Core`, workflow UI in
 `Features`, and generic UI in `SharedUI`; `scripts/check-ios-layers.mjs`
 rejects references against that direction.
@@ -35,7 +35,7 @@ Run focused checks as you work, then finish with:
 Useful focused checks:
 
 ```bash
-cd server && npm run typecheck && npm run build && npm test && npm run quality && npm run format:check
+cd server && npm run typecheck && npm run build && npm run quality && npm run format:check
 ./scripts/verify-ios.sh
 node scripts/validate-public-docs.mjs
 ```

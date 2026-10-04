@@ -76,8 +76,7 @@ that spans modules. Deleting an entry runs, in one
 transaction: lock and authorize the entry, queue its media for storage deletion
 (media), delete feedback targeting it (reviews), then delete the entry and keep a
 tombstone (entries). `platform` never imports modules or `app`.
-`server/tests/module-dependency-rules.test.ts` enforces these rules, plus route
-ownership per module and the single authenticated-request type. The rules
+These rules cover route ownership per module and the single authenticated-request type. The rules
 govern imports; artifact, feedback, and marker rows are children of the entry in
 the database, so entry and review rules may read them inside the entry lock
 (for example, submission requires uploaded artifacts) while their lifecycle
@@ -204,9 +203,9 @@ operator migration procedure.
 
 - The server is a private Node.js package. TypeScript compiles to `server/dist/`,
   and `dist/app/index.js` starts the one server process.
-- The iOS app and XCTest bundle build from the tracked Xcode project and shared
+- The iOS app builds from the tracked Xcode project and shared
   scheme, the only iOS build definition. Its folder-synchronized groups include
-  every file under `Sources/` and `Tests/`.
+  every file under `Sources/`.
 - `contracts/v1-api-contract.json` is the hand-maintained cross-component
   contract. A generated region in the Swift networking contract test projects
   its route and payload vocabulary.
