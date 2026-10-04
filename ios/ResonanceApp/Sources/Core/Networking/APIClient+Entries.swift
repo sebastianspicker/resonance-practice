@@ -1,5 +1,3 @@
-import Foundation
-
 extension APIClient {
   func fetchCourses(accessToken: String) async throws -> [CourseResponse] {
     try await send(

@@ -1,5 +1,3 @@
-import Foundation
-
 extension APIClient {
   func fetchReviewQueue(
     accessToken: String, courseId: String, limit: Int? = nil, cursor: String? = nil
