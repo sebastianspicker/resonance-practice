@@ -14,9 +14,10 @@ import {
   resolveIssuerScopedIdentity,
 } from '../../application/oidc.js';
 import { validateAppCodeChallenge } from '../../application/auth.js';
+import { apiRateLimit } from '../../../../platform/http/rateLimit.js';
 
 export function registerOidcRoutes(app: FastifyInstance, prisma: PrismaClient) {
-  app.get('/auth/oidc/login', async (request, reply) => {
+  app.get('/auth/oidc/login', { config: { rateLimit: apiRateLimit } }, async (request, reply) => {
     const client = await requireOidcClient();
     const appCodeChallenge = validateAppCodeChallenge(
       (request.query as { app_code_challenge?: unknown }).app_code_challenge
@@ -33,60 +34,70 @@ export function registerOidcRoutes(app: FastifyInstance, prisma: PrismaClient) {
     reply.redirect(authorizationUrl);
   });
 
-  app.get('/auth/oidc/callback', async (request, reply) => {
-    const client = await requireOidcClient();
-    const params = client.callbackParams(request.raw);
-    const state = typeof params.state === 'string' ? params.state : undefined;
-    const cookieAttempt = parseOidcAttemptCookie(request.headers.cookie);
+  app.get(
+    '/auth/oidc/callback',
+    { config: { rateLimit: apiRateLimit } },
+    async (request, reply) => {
+      const client = await requireOidcClient();
+      const params = client.callbackParams(request.raw);
+      const state = typeof params.state === 'string' ? params.state : undefined;
+      const cookieAttempt = parseOidcAttemptCookie(request.headers.cookie);
 
-    if (
-      !state ||
-      !cookieAttempt ||
-      cookieAttempt.state !== state ||
-      !(await consumeOidcAttempt(prisma, cookieAttempt))
-    ) {
-      throw new ApiError(
-        400,
-        ErrorCodes.VALIDATION_ERROR,
-        'Invalid or expired OIDC state parameter'
+      if (
+        !state ||
+        !cookieAttempt ||
+        cookieAttempt.state !== state ||
+        !(await consumeOidcAttempt(prisma, cookieAttempt))
+      ) {
+        throw new ApiError(
+          400,
+          ErrorCodes.VALIDATION_ERROR,
+          'Invalid or expired OIDC state parameter'
+        );
+      }
+
+      let tokenSet;
+      try {
+        tokenSet = await client.callback(oidcConfig!.redirectUri, params, {
+          state,
+          nonce: cookieAttempt.nonce,
+          code_verifier: cookieAttempt.codeVerifier,
+        });
+      } catch (err) {
+        request.log.warn({ err }, 'oidc_callback_failed');
+        throw new ApiError(401, ErrorCodes.INVALID_CODE, 'OIDC token exchange failed');
+      }
+
+      const claims = tokenSet.claims();
+      const sub = claims.sub;
+      if (!sub) {
+        throw new ApiError(401, ErrorCodes.INVALID_TOKEN, 'OIDC token missing sub claim');
+      }
+
+      const issuer = typeof claims.iss === 'string' ? claims.iss : undefined;
+      if (!issuer) {
+        throw new ApiError(401, ErrorCodes.INVALID_TOKEN, 'OIDC token missing issuer claim');
+      }
+      const displayName = displayNameFromClaims(claims as Record<string, unknown>);
+      const globalRole = roleFromClaims(claims as Record<string, unknown>);
+      const userId = await resolveIssuerScopedIdentity(
+        prisma,
+        issuer,
+        sub,
+        displayName,
+        globalRole
       );
+
+      const code = await issueProdAuthCode(prisma, userId, cookieAttempt.appCodeChallenge);
+
+      // Redirect to the app's custom URL scheme with the internal code.
+      // The iOS app registers resonance:// so ASWebAuthenticationSession captures this redirect.
+      const appCallbackUrl = new URL(config.appRedirectUri);
+      appCallbackUrl.searchParams.set('code', code);
+      reply.header('Set-Cookie', clearOidcAttemptCookie());
+      reply.redirect(appCallbackUrl.toString());
     }
-
-    let tokenSet;
-    try {
-      tokenSet = await client.callback(oidcConfig!.redirectUri, params, {
-        state,
-        nonce: cookieAttempt.nonce,
-        code_verifier: cookieAttempt.codeVerifier,
-      });
-    } catch (err) {
-      request.log.warn({ err }, 'oidc_callback_failed');
-      throw new ApiError(401, ErrorCodes.INVALID_CODE, 'OIDC token exchange failed');
-    }
-
-    const claims = tokenSet.claims();
-    const sub = claims.sub;
-    if (!sub) {
-      throw new ApiError(401, ErrorCodes.INVALID_TOKEN, 'OIDC token missing sub claim');
-    }
-
-    const issuer = typeof claims.iss === 'string' ? claims.iss : undefined;
-    if (!issuer) {
-      throw new ApiError(401, ErrorCodes.INVALID_TOKEN, 'OIDC token missing issuer claim');
-    }
-    const displayName = displayNameFromClaims(claims as Record<string, unknown>);
-    const globalRole = roleFromClaims(claims as Record<string, unknown>);
-    const userId = await resolveIssuerScopedIdentity(prisma, issuer, sub, displayName, globalRole);
-
-    const code = await issueProdAuthCode(prisma, userId, cookieAttempt.appCodeChallenge);
-
-    // Redirect to the app's custom URL scheme with the internal code.
-    // The iOS app registers resonance:// so ASWebAuthenticationSession captures this redirect.
-    const appCallbackUrl = new URL(config.appRedirectUri);
-    appCallbackUrl.searchParams.set('code', code);
-    reply.header('Set-Cookie', clearOidcAttemptCookie());
-    reply.redirect(appCallbackUrl.toString());
-  });
+  );
 }
 
 type BrowserOidcAttempt = {

@@ -14,6 +14,7 @@ import { ErrorCodes } from '../../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../../platform/http/errors.js';
 import { consumeProdAuthCode } from '../../application/oidc.js';
 import { requireField, requireString } from '../../../../platform/http/input.js';
+import { apiRateLimit } from '../../../../platform/http/rateLimit.js';
 
 export function registerSessionRoutes(
   app: FastifyInstance,
@@ -69,23 +70,27 @@ function registerCurrentUserRoute(
   prisma: PrismaClient,
   requireAuth: RequireAuth
 ) {
-  app.get('/auth/me', { preHandler: requireAuth }, async (request) => {
-    const userRecord = await prisma.user.findUnique({
-      where: { id: authenticatedUser(request).id },
-    });
-    if (!userRecord) {
-      throw new ApiError(404, ErrorCodes.USER_NOT_FOUND, 'User not found');
+  app.get(
+    '/auth/me',
+    { preHandler: requireAuth, config: { rateLimit: apiRateLimit } },
+    async (request) => {
+      const userRecord = await prisma.user.findUnique({
+        where: { id: authenticatedUser(request).id },
+      });
+      if (!userRecord) {
+        throw new ApiError(404, ErrorCodes.USER_NOT_FOUND, 'User not found');
+      }
+      return {
+        id: userRecord.id,
+        displayName: userRecord.displayName,
+        globalRole: userRecord.globalRole,
+      };
     }
-    return {
-      id: userRecord.id,
-      displayName: userRecord.displayName,
-      globalRole: userRecord.globalRole,
-    };
-  });
+  );
 }
 
 function registerLogoutRoute(app: FastifyInstance, prisma: PrismaClient, requireAuth: RequireAuth) {
-  app.post('/auth/logout', async (request) => {
+  app.post('/auth/logout', { config: { rateLimit: apiRateLimit } }, async (request) => {
     if (!isOptionalObject(request.body)) {
       throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid request body');
     }

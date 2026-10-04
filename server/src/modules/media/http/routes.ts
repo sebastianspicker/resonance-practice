@@ -15,6 +15,7 @@ import {
   requireNumber,
   requireRecord,
 } from '../../../platform/http/input.js';
+import { apiRateLimit } from '../../../platform/http/rateLimit.js';
 
 export function registerMediaRoutes(
   app: FastifyInstance,
@@ -22,32 +23,36 @@ export function registerMediaRoutes(
   s3: S3Client,
   requireAuth: RequireAuth
 ) {
-  app.post('/api/v1/artifact-sessions', { preHandler: requireAuth }, async (request) => {
-    const body = requireRecord(request.body, 'body');
-    return createArtifactSession(prisma, s3, {
-      userId: authenticatedUser(request).id,
-      operationId: requireClientId(body.operationId, 'operationId'),
-      entryId: requireClientId(body.entryId, 'entryId'),
-      artifactId: requireClientId(body.artifactId, 'artifactId'),
-      type: requireEnum(body.type, 'type', ['audio', 'video'] as const),
-      durationSeconds: requireNumber(body.durationSeconds, 'durationSeconds', {
-        integer: true,
-        min: 0,
-        max: limits.maxDurationSeconds,
-      }),
-      sizeBytes: requireNumber(body.sizeBytes, 'sizeBytes', {
-        integer: true,
-        min: 1,
-        max: limits.maxUploadSizeBytes,
-      }),
-      checksumSha256: requireChecksumSha256(body.checksumSha256),
-      baseVersion: requireNumber(body.baseVersion, 'baseVersion', { integer: true, min: 1 }),
-    });
-  });
+  app.post(
+    '/api/v1/artifact-sessions',
+    { preHandler: requireAuth, config: { rateLimit: apiRateLimit } },
+    async (request) => {
+      const body = requireRecord(request.body, 'body');
+      return createArtifactSession(prisma, s3, {
+        userId: authenticatedUser(request).id,
+        operationId: requireClientId(body.operationId, 'operationId'),
+        entryId: requireClientId(body.entryId, 'entryId'),
+        artifactId: requireClientId(body.artifactId, 'artifactId'),
+        type: requireEnum(body.type, 'type', ['audio', 'video'] as const),
+        durationSeconds: requireNumber(body.durationSeconds, 'durationSeconds', {
+          integer: true,
+          min: 0,
+          max: limits.maxDurationSeconds,
+        }),
+        sizeBytes: requireNumber(body.sizeBytes, 'sizeBytes', {
+          integer: true,
+          min: 1,
+          max: limits.maxUploadSizeBytes,
+        }),
+        checksumSha256: requireChecksumSha256(body.checksumSha256),
+        baseVersion: requireNumber(body.baseVersion, 'baseVersion', { integer: true, min: 1 }),
+      });
+    }
+  );
 
   app.post(
     '/api/v1/artifact-sessions/:sessionId/complete',
-    { preHandler: requireAuth },
+    { preHandler: requireAuth, config: { rateLimit: apiRateLimit } },
     async (request) =>
       completeArtifactSession(
         prisma,
@@ -59,7 +64,7 @@ export function registerMediaRoutes(
 
   app.post(
     '/api/v1/artifacts/:artifactId/download-session',
-    { preHandler: requireAuth },
+    { preHandler: requireAuth, config: { rateLimit: apiRateLimit } },
     async (request, reply) => {
       const artifactId = requireClientId(
         (request.params as { artifactId: string }).artifactId,

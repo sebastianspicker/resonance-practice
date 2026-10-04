@@ -10,6 +10,7 @@ import { requireAuth } from '../modules/identity/http/authenticate.js';
 import { config, limits } from '../platform/config.js';
 import { ErrorCodes } from '../platform/http/errorCodes.js';
 import { ApiError, sendError } from '../platform/http/errors.js';
+import { apiRateLimit } from '../platform/http/rateLimit.js';
 import { registerMediaRoutes } from '../modules/media/http/routes.js';
 import { registerAuthRoutes } from '../modules/identity/http/routes.js';
 import { registerCourseRoutes } from '../modules/courses/http/routes.js';
@@ -113,8 +114,7 @@ function isLoopback(ip: string | undefined) {
 
 function registerRateLimit(app: FastifyInstance) {
   app.register(rateLimit, {
-    max: 100,
-    timeWindow: '1 minute',
+    ...apiRateLimit,
     allowList: (request, _key) => {
       const path = request.url.split('?', 1)[0];
       if (path === '/health') return true;

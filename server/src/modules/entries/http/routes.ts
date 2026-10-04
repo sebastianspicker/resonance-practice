@@ -6,27 +6,39 @@ import { listCourseEntries, readAccessibleEntry } from '../application/queries.j
 import { toEntryResponseDto } from '../application/dto.js';
 import { requireClientId } from '../../../platform/http/input.js';
 import { fitPageToByteBudget } from '../../../platform/http/pagination.js';
+import { apiRateLimit } from '../../../platform/http/rateLimit.js';
 
 export function registerEntryRoutes(
   app: FastifyInstance,
   prisma: PrismaClient,
   requireAuth: RequireAuth
 ) {
-  app.get('/api/v1/courses/:courseId/entries', { preHandler: requireAuth }, async (request) => {
-    const courseId = requireClientId((request.params as { courseId: string }).courseId, 'courseId');
-    const page = await listCourseEntries(
-      prisma,
-      authenticatedUser(request).id,
-      courseId,
-      request.query as { status?: string; cursor?: string; limit?: string }
-    );
-    return fitPageToByteBudget({ ...page, items: page.items.map(toEntryResponseDto) });
-  });
+  app.get(
+    '/api/v1/courses/:courseId/entries',
+    { preHandler: requireAuth, config: { rateLimit: apiRateLimit } },
+    async (request) => {
+      const courseId = requireClientId(
+        (request.params as { courseId: string }).courseId,
+        'courseId'
+      );
+      const page = await listCourseEntries(
+        prisma,
+        authenticatedUser(request).id,
+        courseId,
+        request.query as { status?: string; cursor?: string; limit?: string }
+      );
+      return fitPageToByteBudget({ ...page, items: page.items.map(toEntryResponseDto) });
+    }
+  );
 
-  app.get('/api/v1/entries/:entryId', { preHandler: requireAuth }, async (request) => {
-    const entryId = requireClientId((request.params as { entryId: string }).entryId, 'entryId');
-    return toEntryResponseDto(
-      await readAccessibleEntry(prisma, authenticatedUser(request).id, entryId)
-    );
-  });
+  app.get(
+    '/api/v1/entries/:entryId',
+    { preHandler: requireAuth, config: { rateLimit: apiRateLimit } },
+    async (request) => {
+      const entryId = requireClientId((request.params as { entryId: string }).entryId, 'entryId');
+      return toEntryResponseDto(
+        await readAccessibleEntry(prisma, authenticatedUser(request).id, entryId)
+      );
+    }
+  );
 }

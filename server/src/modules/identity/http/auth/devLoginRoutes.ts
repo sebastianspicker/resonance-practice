@@ -9,6 +9,7 @@ import { config } from '../../../../platform/config.js';
 import { ErrorCodes } from '../../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../../platform/http/errors.js';
 import { requireEnum, requireString } from '../../../../platform/http/input.js';
+import { apiRateLimit } from '../../../../platform/http/rateLimit.js';
 
 export function registerDevLoginRoutes(app: FastifyInstance, prisma: PrismaClient) {
   registerApplicationLoginRoute(app);
@@ -18,7 +19,7 @@ export function registerDevLoginRoutes(app: FastifyInstance, prisma: PrismaClien
 }
 
 function registerApplicationLoginRoute(app: FastifyInstance) {
-  app.get('/auth/login', async (request, reply) => {
+  app.get('/auth/login', { config: { rateLimit: apiRateLimit } }, async (request, reply) => {
     // Keep the iOS app on one stable login URL. The server owns whether that
     // means localhost-only dev auth or the production OIDC redirect.
     const appCodeChallenge = validateAppCodeChallenge(
@@ -37,7 +38,7 @@ function registerApplicationLoginRoute(app: FastifyInstance) {
 }
 
 function registerDevLoginRoute(app: FastifyInstance) {
-  app.get('/dev/login', async (request, reply) => {
+  app.get('/dev/login', { config: { rateLimit: apiRateLimit } }, async (request, reply) => {
     requireLocalDevAuth(request);
     const appCodeChallenge = validateAppCodeChallenge(
       (request.query as { app_code_challenge?: unknown }).app_code_challenge
@@ -47,7 +48,7 @@ function registerDevLoginRoute(app: FastifyInstance) {
 }
 
 function registerDevAuthorizeRoute(app: FastifyInstance, prisma: PrismaClient) {
-  app.get('/dev/authorize', async (request, reply) => {
+  app.get('/dev/authorize', { config: { rateLimit: apiRateLimit } }, async (request, reply) => {
     requireLocalDevAuth(request);
     const role = (request.query as { role?: string }).role as 'student' | 'teacher' | undefined;
     if (!role || (role !== 'student' && role !== 'teacher')) {
@@ -65,7 +66,7 @@ function registerDevAuthorizeRoute(app: FastifyInstance, prisma: PrismaClient) {
 }
 
 function registerDevIssueRoute(app: FastifyInstance, prisma: PrismaClient) {
-  app.post('/dev/issue', async (request) => {
+  app.post('/dev/issue', { config: { rateLimit: apiRateLimit } }, async (request) => {
     requireLocalDevAuth(request);
     const body = parseDevIssueBody(request.body);
     const role =

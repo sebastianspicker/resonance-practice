@@ -8,6 +8,7 @@ import { fitPageToByteBudget, parsePageLimit } from '../../../platform/http/pagi
 import { requireClientId } from '../../../platform/http/input.js';
 import { serializeFeedback } from '../application/dto.js';
 import { readEntryFeedback, readReviewQueue } from '../application/queries.js';
+import { apiRateLimit } from '../../../platform/http/rateLimit.js';
 
 export function registerReviewRoutes(
   app: FastifyInstance,
@@ -16,7 +17,7 @@ export function registerReviewRoutes(
 ) {
   app.get(
     '/api/v1/courses/:courseId/review-queue',
-    { preHandler: requireAuth },
+    { preHandler: requireAuth, config: { rateLimit: apiRateLimit } },
     async (request) => {
       const courseId = requireClientId(
         (request.params as { courseId: string }).courseId,
@@ -39,19 +40,23 @@ export function registerReviewRoutes(
     }
   );
 
-  app.get('/api/v1/entries/:entryId/feedback', { preHandler: requireAuth }, async (request) => {
-    const entry = await readAccessibleEntryIdentity(
-      prisma,
-      authenticatedUser(request).id,
-      requireClientId((request.params as { entryId: string }).entryId, 'entryId')
-    );
-    const query = request.query as { cursor?: string; limit?: string };
-    const page = await readEntryFeedback(
-      prisma,
-      entry.id,
-      query.cursor,
-      parsePageLimit(query.limit)
-    );
-    return fitPageToByteBudget({ ...page, items: serializeFeedback(page.items) });
-  });
+  app.get(
+    '/api/v1/entries/:entryId/feedback',
+    { preHandler: requireAuth, config: { rateLimit: apiRateLimit } },
+    async (request) => {
+      const entry = await readAccessibleEntryIdentity(
+        prisma,
+        authenticatedUser(request).id,
+        requireClientId((request.params as { entryId: string }).entryId, 'entryId')
+      );
+      const query = request.query as { cursor?: string; limit?: string };
+      const page = await readEntryFeedback(
+        prisma,
+        entry.id,
+        query.cursor,
+        parsePageLimit(query.limit)
+      );
+      return fitPageToByteBudget({ ...page, items: serializeFeedback(page.items) });
+    }
+  );
 }
