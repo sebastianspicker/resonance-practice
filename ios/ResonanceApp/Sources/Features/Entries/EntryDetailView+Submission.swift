@@ -191,5 +191,9 @@ extension EntryDetailView {
       entry.feedback.append(local)
       modelContext.insert(local)
     }
+    // The server marks an entry reviewed when feedback is created; mirror it once feedback arrives.
+    if entry.status == .submitted, !entry.feedback.isEmpty {
+      entry.status = .reviewed
+    }
   }
 }

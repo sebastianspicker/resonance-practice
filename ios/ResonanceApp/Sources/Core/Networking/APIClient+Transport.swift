@@ -55,11 +55,12 @@ extension APIClient {
     accessToken: String,
     path: String,
     limit requestedLimit: Int?,
-    cursor: String?
+    cursor: String?,
+    additionalQueryItems: [URLQueryItem] = []
   ) async throws -> PaginatedResponse<Response> {
     var limit = requestedLimit
     while true {
-      var queryItems: [URLQueryItem] = []
+      var queryItems = additionalQueryItems
       if let limit { queryItems.append(URLQueryItem(name: "limit", value: String(limit))) }
       if let cursor { queryItems.append(URLQueryItem(name: "cursor", value: cursor)) }
       let url = try makeURL(ServiceConfiguration.apiV1URL(path: path), queryItems: queryItems)

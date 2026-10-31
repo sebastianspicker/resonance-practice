@@ -1,9 +1,13 @@
 extension APIClient {
+  /// `.reviewed` lists submissions the course's teachers have already reviewed.
   func fetchReviewQueue(
-    accessToken: String, courseId: String, limit: Int? = nil, cursor: String? = nil
+    accessToken: String, courseId: String, status: ReviewQueueStatus = .submitted,
+    limit: Int? = nil, cursor: String? = nil
   ) async throws -> PaginatedResponse<ReviewQueueEntry> {
     try await sendPage(
-      accessToken: accessToken, path: "courses/\(courseId)/review-queue", limit: limit, cursor: cursor)
+      accessToken: accessToken, path: "courses/\(courseId)/review-queue", limit: limit, cursor: cursor,
+      additionalQueryItems: status == .submitted
+        ? [] : [URLQueryItem(name: "status", value: status.rawValue)])
   }
 
   func fetchFeedback(

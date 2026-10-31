@@ -8,11 +8,19 @@ extension TeacherQueueView {
             if isLoading && queue.isEmpty {
                 ProgressView("Loading submissions…")
             } else if queue.isEmpty {
-                ContentUnavailableView(
-                    "Nothing to review",
-                    systemImage: "checkmark.circle",
-                    description: Text("New submissions will appear here.")
-                )
+                if reviewStatus == .reviewed {
+                    ContentUnavailableView(
+                        "No reviewed submissions",
+                        systemImage: "checkmark.circle",
+                        description: Text("Submissions you have reviewed will appear here.")
+                    )
+                } else {
+                    ContentUnavailableView(
+                        "Nothing to review",
+                        systemImage: "checkmark.circle",
+                        description: Text("New submissions will appear here.")
+                    )
+                }
             } else {
                 List {
                     ForEach(queue) { entry in
@@ -21,9 +29,7 @@ extension TeacherQueueView {
                                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                                     Text(entry.studentName).font(.headline)
                                     Spacer(minLength: 8)
-                                    StatusPill(
-                                        status: queuedFeedback.contains(entry.id) ? .feedbackQueued : .submitted
-                                    )
+                                    StatusPill(status: listStatus(for: entry))
                                 }
                                 Text(entry.goalText).foregroundStyle(.primary).lineLimit(2)
                                 Text(listMetadata(entry))
@@ -36,9 +42,7 @@ extension TeacherQueueView {
                         .buttonStyle(.plain)
                         .accessibilityLabel(
                             "\(entry.studentName), \(entry.goalText), "
-                                + (queuedFeedback.contains(entry.id)
-                                    ? LifecycleStatus.feedbackQueued.label
-                                    : LifecycleStatus.submitted.label)
+                                + listStatus(for: entry).label
                         )
                         .accessibilityHint("Opens the submission and media player")
                     }

@@ -25,6 +25,16 @@ struct APIError: Error, Decodable {
     }
 }
 
+/// Shows the server's message with its code and request ID, so alerts and bug reports
+/// identify the failing request instead of "ResonanceApp.APIError error 1".
+extension APIError: LocalizedError {
+    var errorDescription: String? {
+        var reference = "Code: \(error.code)"
+        if let requestId = error.requestId { reference += ", request ID: \(requestId)" }
+        return "\(error.message) (\(reference))"
+    }
+}
+
 struct TokenResponse: Decodable {
     let accessToken: String
     let refreshToken: String

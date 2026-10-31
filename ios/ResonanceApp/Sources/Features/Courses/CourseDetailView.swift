@@ -29,11 +29,7 @@ struct CourseDetailView: View {
                 if selectedTab == 0 {
                     TeacherQueueView(courseId: course.id)
                 } else {
-                    ContentUnavailableView(
-                        "Reviewed submissions",
-                        systemImage: "checkmark.circle",
-                        description: Text("Submissions you have reviewed will appear here.")
-                    )
+                    TeacherQueueView(courseId: course.id, reviewStatus: .reviewed)
                 }
             } else {
                 EntryListView(courseId: course.id)

@@ -33,7 +33,7 @@ export function registerReviewRoutes(
         prisma,
         authenticatedUser(request).id,
         courseId,
-        request.query as { cursor?: string; limit?: string }
+        request.query as { cursor?: string; limit?: string; status?: string }
       );
       return fitPageToByteBudget({
         ...page,

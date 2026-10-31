@@ -108,7 +108,10 @@ extension EntryDetailView {
           }
         }
         Button("Sync status") { showsSyncQueue = true }
-        Button("Delete entry", role: .destructive) { showDeleteConfirmation = true }
+        // Submitted and reviewed entries carry teacher feedback; only drafts can be deleted.
+        if entry.status == .draft {
+          Button("Delete entry", role: .destructive) { showDeleteConfirmation = true }
+        }
       }
       .disabled(recorder.isRecording || isRequestingMicrophone)
     }

@@ -11,6 +11,8 @@ struct MainSplitView: View {
   @EnvironmentObject var networkMonitor: NetworkMonitor
   @EnvironmentObject var errorReporter: ErrorReporter
   @Environment(\.capturePresentation) var capturePresentation
+  @Environment(\.scenePhase) private var scenePhase
+  @State private var wasInBackground = false
   @Query(sort: \LocalCourse.title) var courses: [LocalCourse]
   @State var selectionId: String?
   @State var showCalendar = false
@@ -48,6 +50,16 @@ struct MainSplitView: View {
 #if RESONANCE_SCREENSHOTS
       applyScreenshotRoutingIfNeeded()
 #endif
+    }
+    // Returning to the app pulls entry status and new feedback without the manual Sync button.
+    .onChange(of: scenePhase) { _, phase in
+      // Only a real return from the background (background → inactive → active); a plain
+      // inactive → active also fires for system prompts.
+      if phase == .background { wasInBackground = true }
+      guard phase == .active, wasInBackground else { return }
+      wasInBackground = false
+      guard !capturePresentation, !isRefreshing, networkMonitor.isOnline else { return }
+      Task { await refreshCourses(reportingErrors: false) }
     }
 #if RESONANCE_SCREENSHOTS
     .onChange(of: courses.count) { _, _ in applyScreenshotRoutingIfNeeded() }

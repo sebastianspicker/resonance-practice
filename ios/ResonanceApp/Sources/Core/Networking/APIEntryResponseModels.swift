@@ -23,6 +23,12 @@ struct EntryResponse: Decodable {
     let version: Int?
 }
 
+/// Review-queue filter accepted by `GET /api/v1/courses/:courseId/review-queue`.
+enum ReviewQueueStatus: String {
+    case submitted
+    case reviewed
+}
+
 struct ReviewQueueEntry: Decodable {
     let id: String
     // swiftlint:disable unused_declaration

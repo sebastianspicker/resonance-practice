@@ -73,7 +73,7 @@ The feature dependency graph is acyclic and only reaches into `application/`:
 
 Sync dispatches each command to its owning module and composes the one use case
 that spans modules. Deleting an entry runs, in one
-transaction: lock and authorize the entry, queue its media for storage deletion
+transaction: lock and authorize the entry (only drafts can be deleted), queue its media for storage deletion
 (media), delete feedback targeting it (reviews), then delete the entry and keep a
 tombstone (entries). `platform` never imports modules or `app`.
 These rules cover route ownership per module and the single authenticated-request type. The rules

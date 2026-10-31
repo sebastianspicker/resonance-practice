@@ -114,7 +114,8 @@ function hasSupportedFtypBox(data: Uint8Array, box: Box, type: ArtifactType): bo
   for (let offset = box.dataStart + 8; offset < box.end; offset += 4)
     brands.push(readFourCc(data, offset));
   const audioBrands = new Set(['M4A ', 'M4B ', 'M4P ']);
-  const videoBrands = new Set(['isom', 'iso2', 'mp41', 'mp42', 'avc1', 'hvc1']);
+  // `qt  ` is QuickTime (.mov), the format of videos imported from the iOS photo library.
+  const videoBrands = new Set(['isom', 'iso2', 'mp41', 'mp42', 'avc1', 'hvc1', 'qt  ']);
   return type === 'audio'
     ? brands.some((brand) => audioBrands.has(brand))
     : brands.some((brand) => videoBrands.has(brand));

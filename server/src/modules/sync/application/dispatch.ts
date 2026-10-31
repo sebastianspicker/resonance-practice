@@ -101,6 +101,9 @@ async function deleteEntry(
     command.baseVersion,
     'delete'
   );
+  if (entry.status !== 'draft') {
+    throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Only draft entries can be deleted');
+  }
   // Identity lock, then row lock, before media and feedback for the entry are enumerated.
   await lockEntryForDeletion(tx, entry.id);
   const artifactIds = await queueEntryMediaRelease(tx, entry.id);

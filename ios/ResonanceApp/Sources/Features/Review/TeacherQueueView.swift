@@ -17,6 +17,8 @@ struct TeacherQueueView: View {
     }
 
     let courseId: String
+    /// Which submissions to list: the open queue or already reviewed work.
+    let reviewStatus: ReviewQueueStatus
     /// A fixed local queue that replaces the remote queue load when present.
     let presetQueue: [ReviewQueueEntry]?
     let presentation: TeacherQueuePresentation
@@ -38,6 +40,7 @@ struct TeacherQueueView: View {
 
     init(
         courseId: String,
+        reviewStatus: ReviewQueueStatus = .submitted,
         presetQueue: [ReviewQueueEntry]? = nil,
         initiallyQueuedFeedback: Set<String> = [],
         presentation: TeacherQueuePresentation = .list,
@@ -46,6 +49,7 @@ struct TeacherQueueView: View {
         selectsInitialSubmission: Bool = true
     ) {
         self.courseId = courseId
+        self.reviewStatus = reviewStatus
         self.presetQueue = presetQueue
         self.presentation = presentation
         self.initialSelectedEntryID = initialSelectedEntryID
@@ -81,7 +85,8 @@ struct TeacherQueueView: View {
         }
         do {
             let firstPage = try await apiClient.fetchReviewQueue(
-                accessToken: session.accessToken, courseId: courseId, limit: 50
+                accessToken: session.accessToken, courseId: courseId, status: reviewStatus,
+                limit: 50
             )
             try Task.checkCancellation()
             guard isCurrentLoad(generation, session: session) else { return }
@@ -114,7 +119,8 @@ struct TeacherQueueView: View {
         }
         do {
             let page = try await apiClient.fetchReviewQueue(
-                accessToken: session.accessToken, courseId: courseId, limit: 50, cursor: cursor
+                accessToken: session.accessToken, courseId: courseId, status: reviewStatus,
+                limit: 50, cursor: cursor
             )
             try Task.checkCancellation()
             guard isCurrentLoad(generation, session: session), nextCursor == cursor else { return }
@@ -136,6 +142,12 @@ struct TeacherQueueView: View {
     }
 
     var hasNextQueuePage: Bool { nextCursor != nil }
+
+    /// Status shown for a listed submission.
+    func listStatus(for entry: ReviewQueueEntry) -> LifecycleStatus {
+        if reviewStatus == .reviewed { return .reviewed }
+        return queuedFeedback.contains(entry.id) ? .feedbackQueued : .submitted
+    }
 
     var isLoadingNextPage: Bool { nextPageRequestID != nil }
 

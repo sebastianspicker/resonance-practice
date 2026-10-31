@@ -99,11 +99,12 @@ export async function readReviewQueuePage(
   prisma: PrismaClient,
   courseId: string,
   cursor: string | undefined,
-  limit: number
+  limit: number,
+  status: 'submitted' | 'reviewed' = 'submitted'
 ) {
   const visibleWhere = {
     courseId,
-    status: 'submitted',
+    status,
     deletedAt: null,
   } satisfies Prisma.PracticeEntryWhereInput;
   return collectPageWithinByteBudget(

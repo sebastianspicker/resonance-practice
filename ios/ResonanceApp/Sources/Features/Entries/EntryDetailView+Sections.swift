@@ -222,11 +222,14 @@ struct EntryActionsSection: View {
         ).font(.caption).foregroundStyle(AppTheme.workspaceMuted)
       }
 
-      Button("Delete entry", action: delete)
-        .buttonStyle(.bordered)
-        .foregroundStyle(AppTheme.statusFailedForeground)
-        .accessibilityLabel("Delete entry")
-        .accessibilityHint("Permanently deletes this entry and queued uploads")
+      // Submitted and reviewed entries carry teacher feedback; only drafts can be deleted.
+      if entry.status == .draft {
+        Button("Delete entry", action: delete)
+          .buttonStyle(.bordered)
+          .foregroundStyle(AppTheme.statusFailedForeground)
+          .accessibilityLabel("Delete entry")
+          .accessibilityHint("Permanently deletes this entry and queued uploads")
+      }
     }.padding(.top, 16).padding(.bottom, 40)
   }
 }

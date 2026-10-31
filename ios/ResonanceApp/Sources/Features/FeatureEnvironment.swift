@@ -9,11 +9,7 @@ final class ErrorReporter: ObservableObject {
     @Published var showErrorAlert: Bool = false
 
     func report(_ error: Error) {
-        if let apiError = error as? APIError {
-            lastErrorMessage = apiError.error.message
-        } else {
-            lastErrorMessage = error.localizedDescription
-        }
+        lastErrorMessage = error.localizedDescription
         showErrorAlert = true
     }
 

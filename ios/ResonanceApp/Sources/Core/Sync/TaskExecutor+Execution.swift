@@ -5,18 +5,31 @@ import Foundation
 extension TaskExecutor {
     /// Executes the dedicated artifact-session path. All entry and feedback
     /// mutations are sent through the typed v1 command batch endpoint.
-    func execute(item: SyncQueueItem, accessToken: String) async throws {
+    /// `freshAccessToken` is asked again after the upload, because a long upload can outlive
+    /// the access token captured before it. Returning nil (the owner signed out or changed)
+    /// cancels the completion.
+    func execute(
+        item: SyncQueueItem,
+        accessToken: String,
+        freshAccessToken: (@MainActor () async -> String?)? = nil
+    ) async throws {
         let (taskType, payload) = try taskTypeAndPayload(for: item)
         guard taskType == .syncArtifact else {
             throw SyncError.payloadParseError("Non-artifact work must be sent through sync commands")
         }
-        try await executeSyncArtifact(item: item, payload: payload, accessToken: accessToken)
+        try await executeSyncArtifact(
+            item: item,
+            payload: payload,
+            accessToken: accessToken,
+            freshAccessToken: freshAccessToken
+        )
     }
 
     private func executeSyncArtifact(
         item: SyncQueueItem,
         payload: OutboxPayload,
-        accessToken: String
+        accessToken: String,
+        freshAccessToken: (@MainActor () async -> String?)?
     ) async throws {
         guard let artifactId = payload.artifactID, !artifactId.isEmpty else {
             throw SyncError.payloadParseError("Sync payload is missing artifactId")
@@ -70,8 +83,14 @@ extension TaskExecutor {
         artifact.syncPhase = .confirming
         store.save()
 
+        var completionAccessToken = accessToken
+        if let freshAccessToken {
+            guard let token = await freshAccessToken() else { throw CancellationError() }
+            completionAccessToken = token
+        }
+        try Task.checkCancellation()
         let completion = try await apiClient.completeArtifactSession(
-            accessToken: accessToken,
+            accessToken: completionAccessToken,
             sessionId: session.sessionId
         )
         try Task.checkCancellation()

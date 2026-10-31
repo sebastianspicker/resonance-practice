@@ -50,26 +50,70 @@ extension SyncManager {
         ownerId: String,
         processingGeneration: Int
     ) async -> Bool {
+        guard let accessToken = await passAccessToken(
+            ownerId: ownerId, processingGeneration: processingGeneration
+        ) else {
+            Self.logger.warning("Lost auth session mid-sync; aborting remaining items")
+            return false
+        }
         do {
-            await authManager.refreshIfNeeded()
-            guard isProcessingCurrent(processingGeneration, ownerId: ownerId),
-                  let accessToken = authManager.session?.accessToken else {
-                Self.logger.warning("Lost auth session mid-sync; aborting remaining items")
-                return false
-            }
             item.status = SyncStatus.processing.rawValue
             if let processItemOverride {
                 try await processItemOverride(item, accessToken)
             } else {
-                try await taskExecutor.execute(item: item, accessToken: accessToken)
+                try await taskExecutor.execute(
+                    item: item,
+                    accessToken: accessToken,
+                    freshAccessToken: { [weak self] in
+                        await self?.freshAccessToken(ownerId: ownerId)
+                    }
+                )
             }
             guard isProcessingCurrent(processingGeneration, ownerId: ownerId) else { return false }
             store.delete(item)
             return true
         } catch {
             guard isProcessingCurrent(processingGeneration, ownerId: ownerId) else { return false }
+            if await deferForAccessTokenRejection(error, items: [item], rejectedToken: accessToken) {
+                return false
+            }
             return handleNonCommandFailure(error, item: item)
         }
+    }
+
+    /// Refreshes if needed and returns the access token while this pass is still current.
+    private func passAccessToken(ownerId: String, processingGeneration: Int) async -> String? {
+        await authManager.refreshIfNeeded()
+        guard isProcessingCurrent(processingGeneration, ownerId: ownerId) else { return nil }
+        return authManager.session?.accessToken
+    }
+
+    /// Refreshes if needed and returns the access token only while `ownerId` is still signed in.
+    private func freshAccessToken(ownerId: String) async -> String? {
+        await authManager.refreshIfNeeded()
+        guard let session = authManager.session, session.userId == ownerId else { return nil }
+        return session.accessToken
+    }
+
+    /// A rejected access token is recoverable: keep the work pending without spending a retry,
+    /// refresh, and let the caller stop this pass. Only a rejected refresh token ends the session,
+    /// which `AuthManager` decides. The refresh is forced only while the rejected token is still
+    /// current, so a token another caller already rotated is not rotated again.
+    private func deferForAccessTokenRejection(
+        _ error: Error,
+        items: [SyncQueueItem],
+        rejectedToken: String
+    ) async -> Bool {
+        guard let apiError = error as? APIError, isAccessTokenRejection(apiError) else { return false }
+        for item in items {
+            item.queueStatus = .pending
+            item.lastError = apiError.error.code
+            item.nextAttemptAt = nil
+            store.resetArtifactStateForRetryIfNeeded(item: item)
+        }
+        let isStillCurrent = authManager.session?.accessToken == rejectedToken
+        await authManager.refreshIfNeeded(force: isStillCurrent)
+        return true
     }
 
     private func handleNonCommandFailure(_ error: Error, item: SyncQueueItem) -> Bool {
@@ -116,11 +160,15 @@ extension SyncManager {
         for batch in collected.candidates.chunked(into: 25) {
             guard isProcessingCurrent(processingGeneration, ownerId: ownerId) else { return handled }
             for pair in batch { pair.item.queueStatus = .processing }
-            let batchHandled = await processCommandBatch(
+            guard let batchHandled = await processCommandBatch(
                 batch,
                 ownerId: ownerId,
                 processingGeneration: processingGeneration
-            )
+            ) else {
+                // Access token rejected: stop sending batches this pass (later batches were never
+                // marked processing), and keep every command item out of the non-command path.
+                return handled.union(collected.candidates.map(\.item.id))
+            }
             handled.formUnion(batchHandled)
             if batchHandled.count != batch.count { return handled }
         }
@@ -155,15 +203,16 @@ extension SyncManager {
         )
     }
 
+    /// Returns the handled item IDs, or nil when the access token was rejected and the pass should stop.
     private func processCommandBatch(
         _ batch: [(item: SyncQueueItem, command: SyncCommand)],
         ownerId: String,
         processingGeneration: Int
-    ) async -> Set<String> {
+    ) async -> Set<String>? {
+        guard let accessToken = await passAccessToken(
+            ownerId: ownerId, processingGeneration: processingGeneration
+        ) else { return [] }
         do {
-            await authManager.refreshIfNeeded()
-            guard isProcessingCurrent(processingGeneration, ownerId: ownerId),
-                  let accessToken = authManager.session?.accessToken else { return [] }
             let response = try await apiClient.sendSyncCommands(
                 accessToken: accessToken,
                 commands: batch.map(\.command)
@@ -172,6 +221,11 @@ extension SyncManager {
             return applyCommandResults(response, batch: batch, ownerId: ownerId, processingGeneration: processingGeneration)
         } catch {
             guard isProcessingCurrent(processingGeneration, ownerId: ownerId) else { return [] }
+            if await deferForAccessTokenRejection(
+                error, items: batch.map(\.item), rejectedToken: accessToken
+            ) {
+                return nil
+            }
             for pair in batch { handleFailure(error, for: pair.item) }
             return Set(batch.map { $0.item.id })
         }
@@ -231,17 +285,14 @@ extension SyncManager {
         (error as? APIError)?.error.code ?? error.localizedDescription
     }
 
+    /// The access token was rejected; a refresh can recover the session.
+    private func isAccessTokenRejection(_ error: APIError) -> Bool {
+        ["MISSING_AUTH", "INVALID_TOKEN"].contains(error.error.code)
+    }
+
+    /// The refresh token or account is gone; the session cannot recover.
     private func isSessionBoundaryError(_ error: APIError) -> Bool {
-        let boundaryCodes: Set<String> = [
-            "MISSING_AUTH",
-            "INVALID_TOKEN",
-            "INVALID_REFRESH",
-            "REFRESH_REVOKED",
-            "REFRESH_MISMATCH",
-            "REFRESH_ALREADY_USED",
-            "USER_NOT_FOUND"
-        ]
-        return boundaryCodes.contains(error.error.code)
+        AuthManager.refreshRejectionCodes.contains(error.error.code)
     }
 
     func finishQueuePass(_ items: [SyncQueueItem]) {

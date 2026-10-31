@@ -113,10 +113,12 @@ extension MainSplitView {
     Task { await syncManager.processQueue() }
   }
 
-  func refreshCourses() async {
+  /// `reportingErrors: false` is for automatic refreshes, which must not raise alerts.
+  func refreshCourses(reportingErrors: Bool = true) async {
     refreshGeneration &+= 1
     let generation = refreshGeneration
-    guard let session = authManager.session else { return }
+    await authManager.refreshIfNeeded()
+    guard refreshGeneration == generation, let session = authManager.session else { return }
     let userID = session.userId
     let accessToken = session.accessToken
     do {
@@ -159,7 +161,7 @@ extension MainSplitView {
     } catch is CancellationError {
       return
     } catch {
-      errorReporter.report(error)
+      if reportingErrors { errorReporter.report(error) }
     }
   }
 

@@ -23,7 +23,8 @@
     "defaultPageSize": 50,
     "maxPageSize": 200,
     "feedbackOrder": ["createdAt:asc", "id:asc"],
-    "reviewQueueOmittedFields": ["captureMarkers"]
+    "reviewQueueOmittedFields": ["captureMarkers"],
+    "reviewQueueStatuses": ["submitted", "reviewed"]
   },
   "sync": {
     "commandPath": "/api/v1/sync/commands",

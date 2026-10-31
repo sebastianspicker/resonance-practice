@@ -32,7 +32,7 @@ from the browser-to-identity-provider PKCE flow.
 | --- | --- | --- |
 | `GET` | `/api/v1/courses` | Courses visible to the authenticated user. |
 | `GET` | `/api/v1/courses/:courseId/entries` | Accessible entries for a course. |
-| `GET` | `/api/v1/courses/:courseId/review-queue` | Teacher review queue for a course. |
+| `GET` | `/api/v1/courses/:courseId/review-queue` | Teacher review queue for a course. Optional `status=reviewed` lists reviewed entries instead of submitted ones; any other `status` value is a 400 `VALIDATION_ERROR`. |
 | `GET` | `/api/v1/entries/:entryId` | An accessible entry. |
 | `GET` | `/api/v1/entries/:entryId/feedback` | Feedback for an accessible entry. |
 
