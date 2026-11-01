@@ -29,6 +29,8 @@ analyze)
 	# integrated Swift driver logs only temporary response files, so build with
 	# the legacy driver into a private derived-data directory and analyze it
 	# before cleanup. Zero analyzed files means the analysis did not run.
+	# Include capture declarations: SourceKit analyzes their guarded references
+	# too, so it needs a module built with the matching screenshot condition.
 	command -v xcodebuild >/dev/null || {
 		echo "xcodebuild is required for Swift analysis." >&2
 		exit 1
@@ -38,8 +40,10 @@ analyze)
 	xcodebuild \
 		-project ios/ResonanceApp/ResonanceApp.xcodeproj \
 		-scheme ResonanceApp \
+		-configuration Debug \
 		-destination "generic/platform=iOS Simulator" \
 		-derivedDataPath "$WORK_DIR/DerivedData" \
+		"SWIFT_ACTIVE_COMPILATION_CONDITIONS=\$(inherited) DEBUG RESONANCE_SCREENSHOTS" \
 		SWIFT_USE_INTEGRATED_DRIVER=NO \
 		build >"$WORK_DIR/xcodebuild.log" 2>&1 || {
 		tail -40 "$WORK_DIR/xcodebuild.log" >&2

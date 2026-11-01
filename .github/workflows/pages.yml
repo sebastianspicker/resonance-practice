@@ -2,11 +2,6 @@ name: Pages
 # Publishes the dependency-free walkthrough from demo/site.
 
 on:
-  push:
-    branches: ["main"]
-    paths:
-      - ".github/workflows/pages.yml"
-      - "demo/site/**"
   workflow_dispatch:
 
 permissions:
@@ -19,6 +14,7 @@ concurrency:
 jobs:
   deploy:
     name: Deploy static demo
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -38,7 +34,7 @@ jobs:
         run: node ./scripts/demo/validate-static-site.mjs
 
       - name: Upload static demo
-        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: demo/site
 

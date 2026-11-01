@@ -207,3 +207,8 @@ development-log*
 handoff*
 handover*
 /progress.md
+
+# Local audit inventory and owner review notes
+/ALPHA_AUDIT_REPORT.md
+/ALPHA_KNOWN_ISSUES.md
+/THINGS_TO_DO_LEDGER.md

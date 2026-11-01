@@ -11,6 +11,25 @@ teachers. Students record private practice audio (or consented teaching-lesson
 video), note what they noticed, and submit an entry to a course. Teachers review
 the submissions they can see and leave timestamped feedback.
 
+<details>
+<summary>Status and limitations</summary>
+
+Resonance is an independent experimental project for offline music-practice
+records and timestamped teacher feedback. Developed independently alongside
+my main professional work. This early alpha supplies iOS and server source
+as a starting point for adaptation; there is no hosted service, signed
+build or support commitment. Production identity integration needs
+deployment-specific configuration and validation. Test your deployment,
+access controls and recovery procedures before relying on it.
+
+**Disclaimer.** Recording and feedback features do not grant consent to
+capture or share student or teacher media. You are responsible for
+participant permissions, appropriate access, retention and the educational
+interpretation of feedback; technical checks do not establish institutional
+readiness.
+
+</details>
+
 Every change is written on the device first, so the app keeps working when the
 connection drops and syncs in the background when it returns.
 
@@ -27,9 +46,7 @@ What you get:
 - **Private media by default.** Uploads are checksum-bound; downloads are
   short-lived and authorized.
 
-This repository is the source for the iOS app and the server it syncs with. It
-is an early alpha: there is no hosted service, signed build, production identity
-integration, or support commitment. The
+This repository is the source for the iOS app and the server it syncs with. The
 [interactive walkthrough](https://sebastianspicker.github.io/resonance-practice/) is a
 presentation-only page that uses mock data and does not connect to the app or
 server.
@@ -112,7 +129,7 @@ The same tour is available as a gallery on the
 | [`ios/ResonanceApp/`](ios/ResonanceApp/README.md) | Offline SwiftUI client: local persistence, capture, review, and synchronization | iOS/iPadOS 17+, built and tested with Xcode |
 | [`server/`](server/README.md) | Fastify API: identity, authorization, persistence, media sessions, and synchronization | Private Node.js 24 package, built and run as one server monolith |
 | [`demo/site/`](demo/site/README.md) | Presentation-only browser walkthrough | Dependency-free static files, published independently with GitHub Pages |
-| [`contracts/`](contracts/v1-api-contract.json) | Canonical v1 routes and cross-client wire vocabulary | Checked against live server responses (Vitest) and the Swift networking models |
+| [`contracts/`](contracts/v1-api-contract.json) | Canonical v1 routes and cross-client wire vocabulary | Repository validation checks the document, server routes, and Swift networking models |
 | [`infra/`](infra/docker-compose.yml) | Disposable PostgreSQL and S3-compatible storage (SeaweedFS) | Loopback-only Docker Compose for development and CI, not production |
 
 The client and server build independently and share the v1 HTTP contract. Neither

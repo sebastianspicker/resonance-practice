@@ -84,7 +84,7 @@ Run commands from the repository root unless the command changes directory.
 | Server lint and quality | `cd server && npm run quality` | Runs ESLint, Knip, and cross-language duplication checks. |
 | Server format check | `cd server && npm run format:check` | Run `npm run format` only when you intend to rewrite TypeScript formatting. |
 | Swift lint | `./scripts/lint-swift.sh lint` | Requires SwiftLint 0.63.2. |
-| Swift analysis | `./scripts/lint-swift.sh analyze` | Builds with the legacy Swift driver, then runs the unused-declaration and unused-import analyzer rules; fails if no files were analyzed. |
+| Swift analysis | `./scripts/lint-swift.sh analyze` | Builds Debug with the legacy Swift driver and screenshot declarations enabled, then runs the unused-declaration and unused-import analyzer rules; fails if no files were analyzed. |
 | iOS build | `./scripts/verify-ios.sh` | Runs the source-layer check, a Debug build through the shared scheme, and Release and screenshot-capture builds. |
 | Public Markdown links and images | `node scripts/validate-public-docs.mjs` | Checks repository containment, existence, and publication eligibility. Images need alt text. |
 | Full local CI | `./scripts/ci-local.sh --with-docker` | Provisions disposable services, runs the server and iOS lanes, and stops Compose on exit. |
@@ -106,8 +106,9 @@ The iOS verifier supports:
   CI keeps clean build directories.
 
 GitHub CI runs the bundled and exact Swift compiler lanes as independent jobs.
-The aggregate `iOS Build` check succeeds only when both pass. Server test files
-run serially because their fixtures truncate a shared test database.
+The aggregate `iOS Build` check succeeds only when both pass. The published
+server lane runs static checks, migrations, a build, and a live readiness probe;
+it does not include a behavioral test suite.
 
 ## Performance checks
 
@@ -133,9 +134,10 @@ battery gains.
 
 ## Test database safety
 
-Server tests use `resonance_test` with the `public` schema and may clear its
-tables. The full local CI script validates the target, creates the local test
-database when needed, and applies migrations before running tests. Never aim
+The local CI lane uses `resonance_test` with the `public` schema. It validates
+the target, creates the local test database when needed, and applies migrations
+before probing the running server. The repository does not publish a server
+behavioral test suite. Never aim
 `DATABASE_URL` at development, shared, or production data.
 
 The separate development reset is deliberately destructive:
@@ -162,3 +164,13 @@ results, or local screenshots.
 
 `contracts/v1-api-contract.json` is hand-maintained. Verify it with
 `./scripts/verify-repository.sh`.
+
+## Automatic workflow scope
+
+General CI runs automatically only for Dependabot-authored pull requests; maintainers
+can dispatch it manually. CodeQL and dependency audits retain security-only
+automation. Pages deployment requires manual dispatch from main and never runs
+from a pull request. Local verification remains available for any contributor.
+Dependabot schedules npm, GitHub Actions, and the Compose Docker images;
+Docker image references embedded in workflow commands and services still need
+manual review.

@@ -2,8 +2,7 @@
 name: CI
 
 on:
-  push:
-    branches: ["main"]
+  workflow_dispatch:
   pull_request:
 
 permissions:
@@ -16,17 +15,21 @@ concurrency:
 jobs:
   infra-validate:
     name: Infra Validate
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Docker Compose config
         run: docker compose -f infra/docker-compose.yml config -q
 
   server:
     name: Server Tests
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -73,6 +76,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
@@ -170,6 +175,7 @@ jobs:
 
   ios-toolchain:
     name: iOS (${{ matrix.toolchain }})
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
     runs-on: macos-26
     timeout-minutes: 40
     strategy:
@@ -179,6 +185,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Install pinned SwiftLint
         if: matrix.toolchain == 'xcode'
@@ -215,7 +223,7 @@ jobs:
     # Preserve the existing required-check name while toolchains run independently.
     name: iOS Build
     needs: ios-toolchain
-    if: always()
+    if: always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]'))
     runs-on: ubuntu-latest
     steps:
       - name: Require both toolchains

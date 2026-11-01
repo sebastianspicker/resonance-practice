@@ -31,8 +31,6 @@ enum ReviewQueueStatus: String {
 
 struct ReviewQueueEntry: Decodable {
     let id: String
-    // swiftlint:disable unused_declaration
-    // Decoded server fields that the review UI does not read.
     let courseId: String
     let studentId: String
     let studentName: String
@@ -44,7 +42,6 @@ struct ReviewQueueEntry: Decodable {
     let consentScope: String?
     let captureProfile: String?
     let captureMarkerCount: Int?
-    // swiftlint:enable unused_declaration
     let artifacts: [ArtifactResponse]
 }
 

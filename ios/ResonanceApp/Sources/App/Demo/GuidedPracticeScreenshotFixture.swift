@@ -1,5 +1,5 @@
 #if RESONANCE_SCREENSHOTS
-import AVFoundation
+import AVFAudio
 import Foundation
 import SwiftData
 

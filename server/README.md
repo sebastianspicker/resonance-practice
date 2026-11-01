@@ -1,6 +1,6 @@
 # Resonance server
 
-The server is Resonance's private Node.js component. It exposes the HTTP API,
+The server is Resonance's unpublished Node.js component. It exposes the HTTP API,
 authenticates users, enforces course and entry access, persists application state
 through Prisma/PostgreSQL, and coordinates protected media with S3-compatible
 storage. It builds and runs as one Fastify monolith and is not published as a
@@ -134,5 +134,7 @@ Run these from `server/`:
 | Generate Prisma client | `npm run prisma:generate` |
 | Apply committed migrations | `npm run prisma:migrate` |
 
-Tests use a real `resonance_test` PostgreSQL database and mocked S3. Follow the
-test-database and reset safeguards in [Development](../docs/DEVELOPMENT.md).
+The published CI lane runs static checks, migrations, a build, and a readiness
+probe against PostgreSQL and S3-compatible storage. It does not include a server
+behavioral test suite. Follow the database and reset safeguards in
+[Development](../docs/DEVELOPMENT.md).

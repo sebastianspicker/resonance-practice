@@ -33,11 +33,9 @@ struct ArtifactSessionCompletionResponse: Decodable, Sendable {
 
 struct ArtifactResponse: Decodable {
     let id: String
-    // swiftlint:disable:next unused_declaration
     let entryId: String // Decoded server field, validated on decode.
     let type: String
     let durationSeconds: Int
-    // swiftlint:disable:next unused_declaration
     let expectedSizeBytes: Int? // Decoded server field (optional).
     let uploadState: String
 }

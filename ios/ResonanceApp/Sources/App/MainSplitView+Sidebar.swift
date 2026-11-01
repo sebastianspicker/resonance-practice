@@ -126,22 +126,7 @@ extension MainSplitView {
         accessToken: accessToken)
       try Task.checkCancellation()
       guard isCurrentProfile(userID: userID, accessToken: accessToken, generation: generation) else { return }
-      let existing = (try? modelContext.fetch(FetchDescriptor<LocalCourse>())) ?? []
-      let existingMap = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
-      let remoteCourseIds = Set(remoteCourses.map(\.id))
-      for course in remoteCourses {
-        if let local = existingMap[course.id] {
-          local.title = course.title
-          local.roleInCourse = course.roleInCourse
-        } else {
-          modelContext.insert(
-            LocalCourse(id: course.id, title: course.title, roleInCourse: course.roleInCourse))
-        }
-      }
-      for localCourse in existing where !remoteCourseIds.contains(localCourse.id) {
-        modelContext.delete(localCourse)
-      }
-      try modelContext.save()
+      let remoteCourseIds = try mergeRemoteCourses(remoteCourses)
       let reconciler = EntryReconciliationService(
         modelContext: modelContext,
         apiClient: appState.apiClient,
@@ -163,6 +148,27 @@ extension MainSplitView {
     } catch {
       if reportingErrors { errorReporter.report(error) }
     }
+  }
+
+  /// Applies a fetched catalog synchronously within the already-checked active profile.
+  private func mergeRemoteCourses(_ remoteCourses: [CourseResponse]) throws -> Set<String> {
+    let existing = (try? modelContext.fetch(FetchDescriptor<LocalCourse>())) ?? []
+    let existingMap = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
+    let remoteCourseIds = Set(remoteCourses.map(\.id))
+    for course in remoteCourses {
+      if let local = existingMap[course.id] {
+        local.title = course.title
+        local.roleInCourse = course.roleInCourse
+      } else {
+        modelContext.insert(
+          LocalCourse(id: course.id, title: course.title, roleInCourse: course.roleInCourse))
+      }
+    }
+    for localCourse in existing where !remoteCourseIds.contains(localCourse.id) {
+      modelContext.delete(localCourse)
+    }
+    try modelContext.save()
+    return remoteCourseIds
   }
 
   private func isCurrentProfile(userID: String, accessToken: String, generation: Int) -> Bool {

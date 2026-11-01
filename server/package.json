@@ -54,7 +54,7 @@
     "@fastify/rate-limit": "10.3.0",
     "@prisma/client": "5.22.0",
     "dotenv": "17.3.1",
-    "fastify": "5.12.5",
+    "fastify": "5.12.7",
     "jsonwebtoken": "9.0.3",
     "nanoid": "5.1.16",
     "openid-client": "5.7.1",
@@ -63,7 +63,11 @@
   },
   "overrides": {
     "fast-xml-builder": "1.2.0",
-    "fast-xml-parser": "5.7.2"
+    "fast-xml-parser": "5.7.2",
+    "fast-uri@3": "3.1.9",
+    "fast-uri@4": "4.2.3",
+    "zod@4": "4.6.6",
+    "minimatch@10": "11.0.1"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",

@@ -1,6 +1,4 @@
 #if RESONANCE_SCREENSHOTS
-import Foundation
-
 /// Deterministic session injection is compiled with the app only for demos and screenshots.
 @MainActor
 extension AuthManager {

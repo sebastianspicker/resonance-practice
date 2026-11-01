@@ -1,3 +1,5 @@
+import Foundation
+
 extension APIClient {
   /// `.reviewed` lists submissions the course's teachers have already reviewed.
   func fetchReviewQueue(

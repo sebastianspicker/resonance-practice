@@ -14,7 +14,7 @@ extension AuthManager {
     "REFRESH_REVOKED",
     "REFRESH_MISMATCH",
     "REFRESH_ALREADY_USED",
-    "USER_NOT_FOUND",
+    "USER_NOT_FOUND"
   ]
 
   /// True only for failures after which the session cannot recover by retrying later.

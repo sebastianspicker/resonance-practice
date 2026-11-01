@@ -37,8 +37,8 @@ server, or data stores.
 
 ## Server
 
-`server/src/server.ts` exports `buildServer(prisma, s3)`, which both the process
-entry point and the tests use. `server/src/app/` owns the process lifecycle
+`server/src/server.ts` exports `buildServer(prisma, s3)` for the process
+entry point. `server/src/app/` owns the process lifecycle
 (`index.ts`: connections, listening, shutdown; `maintenance.ts`: the ordered
 background jobs) and the
 Fastify assembly (`serverRuntime.ts`: transport policy, readiness, route

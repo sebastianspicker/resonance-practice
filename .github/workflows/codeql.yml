@@ -1,7 +1,8 @@
-# Runs GitHub's semantic security analysis for the repository's compiled languages.
+# Runs GitHub semantic security analysis for the TypeScript server.
 name: CodeQL
 
 on:
+  workflow_dispatch:
   push:
     branches: ["main"]
   pull_request:
@@ -29,7 +30,7 @@ jobs:
         uses: github/codeql-action/init@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
         with:
           languages: javascript-typescript
-          paths: server
+          config-file: .github/codeql/config.yml
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
