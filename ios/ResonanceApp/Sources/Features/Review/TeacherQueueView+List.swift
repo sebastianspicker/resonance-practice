@@ -72,8 +72,10 @@ extension TeacherQueueView {
         .sheet(item: $selected) { entry in
             SubmissionDetailView(
                 entry: entry,
-                onFeedbackQueued: { queuedFeedback.insert(entry.id) },
-                isFeedbackQueued: queuedFeedback.contains(entry.id)
+                onFeedbackQueued: { feedbackQueued(for: entry) },
+                isFeedbackQueued: queuedFeedback.contains(entry.id),
+                reviewStatus: reviewStatus,
+                onDraftChange: { draftChanged($0, for: entry) }
             )
         }
     }

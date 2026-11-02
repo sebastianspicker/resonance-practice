@@ -8,7 +8,7 @@ import { ErrorCodes } from '../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../platform/http/errors.js';
 import { requireStudentOwner } from '../../entries/application/authorization.js';
 import { toArtifactResponseDto } from '../../entries/application/dto.js';
-import { assertEntryActive, lockEntry } from '../../entries/application/locks.js';
+import { lockEntry } from '../../entries/application/locks.js';
 import {
   bumpEntryVersion,
   requireEntryVersion,
@@ -82,7 +82,6 @@ async function prepareExistingArtifactSession(
     include: { artifact: true },
   });
   const entry = await lockEntry(tx, current.artifact.entryId);
-  assertEntryActive(entry);
   await requireStudentOwner(tx, input.userId, entry, 'upload artifacts');
   if (current.completedAt) {
     return {
@@ -111,7 +110,6 @@ async function prepareNewArtifactSession(
   expiresAt: Date
 ) {
   const entry = await lockEntry(tx, input.entryId);
-  assertEntryActive(entry);
   await requireStudentOwner(tx, input.userId, entry, 'upload artifacts');
   requireEntryVersion(entry, input.baseVersion);
   if (entry.status !== 'draft') {
@@ -186,7 +184,6 @@ async function rotateStagingSession(
       storageKey,
       uploadState: 'uploading',
       uploadExpiresAt: expiresAt,
-      confirmationToken: null,
       failedAt: null,
     },
   });
@@ -220,7 +217,7 @@ export async function createArtifactSession(
       include: { artifact: true },
     });
     if (session.completedAt) {
-      throw new ApiError(409, ErrorCodes.UPLOAD_INVALID, 'Artifact session is not uploadable');
+      throw new ApiError(409, ErrorCodes.UPLOAD_RETRY_LATER, 'Artifact session is not uploadable');
     }
     const now = new Date();
     if (
@@ -229,7 +226,7 @@ export async function createArtifactSession(
     ) {
       throw new ApiError(
         409,
-        ErrorCodes.UPLOAD_INVALID,
+        ErrorCodes.UPLOAD_RETRY_LATER,
         'Artifact completion is in progress; retry later'
       );
     }
@@ -241,7 +238,7 @@ export async function createArtifactSession(
       expiresInSeconds = config.s3.presignTtlSeconds;
     }
     if (expiresInSeconds < 1) {
-      throw new ApiError(409, ErrorCodes.UPLOAD_INVALID, 'Artifact session is not uploadable');
+      throw new ApiError(409, ErrorCodes.UPLOAD_RETRY_LATER, 'Artifact session is not uploadable');
     }
     const presigned = await presignUpload(
       s3,

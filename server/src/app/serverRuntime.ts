@@ -74,6 +74,7 @@ export function createApiApp() {
         'req.body.code',
       ],
     },
+    trustProxy: config.trustProxy.length > 0 ? config.trustProxy : false,
     requestIdHeader: 'x-request-id',
     bodyLimit: limits.bodyLimitBytes,
   });

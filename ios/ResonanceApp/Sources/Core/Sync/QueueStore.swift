@@ -76,6 +76,8 @@ final class QueueStore {
         let requestedLimit = min(limit, Self.maxReadyWindow)
         var ready: [SyncQueueItem] = []
         var cursor: (createdAt: Date, id: String)?
+        // Entities with an earlier not-yet-due item; later work for them must wait to preserve order.
+        var blocked: Set<String> = []
 
         // The in-memory SwiftData store does not translate optional-date
         // comparisons. Scan owner/status rows in keyset windows, applying retry
@@ -88,7 +90,13 @@ final class QueueStore {
                 after: cursor
             )
             guard !batch.isEmpty else { break }
-            for item in batch where item.nextAttemptAt == nil || (item.nextAttemptAt ?? now) <= now {
+            for item in batch {
+                let entity = decodedPayload(for: item).flatMap { try? entityID(for: $0) }
+                if let due = item.nextAttemptAt, due > now {
+                    if let entity { blocked.insert(entity) }
+                    continue
+                }
+                if let entity, blocked.contains(entity) { continue }
                 ready.append(item)
                 if ready.count == requestedLimit { break }
             }
@@ -96,6 +104,25 @@ final class QueueStore {
             cursor = (last.createdAt, last.id)
         }
         return ready
+    }
+
+    /// The single rule mapping a queued payload to the entry whose ordering it belongs to.
+    func entityID(for payload: OutboxPayload) throws -> String? {
+        switch payload {
+        case let .artifact(artifact):
+            guard !artifact.artifactId.isEmpty else {
+                throw SyncError.payloadParseError("Sync payload is missing artifactId")
+            }
+            return try fetchArtifact(id: artifact.artifactId).entryId
+        case let .feedback(feedback):
+            guard !feedback.feedbackId.isEmpty else {
+                throw SyncError.payloadParseError("Sync payload is missing feedbackId")
+            }
+            if feedback.targetType == "entry" { return feedback.targetId }
+            return try fetchArtifact(id: feedback.targetId).entryId
+        case .entry, .deletion:
+            return payload.entryID
+        }
     }
 
     /// Return counts for the published queue metrics.
@@ -177,6 +204,16 @@ final class QueueStore {
         let descriptor = FetchDescriptor<SyncQueueItem>()
         guard let items = try? modelContext.fetch(descriptor) else { return }
         for item in items where decodedPayload(for: item)?.entryID == entryID {
+            modelContext.delete(item)
+        }
+        save()
+    }
+
+    /// Permanently removes queued uploads for one local artifact that is being discarded.
+    func discardWork(forArtifactID artifactID: String) {
+        let descriptor = FetchDescriptor<SyncQueueItem>()
+        guard let items = try? modelContext.fetch(descriptor) else { return }
+        for item in items where decodedPayload(for: item)?.artifactID == artifactID {
             modelContext.delete(item)
         }
         save()
@@ -273,7 +310,7 @@ final class QueueStore {
     }
 
     private func taskIdentity(for payload: OutboxPayload) -> String? {
-        payload.artifactID ?? payload.entryID ?? payload.feedbackID
+        payload.feedbackID ?? payload.artifactID ?? payload.entryID
     }
 
     private func existingTask(type: SyncTaskType, identity: String, ownerId: String) -> SyncQueueItem? {

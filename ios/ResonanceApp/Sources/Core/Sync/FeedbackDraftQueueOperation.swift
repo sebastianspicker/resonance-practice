@@ -6,6 +6,9 @@ import SwiftData
 enum FeedbackDraftValidationError: LocalizedError {
     case invalidMarkerTime
     case emptyMarkerNote
+    case tooManyMarkers
+    case markerTimeTooLarge
+    case markerNoteTooLong
 
     var errorDescription: String? {
         switch self {
@@ -13,6 +16,12 @@ enum FeedbackDraftValidationError: LocalizedError {
             return "Enter marker times as minutes and seconds, for example 01:24."
         case .emptyMarkerNote:
             return "Add a note to every marker."
+        case .tooManyMarkers:
+            return "Use at most \(ServerLimits.maxMarkers) markers."
+        case .markerTimeTooLarge:
+            return "Marker times can be at most \(MarkerDraft.formatTime(TimeInterval(ServerLimits.maxMarkerTimeSeconds)))."
+        case .markerNoteTooLong:
+            return "Keep each marker note to 1,000 characters or fewer."
         }
     }
 }
@@ -54,7 +63,7 @@ struct FeedbackDraftQueueOperation {
     }
 
     private func validatedMarkers() throws -> [(seconds: Int, text: String)] {
-        try markers.compactMap { marker in
+        let parsed: [(seconds: Int, text: String)] = try markers.compactMap { marker in
             guard !marker.time.isEmpty || !marker.text.isEmpty else { return nil }
             guard let seconds = MarkerDraft.parseTime(marker.time) else {
                 throw FeedbackDraftValidationError.invalidMarkerTime
@@ -62,7 +71,16 @@ struct FeedbackDraftQueueOperation {
             guard !marker.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw FeedbackDraftValidationError.emptyMarkerNote
             }
+            guard seconds <= ServerLimits.maxMarkerTimeSeconds else {
+                throw FeedbackDraftValidationError.markerTimeTooLarge
+            }
+            let note = marker.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard note.utf16.count <= ServerLimits.maxMarkerTextLength else {
+                throw FeedbackDraftValidationError.markerNoteTooLong
+            }
             return (seconds, marker.text)
         }
+        guard parsed.count <= ServerLimits.maxMarkers else { throw FeedbackDraftValidationError.tooManyMarkers }
+        return parsed
     }
 }

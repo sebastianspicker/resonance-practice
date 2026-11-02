@@ -56,7 +56,7 @@ async function copyArtifactCompletionClaim(
           );
         } catch (error) {
           if (isS3SourceInvalidError(error)) {
-            throw new ApiError(409, ErrorCodes.UPLOAD_INVALID, 'Uploaded object was not found');
+            throw new ApiError(409, ErrorCodes.UPLOAD_RETRY_LATER, 'Uploaded object was not found');
           }
           throw error;
         }
@@ -79,7 +79,7 @@ async function copyArtifactCompletionClaim(
           if (isS3SourceInvalidError(error)) {
             throw new ApiError(
               409,
-              ErrorCodes.UPLOAD_INVALID,
+              ErrorCodes.UPLOAD_RETRY_LATER,
               'Uploaded object changed before it could be finalized'
             );
           }

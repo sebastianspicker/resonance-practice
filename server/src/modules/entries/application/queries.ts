@@ -65,7 +65,6 @@ export async function listCourseEntries(
     prisma,
     {
       courseId,
-      deletedAt: null,
       ...(role === 'student'
         ? { studentId: userId, ...(status ? { status } : {}) }
         : { status: status ?? 'submitted' }),
@@ -105,7 +104,6 @@ export async function readReviewQueuePage(
   const visibleWhere = {
     courseId,
     status,
-    deletedAt: null,
   } satisfies Prisma.PracticeEntryWhereInput;
   return collectPageWithinByteBudget(
     cursor,
@@ -148,8 +146,14 @@ async function buildCursorFilter(
   cursor: string | undefined
 ): Promise<Prisma.PracticeEntryWhereInput['OR'] | undefined> {
   if (!cursor) return undefined;
+  // The anchor may have left the filtered status (e.g. reviewed after page 1); it still marks the position.
+  // Without a studentId scope (teacher lists) the anchor must still never be a hidden draft.
+  const { status: _status, ...anchorScope } = visibleWhere;
+  const anchorWhere: Prisma.PracticeEntryWhereInput = anchorScope.studentId
+    ? anchorScope
+    : { ...anchorScope, status: { not: 'draft' } };
   const entry = await prisma.practiceEntry.findFirst({
-    where: { ...visibleWhere, id: cursor },
+    where: { ...anchorWhere, id: cursor },
     select: { practiceDate: true, createdAt: true, id: true },
   });
   if (!entry) throw new ApiError(400, ErrorCodes.VALIDATION_ERROR, 'Invalid cursor');

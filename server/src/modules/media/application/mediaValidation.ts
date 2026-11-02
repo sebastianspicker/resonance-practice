@@ -153,16 +153,16 @@ function childBoxes(data: Uint8Array, parent: Box, depth: number): Box[] {
 }
 
 function parseChildren(data: Uint8Array, start: number, end: number, depth: number): Box[] {
-  if (depth > MAX_BOX_DEPTH) throw new Error('box nesting exceeds limit');
+  if (depth > MAX_BOX_DEPTH) throw unsupportedContainerError();
   const boxes: Box[] = [];
   for (let offset = start; offset < end; ) {
-    if (boxes.length >= MAX_TOP_LEVEL_BOXES) throw new Error('box count exceeds limit');
+    if (boxes.length >= MAX_TOP_LEVEL_BOXES) throw unsupportedContainerError();
     const box = parseBox(data, offset, end, end - offset);
-    if (!box) throw new Error('invalid box');
+    if (!box) throw unsupportedContainerError();
     boxes.push(box);
     offset = box.end;
   }
-  if (boxes.length === 0 || boxes.at(-1)!.end !== end) throw new Error('truncated box sequence');
+  if (boxes.length === 0 || boxes.at(-1)!.end !== end) throw unsupportedContainerError();
   return boxes;
 }
 

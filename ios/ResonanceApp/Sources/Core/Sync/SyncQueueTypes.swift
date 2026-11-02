@@ -29,11 +29,11 @@ enum SyncError: LocalizedError {
     case localFileMetadataUnavailable(String)
     case localFeedbackNotFound(String)
     case localCaptureMarkersNotFound(String)
-    case dependenciesPending(String)
     case invalidCommandBatchSize(Int)
     case serverConflict(entityId: String, currentVersion: Int?)
     case commandRejected(String)
     case commandRetryable(String)
+    case localFileTemporarilyUnavailable(String)
     case missingServerVersion(String)
 
     var errorDescription: String? {
@@ -45,7 +45,6 @@ enum SyncError: LocalizedError {
         case .localFileMetadataUnavailable(let message): return message
         case .localFeedbackNotFound(let message): return message
         case .localCaptureMarkersNotFound(let message): return message
-        case .dependenciesPending(let message): return message
         case .invalidCommandBatchSize(let count): return "Sync batches must contain between 1 and 25 commands, got \(count)."
         case let .serverConflict(entityId, currentVersion):
             if let currentVersion {
@@ -54,6 +53,7 @@ enum SyncError: LocalizedError {
             return "The server has a newer copy of entry \(entityId)."
         case .commandRejected(let message): return message
         case .commandRetryable(let message): return message
+        case .localFileTemporarilyUnavailable(let message): return message
         case .missingServerVersion(let entryID): return "Entry \(entryID) must be refreshed before it can be changed."
         }
     }

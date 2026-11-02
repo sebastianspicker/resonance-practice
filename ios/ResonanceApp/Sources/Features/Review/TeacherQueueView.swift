@@ -37,6 +37,10 @@ struct TeacherQueueView: View {
     @State private var loadGeneration = 0
     @State private var failedLoad: QueueLoadKind?
     @State var queuedFeedback: Set<String>
+    /// Entry whose feedback editor holds unsent text.
+    @State var draftEntryID: String?
+    /// Row the user picked while a draft was open; applied only after they confirm discarding.
+    @State var pendingSelection: ReviewQueueEntry?
 
     init(
         courseId: String,
@@ -93,7 +97,11 @@ struct TeacherQueueView: View {
             let selectedID = selected?.id
             queue = firstPage.items
             nextCursor = firstPage.nextCursor?.isEmpty == false ? firstPage.nextCursor : nil
-            selected = selectedID.flatMap { id in queue.first { $0.id == id } } ?? queue.first
+            // A refresh must not swap the entry out from under an unsent draft.
+            if draftEntryID == nil {
+                selected = selectedID.flatMap { id in queue.first { $0.id == id } }
+                    ?? (presentation == .workspace && selectsInitialSubmission ? queue.first : nil)
+            }
         } catch {
             guard isCurrentLoad(generation, session: session) else { return }
             errorMessage = error.localizedDescription

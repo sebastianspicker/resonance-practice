@@ -11,6 +11,8 @@ struct LocalProfileLifecycle {
         let saveChanges: () throws -> Void
         let removeStoredMediaFiles: () throws -> Void
         let hasStoredMediaFiles: () throws -> Bool
+        let removeExports: () throws -> Void
+        let hasExports: () throws -> Bool
         let removeCalendarSubscription: () throws -> Void
         let localDataOwner: () throws -> String?
         let setLocalDataOwner: (String) throws -> Void
@@ -36,6 +38,8 @@ struct LocalProfileLifecycle {
             saveChanges: { try modelContext.save() },
             removeStoredMediaFiles: { try FileStore.removeAllStoredMediaFiles() },
             hasStoredMediaFiles: { try FileStore.hasStoredMediaFiles() },
+            removeExports: { try FileStore.removeAllExports() },
+            hasExports: { try FileStore.hasStoredExports() },
             removeCalendarSubscription: { try CalendarSubscriptionStore.removeStoredURL() },
             localDataOwner: ownerStore.read,
             setLocalDataOwner: ownerStore.write,
@@ -89,6 +93,7 @@ struct LocalProfileLifecycle {
 
     private func purgeLocalUserData() throws {
         try dependencies.removeStoredMediaFiles()
+        try dependencies.removeExports()
         try dependencies.modelContext.deleteAllModels(of: PersistenceController.deletionOrder)
         try dependencies.saveChanges()
         try verifyNoLocalUserData()
@@ -96,7 +101,7 @@ struct LocalProfileLifecycle {
     }
 
     private func verifyNoLocalUserData() throws {
-        guard try hasNoLegacyLocalData() else {
+        guard try hasNoLegacyLocalData(), try !dependencies.hasExports() else {
             throw LocalProfileLifecycleError.localDataStillExists("local profile")
         }
     }

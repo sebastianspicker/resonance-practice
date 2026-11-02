@@ -28,13 +28,47 @@ enum PersistenceController {
     }
 
     private static func createPersistentContainer() -> Result<ModelContainer, Error> {
+        openPersistentContainer(clearingLeftoverSignIn: false)
+    }
+
+    /// User-directed recovery for a sign-in left behind by an earlier installation with no stored data.
+    static func createPersistentContainerClearingLeftoverSignIn() -> Result<ModelContainer, Error> {
+        openPersistentContainer(clearingLeftoverSignIn: true)
+    }
+
+    private static func openPersistentContainer(clearingLeftoverSignIn: Bool) -> Result<ModelContainer, Error> {
         do {
             let container = try makeContainer(inMemory: false)
-            try LocalAlphaDataReset.runIfNeeded(modelContext: container.mainContext, environment: .live())
+            try LocalAlphaDataReset.runIfNeeded(
+                modelContext: container.mainContext,
+                environment: .live(),
+                clearingLeftoverSignIn: clearingLeftoverSignIn
+            )
+            repairStoredMediaPaths(in: container.mainContext)
             return .success(container)
         } catch {
             logger.fault("Failed to create persistent ModelContainer: \(error.localizedDescription)")
             return .failure(error)
+        }
+    }
+
+    /// Rewrites absolute media paths that point into a previous app container.
+    private static func repairStoredMediaPaths(in modelContext: ModelContext) {
+        do {
+            let artifacts = try modelContext.fetch(
+                FetchDescriptor<LocalArtifact>(predicate: #Predicate { !$0.localPath.isEmpty })
+            )
+            var repaired = 0
+            for artifact in artifacts {
+                if let relocated = FileStore.relocatedMediaPath(forStoredPath: artifact.localPath) {
+                    artifact.localPath = relocated
+                    repaired += 1
+                }
+            }
+            if repaired > 0 { try modelContext.save() }
+            logger.info("Repaired \(repaired) stored media paths")
+        } catch {
+            logger.error("Failed to repair stored media paths: \(error.localizedDescription)")
         }
     }
 
@@ -141,7 +175,11 @@ enum LocalAlphaDataReset {
         }
     }
 
-    static func runIfNeeded(modelContext: ModelContext, environment: Environment) throws {
+    static func runIfNeeded(
+        modelContext: ModelContext,
+        environment: Environment,
+        clearingLeftoverSignIn: Bool = false
+    ) throws {
         let recordedGeneration = try environment.readGeneration()
         guard recordedGeneration != generation else { return }
         if let recordedGeneration, !knownPredecessorGenerations.contains(recordedGeneration) {
@@ -151,8 +189,11 @@ enum LocalAlphaDataReset {
             let hasExistingSwiftData = try containsAnyModels(in: modelContext)
             let hasExistingMedia = try environment.hasStoredMedia()
             let hasExistingOwner = try environment.localDataOwner() != nil
-            guard !hasExistingSwiftData, !hasExistingMedia, !hasExistingOwner else {
+            guard !hasExistingSwiftData, !hasExistingMedia else {
                 throw LocalAlphaDataResetError.ambiguousExistingData
+            }
+            if hasExistingOwner, !clearingLeftoverSignIn {
+                throw LocalAlphaDataResetError.leftoverSignInOnly
             }
         }
 
@@ -189,6 +230,7 @@ enum LocalAlphaDataReset {
 
 enum LocalAlphaDataResetError: LocalizedError, Equatable {
     case ambiguousExistingData
+    case leftoverSignInOnly
     case swiftDataModelsStillExist
     case mediaStillExists
     case localDataOwnerStillExists
@@ -198,6 +240,8 @@ enum LocalAlphaDataResetError: LocalizedError, Equatable {
         switch self {
         case .ambiguousExistingData:
             return "Existing local data needs recovery before this alpha reset can continue."
+        case .leftoverSignInOnly:
+            return "Sign-in data from an earlier installation must be cleared before Resonance can start."
         case .swiftDataModelsStillExist:
             return "Local data could not be reset safely."
         case .mediaStillExists:

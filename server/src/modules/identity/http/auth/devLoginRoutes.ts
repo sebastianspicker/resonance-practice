@@ -9,6 +9,7 @@ import { config } from '../../../../platform/config.js';
 import { ErrorCodes } from '../../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../../platform/http/errors.js';
 import { requireEnum, requireString } from '../../../../platform/http/input.js';
+import { isLoopback } from '../../../../platform/http/rateLimit.js';
 import {
   apiLimiter,
   apiRateLimit,
@@ -108,17 +109,13 @@ function requireLocalDevAuth(request: FastifyRequest): void {
   if (config.authMode !== 'dev') {
     throw new ApiError(404, ErrorCodes.NOT_FOUND, 'Not found');
   }
-  if (!isLoopbackAddress(request.ip)) {
+  if (!isLoopback(request.ip)) {
     throw new ApiError(
       403,
       ErrorCodes.DEV_AUTH_LOCAL_ONLY,
       'Dev auth routes are only available from localhost'
     );
   }
-}
-
-function isLoopbackAddress(ip: string | undefined): boolean {
-  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 }
 
 async function findExistingUser(prisma: PrismaClient, userId: string) {

@@ -47,7 +47,9 @@ export function registerSyncRoutes(
       const commands = body.commands.map(parseSyncCommand);
       const results: SyncCommandResult[] = [];
       for (const command of commands) {
-        results.push(await executeSyncCommand(prisma, authenticatedUser(request).id, command));
+        results.push(
+          await executeSyncCommand(prisma, authenticatedUser(request).id, command, request.log)
+        );
       }
       return { results };
     }

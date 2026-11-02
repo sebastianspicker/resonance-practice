@@ -105,7 +105,7 @@ struct EntryListView: View {
                 }
                 .font(.caption)
                 .foregroundStyle(AppTheme.workspaceMuted)
-                if let feedback = entry.feedback.last, !feedback.commentsText.isEmpty {
+                if let feedback = entry.feedback.max(by: { $0.createdAt < $1.createdAt }), !feedback.commentsText.isEmpty {
                     HStack(alignment: .top, spacing: 6) {
                         Text("\(feedback.teacherName):")
                             .font(.caption.weight(.semibold))

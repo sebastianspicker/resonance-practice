@@ -11,6 +11,7 @@ struct EntryArtifactsSection: View {
   let captureMarkers: (LocalArtifact) -> [LocalCaptureMarker]
   let togglePlayback: (LocalArtifact) -> Void
   let beginPlayback: (LocalArtifact) -> Void
+  var removeVideo: ((LocalArtifact) -> Void)?
 
   var body: some View {
     if !entry.artifacts.isEmpty {
@@ -90,6 +91,12 @@ struct EntryArtifactsSection: View {
     .accessibilityElement(children: .combine)
     .accessibilityLabel("Video attached, \(artifact.syncPhase.lifecycleStatus.label)")
 
+    if let removeVideo, entry.status == .draft, artifact.uploadState == .pending || artifact.uploadState == .failed {
+      Button("Remove video", role: .destructive) { removeVideo(artifact) }
+        .buttonStyle(.bordered)
+        .accessibilityHint("Deletes this video from the draft so you can film or import another")
+    }
+
     let markers = captureMarkers(artifact)
     if !markers.isEmpty {
       VStack(alignment: .leading, spacing: 6) {
@@ -135,7 +142,7 @@ struct EntryFeedbackSection: View {
                 .foregroundStyle(feedbackStatusColor(feedback.status))
             }
             Text(feedback.commentsText).font(AppTheme.editorialFeedback)
-            ForEach(feedback.markers) { marker in
+            ForEach(feedback.chronologicallyOrderedMarkers) { marker in
               Text("\(formatTime(TimeInterval(marker.timeSeconds)))  \(marker.text)").font(.caption)
                 .foregroundStyle(AppTheme.workspaceMuted)
             }

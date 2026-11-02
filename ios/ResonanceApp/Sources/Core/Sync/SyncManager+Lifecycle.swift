@@ -16,6 +16,12 @@ extension SyncManager {
         updateQueueMetrics()
     }
 
+    /// Drops queued upload work for a local artifact the user discarded before it synced.
+    func discardQueuedUpload(artifactID: String) {
+        store.discardWork(forArtifactID: artifactID)
+        updateQueueMetrics()
+    }
+
     func retryFailedItems() {
         guard let ownerId = authorizedOwner() else {
             updateQueueMetrics()

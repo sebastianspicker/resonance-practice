@@ -39,6 +39,7 @@ struct FeedbackEditorView: View {
     let entry: ReviewQueueEntry
     let playbackTime: () -> TimeInterval
     let onQueued: (() -> Void)?
+    private let onDraftChange: (Bool) -> Void
     private let presentation: FeedbackEditorPresentation
     @State private var status: FeedbackStatus = .accepted
     @State private var commentsText = ""
@@ -52,12 +53,14 @@ struct FeedbackEditorView: View {
         playbackTime: @escaping () -> TimeInterval = { 0 },
         onQueued: (() -> Void)? = nil,
         prefill: FeedbackPrefill? = nil,
-        presentation: FeedbackEditorPresentation = .form
+        presentation: FeedbackEditorPresentation = .form,
+        onDraftChange: @escaping (Bool) -> Void = { _ in }
     ) {
         self.entry = entry
         self.playbackTime = playbackTime
         self.onQueued = onQueued
         self.presentation = presentation
+        self.onDraftChange = onDraftChange
         _status = State(initialValue: prefill?.status ?? .accepted)
         _commentsText = State(initialValue: prefill?.commentsText ?? "")
         _markers = State(initialValue: prefill?.markers ?? [])
@@ -71,6 +74,9 @@ struct FeedbackEditorView: View {
             addMarker: addMarker, removeMarker: removeMarker, cancel: cancel, send: queueFeedback
         )
         .modifier(DiscardFeedbackConfirmation(isPresented: $confirmDiscard, dismiss: dismiss))
+        .interactiveDismissDisabled(hasDraft)
+        .onChange(of: hasDraft) { _, newValue in onDraftChange(newValue) }
+        .onDisappear { onDraftChange(false) }
     }
 
     private var hasDraft: Bool { !commentsText.isEmpty || !markers.isEmpty }

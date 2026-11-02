@@ -6,6 +6,7 @@ enum LifecycleStatus: Equatable, Hashable {
     case draft
     case localOnly
     case queued
+    case uploaded
     case submitted
     case reviewed
     case failed
@@ -18,6 +19,7 @@ enum LifecycleStatus: Equatable, Hashable {
         case .draft: return "Draft"
         case .localOnly: return "Local only"
         case .queued: return "Queued"
+        case .uploaded: return "Uploaded"
         case .submitted: return "Submitted"
         case .reviewed: return "Reviewed"
         case .failed: return "Sync failed"
@@ -30,7 +32,7 @@ enum LifecycleStatus: Equatable, Hashable {
     var fill: Color {
         switch self {
         case .draft: return AppTheme.statusDraftFill
-        case .localOnly: return AppTheme.statusLocalFill
+        case .localOnly, .uploaded: return AppTheme.statusLocalFill
         case .queued, .feedbackQueued, .processing: return AppTheme.statusQueuedFill
         case .submitted: return AppTheme.statusSubmittedFill
         case .reviewed: return AppTheme.statusReviewedFill
@@ -42,7 +44,7 @@ enum LifecycleStatus: Equatable, Hashable {
     var foreground: Color {
         switch self {
         case .draft: return AppTheme.statusDraftForeground
-        case .localOnly: return AppTheme.statusLocalForeground
+        case .localOnly, .uploaded: return AppTheme.statusLocalForeground
         case .queued, .feedbackQueued, .processing: return AppTheme.statusQueuedForeground
         case .submitted: return AppTheme.statusSubmittedForeground
         case .reviewed: return AppTheme.statusReviewedForeground
@@ -104,7 +106,7 @@ extension ArtifactSyncPhase {
         switch self {
         case .queued: return .queued
         case .uploading, .confirming: return .processing
-        case .uploaded: return .submitted
+        case .uploaded: return .uploaded
         case .failed: return .failed
         }
     }

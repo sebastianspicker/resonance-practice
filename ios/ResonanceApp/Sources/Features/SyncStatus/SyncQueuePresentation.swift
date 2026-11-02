@@ -136,6 +136,7 @@ enum SyncQueueDisplay {
         switch type {
         case "createEntry": return "Create Entry"
         case "submitEntry": return "Submit Entry"
+        case "updateEntry": return "Update Entry"
         case "deleteEntry": return "Delete Entry"
         case "postFeedback": return "Send Feedback"
         case "syncArtifact": return "Sync Recording"
@@ -181,7 +182,8 @@ enum SyncErrorMessageMapper {
         "ENTRY_LOCKED": "This entry is locked and cannot be modified.",
         "ENTRY_NOT_SUBMITTED": "This entry has not been submitted yet.",
         "ARTIFACTS_NOT_UPLOADED": "Audio files have not finished uploading.",
-        "UPLOAD_INVALID": "Upload failed. Try re-recording the audio.",
+        "UPLOAD_INVALID": "The server could not accept this recording. Record or import it again.",
+        "UPLOAD_RETRY_LATER": "Upload is still being processed. It will retry automatically.",
         "STORAGE_UNAVAILABLE": "Media storage is unavailable. Try again later.",
         "INVALID_TARGET": "Invalid target for this operation.",
         "VALIDATION_ERROR": "Server rejected this data. Check the entry fields.",

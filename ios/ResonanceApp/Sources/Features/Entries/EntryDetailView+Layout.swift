@@ -36,6 +36,7 @@ struct EntryDetailContent: View {
   var confirmConsent: (() -> Void)?
   var hasAudio: Bool = false
   var retake: (() -> Void)?
+  var removeVideo: ((LocalArtifact) -> Void)?
   var editGoal: (() -> Void)?
 
   var body: some View {
@@ -68,7 +69,7 @@ struct EntryDetailContent: View {
               playbackLoadingArtifactID: playbackLoadingArtifactID, playbackError: playbackError,
               formatTime: formatTime, isPlaying: isPlaying, playbackTitle: playbackTitle,
               captureMarkers: captureMarkers, togglePlayback: togglePlayback,
-              beginPlayback: beginPlayback)
+              beginPlayback: beginPlayback, removeVideo: removeVideo)
           }
           EntryFeedbackSection(
             entry: entry, isLoading: isLoadingFeedback, feedbackStatusLabel: feedbackStatusLabel,

@@ -36,7 +36,7 @@ struct MainSplitView: View {
       }
     }
     .sheet(isPresented: $showCalendar) { CalendarView() }
-    .sheet(isPresented: $showExport) { ExportView() }
+    .sheet(isPresented: $showExport) { ExportView(courseId: selectedCourse?.id) }
     .sheet(isPresented: $showSettings) {
       SettingsView(
         signOutAndDeleteLocalData: { await appState.signOutAndDeleteLocalData() },

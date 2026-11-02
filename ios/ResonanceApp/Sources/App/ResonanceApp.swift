@@ -5,7 +5,7 @@ import SwiftData
 
 @main
 struct ResonanceApp: App {
-    private let storageState: StorageState
+    @State private var storageState: StorageState
 
     init() {
 #if RESONANCE_SCREENSHOTS
@@ -13,15 +13,15 @@ struct ResonanceApp: App {
             // Deterministic capture builds must not read device credentials or
             // mutate persistent profile data. DemoDataManager seeds this
             // in-memory container after the validated scenario is selected.
-            self.storageState = .available(PersistenceController.createContainer(inMemory: true))
+            _storageState = State(initialValue: .available(PersistenceController.createContainer(inMemory: true)))
             return
         }
 #endif
         switch PersistenceController.shared {
         case .success(let container):
-            self.storageState = .available(container)
+            _storageState = State(initialValue: .available(container))
         case .failure(let error):
-            self.storageState = .unavailable(error.localizedDescription)
+            _storageState = State(initialValue: .unavailable(error))
         }
     }
 
@@ -30,8 +30,10 @@ struct ResonanceApp: App {
             switch storageState {
             case .available(let container):
                 AppRootView(container: container)
-            case .unavailable(let message):
-                StorageUnavailableView(message: message)
+            case .unavailable(let error):
+                StorageUnavailableView(error: error) { container in
+                    storageState = .available(container)
+                }
             }
         }
     }
@@ -39,7 +41,7 @@ struct ResonanceApp: App {
 
 private enum StorageState {
     case available(ModelContainer)
-    case unavailable(String)
+    case unavailable(Error)
 }
 
 private struct AppRootView: View {
@@ -73,7 +75,15 @@ private struct AppRootView: View {
 }
 
 private struct StorageUnavailableView: View {
-    let message: String
+    let error: Error
+    let onRecovered: (ModelContainer) -> Void
+    @State private var recoveryError: Error?
+
+    private var displayedError: Error { recoveryError ?? error }
+
+    private var isLeftoverSignIn: Bool {
+        (error as? LocalAlphaDataResetError) == .leftoverSignInOnly
+    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -86,11 +96,26 @@ private struct StorageUnavailableView: View {
                 .font(.body)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-            Text(message)
+            Text(displayedError.localizedDescription)
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+            if isLeftoverSignIn {
+                Text("A sign-in from an earlier installation was found, but no entries or recordings are stored on this device.")
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                Button("Clear old sign-in and continue") {
+                    switch PersistenceController.createPersistentContainerClearingLeftoverSignIn() {
+                    case .success(let container):
+                        onRecovered(container)
+                    case .failure(let failure):
+                        recoveryError = failure
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+            }
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

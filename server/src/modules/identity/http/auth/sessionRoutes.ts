@@ -5,7 +5,7 @@ import {
   consumeDevAuthCode,
   hashToken,
   issueSessionTokens,
-  revokeRefreshTokenFamily,
+  revokeAllRefreshTokens,
   rotateRefreshToken,
   validateAppCodeVerifier,
 } from '../../application/auth.js';
@@ -118,14 +118,14 @@ function registerLogoutRoute(app: FastifyInstance, prisma: PrismaClient, require
         where: { tokenHash: hashToken(refreshToken) },
       });
       if (token) {
-        await revokeRefreshTokenFamily(prisma, token.userId);
+        await revokeAllRefreshTokens(prisma, token.userId);
       }
       return { success: true };
     }
 
     // Fall back to access-token-based logout.
     await requireAuth(request);
-    await revokeRefreshTokenFamily(prisma, authenticatedUser(request).id);
+    await revokeAllRefreshTokens(prisma, authenticatedUser(request).id);
     return { success: true };
   });
 }

@@ -53,10 +53,8 @@ export interface DemoFixture {
     uploadState: 'pending' | 'uploading' | 'uploaded' | 'failed';
     syncPhase?: 'queued' | 'uploading' | 'confirming' | 'uploaded' | 'failed';
     storageKey: string | null;
-    remoteUrl: string | null;
     expectedSizeBytes: number | null;
     uploadExpiresAt: string | null;
-    confirmationToken: string | null;
     localPath?: string;
   }>;
   feedback: Array<{
@@ -197,19 +195,15 @@ const validateInactiveArtifactStorageState = (artifact: DemoArtifact): void => {
 };
 
 const hasUploadedStorageMetadata = (artifact: DemoArtifact): boolean =>
-  Boolean(artifact.storageKey && artifact.remoteUrl);
+  Boolean(artifact.storageKey);
 
-const hasActiveUploadSlot = (artifact: DemoArtifact): boolean =>
-  artifact.uploadExpiresAt !== null || artifact.confirmationToken !== null;
+const hasActiveUploadSlot = (artifact: DemoArtifact): boolean => artifact.uploadExpiresAt !== null;
 
 const hasActiveUploadSlotReservation = (artifact: DemoArtifact): boolean =>
   Boolean(artifact.storageKey && artifact.uploadExpiresAt);
 
 const hasActiveUploadMetadata = (artifact: DemoArtifact): boolean =>
-  artifact.storageKey !== null ||
-  artifact.remoteUrl !== null ||
-  artifact.uploadExpiresAt !== null ||
-  artifact.confirmationToken !== null;
+  artifact.storageKey !== null || artifact.uploadExpiresAt !== null;
 
 const validateSubmittedEntries = (entries: DemoFixture['entries']): void => {
   if (entries.filter((entry) => entry.status === 'submitted').length < 2) {

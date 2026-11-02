@@ -41,7 +41,7 @@ final class EntryReconciliationService {
             try Task.checkCancellation()
             try requireCurrentProfile()
 
-            let queuedEntryIds = try pendingEntryIds()
+            let (queuedEntryIds, deletingEntryIds) = try queuedWork()
             let localByID = try localEntries(
                 ids: page.items.map(\.id),
                 courseId: courseId
@@ -49,6 +49,8 @@ final class EntryReconciliationService {
             for response in page.items {
                 try Task.checkCancellation()
                 remoteIds.insert(response.id)
+                // A queued delete must not resurrect an entry that was removed locally.
+                if localByID[response.id] == nil, deletingEntryIds.contains(response.id) { continue }
                 _ = upsert(
                     response,
                     existing: localByID[response.id],
@@ -137,7 +139,7 @@ final class EntryReconciliationService {
             try requireCurrentProfile()
             let batch = try staleEntryBatch(courseId: courseId, afterID: lastID)
             guard !batch.isEmpty else { return }
-            let queuedEntryIds = try pendingEntryIds()
+            let queuedEntryIds = try queuedWork().entryIDs
             for local in batch where !remoteIds.contains(local.id) && !queuedEntryIds.contains(local.id) {
                 modelContext.delete(local)
             }
@@ -223,18 +225,19 @@ final class EntryReconciliationService {
 
     /// Reads owner-scoped work in bounded keyset batches. A read or payload
     /// failure stops reconciliation rather than risking a pending local edit.
-    private func pendingEntryIds() throws -> Set<String> {
+    private func queuedWork() throws -> (entryIDs: Set<String>, deletingEntryIDs: Set<String>) {
         guard !ownerId.isEmpty else {
             throw SyncError.payloadParseError("Entry reconciliation has no local owner")
         }
         var entryIDs = Set<String>()
+        var deletingEntryIDs = Set<String>()
         var lastID: String?
 
         while true {
             try Task.checkCancellation()
             try requireCurrentProfile()
             let batch = try queuedWorkBatch(afterID: lastID)
-            guard !batch.isEmpty else { return entryIDs }
+            guard !batch.isEmpty else { return (entryIDs, deletingEntryIDs) }
             for item in batch {
                 guard let taskType = item.taskType else {
                     throw SyncError.unknownTaskType(item.type)
@@ -248,6 +251,10 @@ final class EntryReconciliationService {
                 }
                 if let entryID = decoded.envelope.payload.entryID {
                     entryIDs.insert(entryID)
+                    if case .deletion = decoded.envelope.payload,
+                       item.queueStatus == .pending || item.queueStatus == .processing {
+                        deletingEntryIDs.insert(entryID)
+                    }
                 }
             }
             lastID = batch.last?.id

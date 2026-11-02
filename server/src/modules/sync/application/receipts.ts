@@ -117,9 +117,9 @@ function assertSyncReceiptCapacity(receiptCount: number): void {
 async function isCurrentEntry(tx: Prisma.TransactionClient, entryId: string): Promise<boolean> {
   const entry = await tx.practiceEntry.findUnique({
     where: { id: entryId },
-    select: { deletedAt: true },
+    select: { id: true },
   });
-  return entry !== null && entry.deletedAt === null;
+  return entry !== null;
 }
 
 function operationReuseResult(command: SyncCommand): SyncCommandResult {

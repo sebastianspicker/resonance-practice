@@ -83,7 +83,7 @@ async function measure(tx: Reader) {
       const start = performance.now();
       const page = await readEntryPage(
         reader,
-        { courseId: runId, status: 'submitted', deletedAt: null },
+        { courseId: runId, status: 'submitted' },
         undefined,
         50
       );
@@ -107,21 +107,16 @@ async function measure(tx: Reader) {
     for (const operation of iteration % 2 === 0 ? [full, summary] : [summary, full])
       await operation();
     const studentStart = performance.now();
-    await readEntryPage(
-      reader,
-      { courseId: runId, studentId: runId, deletedAt: null },
-      undefined,
-      50
-    );
+    await readEntryPage(reader, { courseId: runId, studentId: runId }, undefined, 50);
     if (iteration >= 0) studentSamples.push(performance.now() - studentStart);
   }
   const studentPlan = await tx.$queryRaw`
     EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT * FROM "PracticeEntry"
-    WHERE "courseId" = ${runId} AND "studentId" = ${runId} AND "deletedAt" IS NULL
+    WHERE "courseId" = ${runId} AND "studentId" = ${runId}
     ORDER BY "practiceDate" DESC, "createdAt" DESC, "id" DESC LIMIT 51`;
   const reviewPlan = await tx.$queryRaw`
     EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT * FROM "PracticeEntry"
-    WHERE "courseId" = ${runId} AND "status" = 'submitted' AND "deletedAt" IS NULL
+    WHERE "courseId" = ${runId} AND "status" = 'submitted'
     ORDER BY "practiceDate" DESC, "createdAt" DESC, "id" DESC LIMIT 51`;
   const postgresVersion = await tx.$queryRaw<Array<{ version: string }>>`SELECT version()`;
   return {

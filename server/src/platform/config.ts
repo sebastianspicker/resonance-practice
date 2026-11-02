@@ -1,8 +1,12 @@
 /** Environment-backed runtime configuration and validated operational limits. */
-import dotenv from 'dotenv';
+import { isIP } from 'node:net';
 
 if (process.env.NODE_ENV !== 'test') {
-  dotenv.config();
+  try {
+    process.loadEnvFile();
+  } catch (error) {
+    if ((error as { code?: string }).code !== 'ENOENT') throw error;
+  }
 }
 
 function requireEnv(name: string): string {
@@ -165,6 +169,31 @@ function validateDevCallbackUrl(url: string): string {
   );
 }
 
+function isTrustProxyEntry(entry: string): boolean {
+  const [address, prefix, ...rest] = entry.split('/');
+  const version = isIP(address ?? '');
+  if (version === 0 || rest.length > 0) return false;
+  if (prefix === undefined) return true;
+  // Very wide ranges (e.g. 0.0.0.0/0) would trust every client's forged X-Forwarded-For.
+  return (
+    /^\d{1,3}$/.test(prefix) && Number(prefix) >= 8 && Number(prefix) <= (version === 4 ? 32 : 128)
+  );
+}
+
+/** Opt-in list of proxy addresses whose X-Forwarded-* headers are trusted; empty keeps Fastify's default. */
+function readTrustProxy(authMode: AuthMode): string[] {
+  const raw = process.env.TRUST_PROXY?.trim();
+  if (!raw) return [];
+  if (authMode === 'dev') {
+    throw new Error('TRUST_PROXY must not be set when AUTH_MODE=dev.');
+  }
+  const entries = raw.split(',').map((entry) => entry.trim());
+  if (!entries.every(isTrustProxyEntry)) {
+    throw new Error('TRUST_PROXY must be a comma-separated list of IP addresses or CIDR ranges.');
+  }
+  return entries;
+}
+
 const authMode = readAuthMode();
 
 /** Parse once at startup so invalid deployment configuration fails before serving requests. */
@@ -172,6 +201,7 @@ export const config = {
   port: Number(process.env.PORT ?? 4000),
   host: readHost(authMode),
   authMode,
+  trustProxy: readTrustProxy(authMode),
   jwtSecret: requireEnv('JWT_SECRET'),
   accessTokenTtlMinutes: Number(process.env.ACCESS_TOKEN_TTL_MINUTES ?? 15),
   refreshTokenTtlDays: Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 7),

@@ -150,7 +150,6 @@ model PracticeEntry {
   consentScope       ConsentScope?
   captureProfile     CaptureProfile?
   updatedAt          DateTime        @updatedAt
-  deletedAt          DateTime?
   /// Monotonic optimistic-concurrency token. Starts at one for client-created
   /// rows and advances for every successful sync mutation.
   version            Int             @default(1)
@@ -164,7 +163,8 @@ model PracticeEntry {
   @@index([courseId])
   @@index([studentId])
   @@index([status])
-  @@index([courseId, deletedAt])
+  @@index([courseId, studentId, practiceDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "PracticeEntry_student_cursor_idx")
+  @@index([courseId, status, practiceDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "PracticeEntry_teacher_cursor_idx")
 }
 
 /// Minimal non-personal tombstone that prevents a deleted client-generated ID
@@ -185,10 +185,8 @@ model Artifact {
   createdAt         DateTime     @default(now())
   uploadState       UploadState  @default(pending)
   storageKey        String?
-  remoteUrl         String?
   expectedSizeBytes Int?
   uploadExpiresAt   DateTime?
-  confirmationToken String?
   failedAt          DateTime?
 
   entry          PracticeEntry           @relation(fields: [entryId], references: [id], onDelete: Cascade)
@@ -358,4 +356,5 @@ model RefreshToken {
   @@index([userId])
   @@index([userId, familyId])
   @@index([revokedAt])
+  @@index([expiresAt])
 }

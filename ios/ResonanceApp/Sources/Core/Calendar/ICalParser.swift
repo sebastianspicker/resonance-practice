@@ -78,27 +78,22 @@ enum ICalParser {
         return result
     }
 
+    private static let dateTimeFormat = "yyyyMMdd'T'HHmmss"
+
+    /// Fixed-format iCal parsing must not follow the device's locale or calendar (e.g. Buddhist years).
+    private static func makeFormatter(_ format: String, timeZone: TimeZone?) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = format
+        formatter.timeZone = timeZone
+        return formatter
+    }
+
     // DateFormatter is expensive to construct; reuse static instances across all parse calls.
-    private static let utcDateTimeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        return formatter
-    }()
-
-    private static let allDayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd"
-        formatter.timeZone = TimeZone.current
-        return formatter
-    }()
-
-    private static let floatingDateTimeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
-        formatter.timeZone = TimeZone.current
-        return formatter
-    }()
+    private static let utcDateTimeFormatter = makeFormatter(dateTimeFormat, timeZone: TimeZone(identifier: "UTC"))
+    private static let allDayFormatter = makeFormatter("yyyyMMdd", timeZone: TimeZone.current)
+    private static let floatingDateTimeFormatter = makeFormatter(dateTimeFormat, timeZone: TimeZone.current)
 
     private static func parseDate(_ value: String, tzid: String? = nil) -> Date? {
         if value.hasSuffix("Z") {
@@ -113,10 +108,7 @@ enum ICalParser {
             let dateString = String(value.prefix(15))
             // If a TZID parameter was provided, parse in that timezone.
             if let tzid, let timeZone = TimeZone(identifier: tzid) {
-                let formatter = DateFormatter()
-                formatter.dateFormat = "yyyyMMdd'T'HHmmss"
-                formatter.timeZone = timeZone
-                return formatter.date(from: dateString)
+                return makeFormatter(dateTimeFormat, timeZone: timeZone).date(from: dateString)
             }
             // Floating datetime (no timezone indicator): treat as local.
             return floatingDateTimeFormatter.date(from: dateString)

@@ -1,6 +1,6 @@
 /** Entry-owned steps of a transactional deletion; callers compose child cleanup between them. */
 import type { Prisma } from '@prisma/client';
-import { assertEntryActive, lockEntry, lockEntryIdentity } from './locks.js';
+import { lockEntry, lockEntryIdentity } from './locks.js';
 
 /**
  * Lock an entry for deletion. The advisory ID lock prevents a concurrent
@@ -12,7 +12,7 @@ export async function lockEntryForDeletion(
   entryId: string
 ): Promise<void> {
   await lockEntryIdentity(tx, entryId);
-  assertEntryActive(await lockEntry(tx, entryId));
+  await lockEntry(tx, entryId);
 }
 
 /** Remove a locked entry and its artifact rows, leaving a tombstone for its ID. */

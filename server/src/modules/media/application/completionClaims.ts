@@ -1,6 +1,6 @@
 /** Locked completion-claim lifecycle for one durable artifact upload session. */
 import type { ArtifactType, Prisma, PrismaClient } from '@prisma/client';
-import { nanoid } from 'nanoid';
+import { randomToken } from '../../../platform/randomToken.js';
 import {
   advisoryTransactionLock,
   AdvisoryLockNamespace,
@@ -8,7 +8,7 @@ import {
 import { ErrorCodes } from '../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../platform/http/errors.js';
 import { requireStudentOwner } from '../../entries/application/authorization.js';
-import { assertEntryActive, lockEntry } from '../../entries/application/locks.js';
+import { lockEntry } from '../../entries/application/locks.js';
 import { bumpEntryVersion } from '../../entries/application/versionConflict.js';
 import { artifactFinalKey } from './artifactIdentity.js';
 import { artifactCompletionClaimLeaseEnd } from './completionLease.js';
@@ -50,7 +50,6 @@ async function requireArtifactSessionAccess(
     throw new ApiError(404, ErrorCodes.ARTIFACT_NOT_FOUND, 'Artifact session not found');
   }
   const entry = await lockEntry(tx, current.artifact.entryId);
-  assertEntryActive(entry);
   await requireStudentOwner(tx, userId, entry, 'upload artifacts');
   return { current, entry };
 }
@@ -71,7 +70,7 @@ export async function acquireArtifactCompletionClaim(
     }
     const now = new Date();
     if (current.expiresAt <= now) {
-      throw new ApiError(409, ErrorCodes.UPLOAD_INVALID, 'Artifact session has expired');
+      throw new ApiError(409, ErrorCodes.UPLOAD_RETRY_LATER, 'Artifact session has expired');
     }
     if (
       current.completionClaimToken &&
@@ -79,7 +78,7 @@ export async function acquireArtifactCompletionClaim(
     ) {
       throw new ApiError(
         409,
-        ErrorCodes.UPLOAD_INVALID,
+        ErrorCodes.UPLOAD_RETRY_LATER,
         'Artifact completion is in progress; retry later'
       );
     }
@@ -91,7 +90,7 @@ export async function acquireArtifactCompletionClaim(
         artifactSessionCleanupAt(current)
       );
     }
-    const token = nanoid(24);
+    const token = randomToken(18);
     const storageKey = artifactFinalKey(entry.id, current.artifactId, token);
     await tx.artifactUploadSession.update({
       where: { id: current.id },
@@ -168,7 +167,7 @@ export async function finalizeArtifactCompletionClaim(
     ) {
       throw new ApiError(
         409,
-        ErrorCodes.UPLOAD_INVALID,
+        ErrorCodes.UPLOAD_RETRY_LATER,
         'Artifact completion claim changed; retry later'
       );
     }
@@ -182,7 +181,6 @@ export async function finalizeArtifactCompletionClaim(
         storageKey: claim.storageKey,
         uploadState: 'uploaded',
         uploadExpiresAt: null,
-        confirmationToken: null,
         failedAt: null,
       },
     });
@@ -202,7 +200,7 @@ export async function finalizeArtifactCompletionClaim(
   if (finalized.expired) {
     throw new ApiError(
       409,
-      ErrorCodes.UPLOAD_INVALID,
+      ErrorCodes.UPLOAD_RETRY_LATER,
       'Artifact session expired during finalization'
     );
   }

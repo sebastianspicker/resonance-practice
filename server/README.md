@@ -56,6 +56,7 @@ overwriting variables already set in `process.env`. Start from
 | Native callback | `APP_AUTH_REDIRECT_URI` |
 | Development login | `DEV_UNIVERSITY_NAME`, `DEV_LOGIN_CALLBACK_URL` |
 | Browser access | `CORS_ORIGINS` |
+| Reverse proxy | `TRUST_PROXY` |
 | Object storage | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_FORCE_PATH_STYLE`, `S3_PRESIGN_TTL_SECONDS` |
 | Production OIDC | `OIDC_DISCOVERY_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`, `OIDC_ROLE_CLAIM`, `OIDC_TEACHER_VALUE` |
 
@@ -64,6 +65,14 @@ Production requires an explicit host, a non-empty CORS allowlist, complete OIDC
 settings, and HTTPS for non-loopback OIDC and S3 endpoints. Production access
 and refresh signing secrets must be distinct, non-placeholder base64 or
 base64url values that each decode to at least 32 bytes.
+
+`TRUST_PROXY` is an opt-in, production-only, comma-separated list of proxy IP
+addresses or CIDR ranges (not `true`, `*`, or hostnames). Behind a
+TLS-terminating proxy it makes Fastify read the real client address from
+`X-Forwarded-For`, so per-client rate limits do not collapse onto the proxy.
+List only your proxy addresses: if a client range is listed, clients can forge
+their address and bypass those limits. Unset keeps Fastify's default, and it is
+rejected when `AUTH_MODE=dev`.
 
 `OIDC_REDIRECT_URI` is the browser identity-provider callback, and
 `APP_AUTH_REDIRECT_URI` is the native application callback. The current iOS

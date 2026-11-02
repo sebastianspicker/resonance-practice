@@ -45,26 +45,41 @@ struct PDFExporter {
         })
     }
 
-    /// Ensures enough space on current page (starts new page if needed), draws text with wrapping, returns final y.
+    /// Draws wrapped text from the given y, continuing on new pages when a block is taller than the space left; returns final y.
     private static func ensureSpaceAndDrawWrapped(
         _ text: String,
         at verticalPosition: CGFloat,
         attributes: [NSAttributedString.Key: Any],
         context: UIGraphicsPDFRendererContext
     ) -> CGFloat {
-        let string = text as NSString
-        let constraint = CGSize(width: contentWidth, height: .greatestFiniteMagnitude)
-        let options: NSStringDrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
-        let rect = string.boundingRect(with: constraint, options: options, attributes: attributes, context: nil)
-        let neededHeight = ceil(rect.height)
+        let storage = NSTextStorage(string: text, attributes: attributes)
+        let layout = NSLayoutManager()
+        storage.addLayoutManager(layout)
+        let lineHeight = ((attributes[.font] as? UIFont)?.lineHeight ?? 16).rounded(.up)
         var drawY = verticalPosition
-        if drawY + neededHeight > maxYBeforeNewPage {
-            context.beginPage()
-            drawY = margin
+        var location = 0
+        while location < storage.length {
+            if maxYBeforeNewPage - drawY < lineHeight {
+                context.beginPage()
+                drawY = margin
+            }
+            // Each container takes the glyphs that fit its page; the layout manager continues in the next one.
+            let container = NSTextContainer(size: CGSize(width: contentWidth, height: maxYBeforeNewPage - drawY))
+            container.lineFragmentPadding = 0
+            layout.addTextContainer(container)
+            let glyphs = layout.glyphRange(for: container)
+            guard glyphs.length > 0 else {
+                // Nothing fit in the rest of this page: continue on a fresh page, stop only if even that fails.
+                if drawY == margin { break }
+                context.beginPage()
+                drawY = margin
+                continue
+            }
+            layout.drawGlyphs(forGlyphRange: glyphs, at: CGPoint(x: margin, y: drawY))
+            drawY += ceil(layout.usedRect(for: container).height)
+            location = NSMaxRange(layout.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil))
         }
-        let drawRect = CGRect(x: margin, y: drawY, width: contentWidth, height: neededHeight)
-        string.draw(in: drawRect, withAttributes: attributes)
-        return drawY + neededHeight
+        return drawY
     }
 
     static func sanitizeForPDF(_ input: String) -> String {

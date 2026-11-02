@@ -126,11 +126,23 @@ extension TaskExecutor {
             throw error
         } catch let error as CocoaError where error.code == .fileNoSuchFile {
             throw SyncError.localFileNotFound("Local file not found for artifact \(artifactId)")
+        } catch let error where Self.isFileProtectedWhileLocked(error) {
+            throw SyncError.localFileTemporarilyUnavailable(
+                "Local file for artifact \(artifactId) is protected until the device is unlocked"
+            )
         } catch {
             throw SyncError.localFileMetadataUnavailable(
                 "Could not prepare local file for artifact \(artifactId): \(error.localizedDescription)"
             )
         }
+    }
+
+    private static func isFileProtectedWhileLocked(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain, nsError.code == CocoaError.fileReadNoPermission.rawValue { return true }
+        if nsError.domain == NSPOSIXErrorDomain, nsError.code == Int(EPERM) || nsError.code == Int(EACCES) { return true }
+        guard let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error else { return false }
+        return isFileProtectedWhileLocked(underlying)
     }
 
     private func markArtifactUploaded(_ artifact: LocalArtifact) {

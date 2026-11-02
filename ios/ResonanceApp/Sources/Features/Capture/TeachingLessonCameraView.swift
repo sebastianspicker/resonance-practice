@@ -17,6 +17,8 @@ struct TeachingLessonCameraView: View {
     @State private var showNoConsentZone = true
     @State private var showStaticContours = true
     @State private var consentAndPlacementChecked = false
+    @State private var usedVideo = false
+    @State private var showDiscardConfirmation = false
 
     private let quickMarkerKinds: [CaptureMarkerKind] = [
         .phaseSetup,
@@ -77,10 +79,11 @@ struct TeachingLessonCameraView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") {
-                        if camera.isRecording {
-                            camera.stopRecording()
+                        if camera.lastRecordingURL != nil && !camera.isRecording {
+                            showDiscardConfirmation = true
+                        } else {
+                            dismiss()
                         }
-                        dismiss()
                     }
                     .foregroundStyle(.white)
                 }
@@ -88,10 +91,14 @@ struct TeachingLessonCameraView: View {
             .task {
                 await camera.prepare()
             }
+            .interactiveDismissDisabled(camera.isRecording || (camera.lastRecordingURL != nil && !usedVideo))
+            .confirmationDialog("Discard this video?", isPresented: $showDiscardConfirmation) {
+                Button("Discard video", role: .destructive) { dismiss() }
+                Button("Keep filming", role: .cancel) {}
+            }
             .onDisappear {
-                if camera.isRecording {
-                    camera.stopRecording()
-                }
+                // Stops a running take and deletes it once finished; an unused finished take is deleted too.
+                if !usedVideo { camera.discardTake() }
                 camera.stopSession()
             }
         }
@@ -119,6 +126,11 @@ struct TeachingLessonCameraView: View {
                 AudioLevelMeter(level: camera.audioLevel)
                     .frame(width: 72, height: 8)
                     .accessibilityLabel("Audio level")
+            }
+
+            if let notice = camera.noticeMessage {
+                Text(notice)
+                    .foregroundStyle(.yellow)
             }
         }
         .font(.caption)
@@ -209,9 +221,15 @@ struct TeachingLessonCameraView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(kind == .privacyNote ? .red.opacity(0.85) : .white.opacity(0.18))
                         .foregroundStyle(.white)
-                        .disabled(!camera.isRecording)
+                        .disabled(!camera.isRecording || markers.count >= ServerLimits.maxMarkers)
                     }
                 }
+            }
+
+            if camera.isRecording && markers.count >= ServerLimits.maxMarkers {
+                Text("Marker limit reached")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.7))
             }
 
             HStack(spacing: AppTheme.Spacing.medium) {
@@ -234,6 +252,7 @@ struct TeachingLessonCameraView: View {
 
                 Button("Use Video") {
                     guard let lastURL = camera.lastRecordingURL else { return }
+                    usedVideo = true
                     onComplete(
                         TeachingLessonCaptureResult(
                             videoURL: lastURL,
@@ -283,6 +302,7 @@ struct TeachingLessonCameraView: View {
     }
 
     private func addMarker(_ kind: CaptureMarkerKind) {
+        guard markers.count < ServerLimits.maxMarkers else { return }
         markers.append(
             CaptureMarkerDraft(
                 id: UUID().uuidString,

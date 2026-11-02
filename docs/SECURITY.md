@@ -41,6 +41,13 @@ network controls, backups, restoration tests, retention, logging, monitoring,
 alerting, and live OIDC validation. The local Compose credentials and storage
 configuration are development defaults, not production settings.
 
+Behind a TLS-terminating proxy, set the optional production-only `TRUST_PROXY`
+to the proxy IP addresses or CIDR ranges so rate limits see the real client
+address instead of the proxy. List only proxy addresses: a listed client range
+can spoof its address through `X-Forwarded-For` and evade per-client limits.
+The setting is rejected in development mode, whose loopback-only check depends
+on the socket address.
+
 Report vulnerabilities through the [security policy](../SECURITY.md).
 
 The development database reset is gated by development mode, a loopback

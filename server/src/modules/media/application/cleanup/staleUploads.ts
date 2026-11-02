@@ -75,15 +75,12 @@ async function expireStaleArtifactCandidate(
     data: {
       uploadState: 'failed',
       storageKey: null,
-      remoteUrl: null,
       uploadExpiresAt: null,
-      confirmationToken: null,
       failedAt: now,
     },
   });
-  await tx.artifactUploadSession.deleteMany({
-    where: { artifactId: artifact.id, completedAt: null, expiresAt: { lte: now } },
-  });
+  // The expired session is kept: a retry with the same operationId rotates it (rotateStagingSession),
+  // and the row is removed with the failed artifact by cascade.
   await bumpEntryVersion(tx, candidate.entryId);
   return 1;
 }

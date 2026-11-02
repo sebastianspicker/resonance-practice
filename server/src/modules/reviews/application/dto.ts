@@ -11,12 +11,11 @@ type FeedbackListItem = {
   teacher: { displayName: string };
 };
 
-export function serializeFeedback(feedback: FeedbackListItem[], includeTeacherId = false) {
+export function serializeFeedback(feedback: FeedbackListItem[]) {
   return feedback.map((item) => ({
     id: item.id,
     targetType: item.targetType,
     targetId: item.targetId,
-    ...(includeTeacherId ? { teacherId: item.teacherId } : {}),
     teacherName: item.teacher.displayName,
     createdAt: item.createdAt,
     status: item.status,

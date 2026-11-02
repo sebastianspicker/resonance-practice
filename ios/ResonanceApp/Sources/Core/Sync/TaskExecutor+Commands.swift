@@ -116,23 +116,8 @@ extension TaskExecutor {
     }
 
     func commandEntityID(for item: SyncQueueItem) throws -> String? {
-        let (taskType, payload) = try taskTypeAndPayload(for: item)
-        if taskType == .syncArtifact {
-            guard let artifactID = payload.artifactID, !artifactID.isEmpty else {
-                throw SyncError.payloadParseError("Sync payload is missing artifactId")
-            }
-            return try store.fetchArtifact(id: artifactID).entryId
-        }
-        if taskType == .postFeedback {
-            guard let feedbackID = payload.feedbackID, !feedbackID.isEmpty else {
-                throw SyncError.payloadParseError("Sync payload is missing feedbackId")
-            }
-            let feedback = try store.fetchFirst(
-                FetchDescriptor<LocalFeedback>(predicate: #Predicate { $0.id == feedbackID })
-            )
-            return try entryForFeedback(feedback).id
-        }
-        return payload.entryID
+        let (_, payload) = try taskTypeAndPayload(for: item)
+        return try store.entityID(for: payload)
     }
 
     /// Applies an outcome only when it belongs to the local operation that requested it.

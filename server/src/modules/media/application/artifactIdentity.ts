@@ -1,7 +1,7 @@
 /** Upload-request identity and object-key naming for artifact upload sessions. */
 import { createHash } from 'node:crypto';
 import type { ArtifactType } from '@prisma/client';
-import { nanoid } from 'nanoid';
+import { randomToken } from '../../../platform/randomToken.js';
 
 type ArtifactSessionIdentityInput = {
   entryId: string;
@@ -31,7 +31,7 @@ export function artifactSessionPayloadHash(value: ArtifactSessionIdentityInput) 
 }
 
 export function artifactStagingKey(entryId: string, artifactId: string) {
-  return `artifacts/staging/${entryId}/${artifactId}-${nanoid(16)}`;
+  return `artifacts/staging/${entryId}/${artifactId}-${randomToken(12)}`;
 }
 
 export function artifactFinalKey(entryId: string, artifactId: string, claimToken: string) {

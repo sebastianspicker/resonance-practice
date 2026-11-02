@@ -43,8 +43,8 @@ extension SyncManager {
             status: .draft,
             captureContext: CaptureContext(
                 kind: entry.kind,
-                consentConfirmedAt: entry.consentConfirmedAt,
-                consentScope: entry.consentScope,
+                consentConfirmedAt: nil,
+                consentScope: nil,
                 captureProfile: entry.captureProfile
             )
         )

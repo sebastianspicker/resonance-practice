@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { PrismaClient, User } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import jwt from 'jsonwebtoken';
-import { nanoid } from 'nanoid';
+import { randomToken } from '../../../platform/randomToken.js';
 import { config, limits } from '../../../platform/config.js';
 import { ErrorCodes } from '../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../platform/http/errors.js';
@@ -69,7 +69,7 @@ function verifyRefreshToken(token: string) {
 type PrismaLike = Pick<PrismaClient, 'refreshToken'>;
 
 async function issueTokens(prisma: PrismaLike, user: User, existingFamilyId?: string) {
-  const tokenId = `rt_${nanoid(24)}`;
+  const tokenId = `rt_${randomToken(18)}`;
   const familyId = existingFamilyId ?? tokenId;
   const refreshToken = signRefreshToken(user, tokenId);
   const accessToken = signAccessToken(user);
@@ -110,11 +110,12 @@ export async function issueSessionTokens(prisma: PrismaClient, user: User) {
   });
 }
 
-/** Serialize logout with token rotation so logout cannot miss a new token. */
-export async function revokeRefreshTokenFamily(
-  prisma: PrismaClient,
-  userId: string
-): Promise<void> {
+/**
+ * Revoke every refresh token of the user, on purpose: logout ends all sessions,
+ * so signing out also ends a session on a lost device. Serialized with token
+ * rotation so logout cannot miss a new token.
+ */
+export async function revokeAllRefreshTokens(prisma: PrismaClient, userId: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const user = await lockAuthUser(tx, userId);
     if (!user) return;
@@ -222,7 +223,7 @@ export function issueDevAuthCode(userId: string, appCodeChallenge?: string) {
   for (const [k, v] of devAuthCodes) {
     if (v.expiresAt < now) devAuthCodes.delete(k);
   }
-  const code = `dev_${nanoid(18)}`;
+  const code = `dev_${randomToken(14)}`;
   devAuthCodes.set(code, {
     userId,
     ...(appCodeChallenge ? { appCodeChallenge } : {}),

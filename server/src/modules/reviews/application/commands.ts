@@ -9,10 +9,7 @@ import {
   type EntryCommandInput,
 } from '../../entries/application/commands.js';
 import { lockEntry } from '../../entries/application/locks.js';
-import {
-  bumpEntryVersion,
-  requireEntryVersion,
-} from '../../entries/application/versionConflict.js';
+import { bumpEntryVersion } from '../../entries/application/versionConflict.js';
 import { parseFeedbackPayload } from './payloads.js';
 
 /** Receipt scope for createFeedback, taken from the unparsed payload before the handler runs. */
@@ -35,7 +32,7 @@ export async function feedbackReceiptScope(
 export async function createFeedback(
   tx: Prisma.TransactionClient,
   userId: string,
-  { entityId, baseVersion, payload }: EntryCommandInput
+  { entityId, payload }: EntryCommandInput
 ): Promise<PracticeEntry> {
   const input = parseFeedbackPayload(payload);
   const entryId = await resolveFeedbackEntryId(tx, input.targetType, input.targetId);
@@ -48,7 +45,7 @@ export async function createFeedback(
     'teacher',
     'Only course teachers can create feedback'
   );
-  requireEntryVersion(entry, baseVersion);
+  // Feedback only appends rows, so a moved entry version must not reject it.
   requireSubmittedEntry(entry);
   const existing = await tx.feedback.findUnique({
     where: { id: entityId },

@@ -11,7 +11,7 @@
 import crypto from 'node:crypto';
 import type { AuthFlowTokenKind, PrismaClient } from '@prisma/client';
 import { Issuer, type Client } from 'openid-client';
-import { nanoid } from 'nanoid';
+import { randomToken } from '../../../platform/randomToken.js';
 import { oidcConfig } from '../../../platform/config.js';
 import { s256CodeChallenge } from './auth.js';
 
@@ -24,7 +24,7 @@ export async function issueProdAuthCode(
   userId: string,
   appCodeChallenge: string
 ): Promise<string> {
-  const code = `prod_${nanoid(24)}`;
+  const code = `prod_${randomToken(18)}`;
   await createAuthFlowToken(prisma, 'prod_code', code, PROD_CODE_TTL_MS, userId, {
     appCodeChallenge,
   });
@@ -63,8 +63,8 @@ export async function issueOidcAttempt(
   appCodeChallenge: string
 ): Promise<OidcAttempt> {
   const attempt = {
-    state: nanoid(32),
-    nonce: nanoid(32),
+    state: randomToken(24),
+    nonce: randomToken(24),
     codeVerifier: crypto.randomBytes(32).toString('base64url'),
     browserBinding: crypto.randomBytes(32).toString('base64url'),
     appCodeChallenge,

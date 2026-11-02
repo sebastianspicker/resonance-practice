@@ -4,6 +4,7 @@ import SwiftData
 // Lets a learner select course activity and export it as a PDF summary.
 
 struct ExportView: View {
+    let courseId: String?
     @Environment(\.modelContext) private var modelContext
     @State private var startDate = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
     @State private var endDate = Date()
@@ -33,7 +34,6 @@ struct ExportView: View {
                     Section("Practice Stats") {
                         statRow("Entries", value: "\(stats.entryCount)")
                         statRow("Total Duration", value: formatDuration(stats.totalDurationSeconds))
-                        statRow("Draft", value: "\(stats.draftCount)")
                         statRow("Submitted", value: "\(stats.submittedCount)")
                         statRow("Reviewed", value: "\(stats.reviewedCount)")
                     }
@@ -48,6 +48,9 @@ struct ExportView: View {
                     ShareLink("Share PDF", item: exportURL)
                 }
             }
+            .onChange(of: startDate) { exportURL = nil }
+            .onChange(of: endDate) { exportURL = nil }
+            .onChange(of: courseId) { exportURL = nil }
             .scrollContentBackground(.hidden)
             .background(AppTheme.workspaceBackground)
             .navigationTitle("Export")
@@ -82,15 +85,14 @@ struct ExportView: View {
         }
 
         let filename = "Resonance_Export_\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(8)).pdf"
-        guard let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            errorMessage = "Documents directory unavailable"
-            showErrorAlert = true
-            return
-        }
-        let exportDir = documentsDir.appendingPathComponent("Exports", isDirectory: true)
+        let exportDir = FileStore.exportDirectoryURL()
         let url = exportDir.appendingPathComponent(filename)
 
         do {
+            // Only the file this view created earlier, and only inside the exports folder.
+            if let previous = exportURL, previous.deletingLastPathComponent() == exportDir {
+                try? FileManager.default.removeItem(at: previous)
+            }
             try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
 
             try PDFExporter.export(entries: entries, to: url)
@@ -115,8 +117,14 @@ struct ExportView: View {
             }
             return nextDay
         }()
+        // No course selected means nothing to export; never mix courses.
+        guard let courseId else { return [] }
+        let draftRaw = EntryStatus.draft.rawValue
         var descriptor = FetchDescriptor<LocalPracticeEntry>(
-            predicate: #Predicate { $0.practiceDate >= rangeStart && $0.practiceDate < rangeEnd && $0.deletedAt == nil }
+            predicate: #Predicate {
+                $0.courseId == courseId && $0.statusRaw != draftRaw
+                    && $0.practiceDate >= rangeStart && $0.practiceDate < rangeEnd && $0.deletedAt == nil
+            }
         )
         descriptor.sortBy = [SortDescriptor(\.practiceDate, order: .forward)]
         return (try? modelContext.fetch(descriptor)) ?? []

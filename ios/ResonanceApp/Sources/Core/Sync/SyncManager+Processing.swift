@@ -117,12 +117,6 @@ extension SyncManager {
     }
 
     private func handleNonCommandFailure(_ error: Error, item: SyncQueueItem) -> Bool {
-        if case SyncError.dependenciesPending = error {
-            item.status = SyncStatus.pending.rawValue
-            item.lastError = nil
-            item.nextAttemptAt = Date().addingTimeInterval(2)
-            return true
-        }
         if let apiError = error as? APIError, isSessionBoundaryError(apiError) {
             item.status = SyncStatus.pending.rawValue
             item.lastError = apiError.error.code
@@ -260,12 +254,6 @@ extension SyncManager {
     }
 
     private func handleFailure(_ error: Error, for item: SyncQueueItem) {
-        if case SyncError.dependenciesPending = error {
-            item.queueStatus = .pending
-            item.lastError = nil
-            item.nextAttemptAt = Date().addingTimeInterval(2)
-            return
-        }
         item.retryCount += 1
         item.lastError = stableErrorDescription(error)
         if case let SyncError.serverConflict(entityId, _) = error {

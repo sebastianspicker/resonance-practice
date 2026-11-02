@@ -27,8 +27,9 @@ extension TeacherQueueView {
                     WorkspaceReviewDetail(
                         entry: selected,
                         initialFeedback: initialFeedback,
-                        onFeedbackQueued: { queuedFeedback.insert(selected.id) },
-                        isFeedbackQueued: queuedFeedback.contains(selected.id)
+                        onFeedbackQueued: { feedbackQueued(for: selected) },
+                        isFeedbackQueued: queuedFeedback.contains(selected.id),
+                        onDraftChange: { draftChanged($0, for: selected) }
                     )
                     .id(selected.id)
                 } else {
@@ -36,7 +37,44 @@ extension TeacherQueueView {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            .confirmationDialog(
+                "Discard feedback for \(selected?.studentName ?? "this student")?",
+                isPresented: Binding(
+                    get: { pendingSelection != nil },
+                    set: { if !$0 { pendingSelection = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: pendingSelection
+            ) { pending in
+                Button("Discard", role: .destructive) {
+                    draftEntryID = nil
+                    selected = pending
+                }
+                Button("Cancel", role: .cancel) {}
+            }
         }
+    }
+
+    /// Single entry point for workspace row selection; asks before dropping an unsent draft.
+    func selectEntry(_ entry: ReviewQueueEntry) {
+        if entry.id != selected?.id, draftEntryID != nil, draftEntryID == selected?.id {
+            pendingSelection = entry
+        } else {
+            selected = entry
+        }
+    }
+
+    func draftChanged(_ hasDraft: Bool, for entry: ReviewQueueEntry) {
+        if hasDraft {
+            draftEntryID = entry.id
+        } else if draftEntryID == entry.id {
+            draftEntryID = nil
+        }
+    }
+
+    func feedbackQueued(for entry: ReviewQueueEntry) {
+        queuedFeedback.insert(entry.id)
+        if draftEntryID == entry.id { draftEntryID = nil }
     }
 
     var workspaceQueuePane: some View {
@@ -76,7 +114,7 @@ extension TeacherQueueView {
                     ForEach(queue) { entry in
                         let isSelected = entry.id == selected?.id
                         let isQueued = queuedFeedback.contains(entry.id)
-                        Button { selected = entry } label: {
+                        Button { selectEntry(entry) } label: {
                             VStack(alignment: .leading, spacing: 5) {
                                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                                     Text(entry.studentName)

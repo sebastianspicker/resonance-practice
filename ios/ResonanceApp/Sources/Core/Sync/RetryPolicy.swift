@@ -27,6 +27,9 @@ struct RetryPolicy {
         if case SyncError.commandRetryable = error {
             return false
         }
+        if case SyncError.localFileTemporarilyUnavailable = error {
+            return false
+        }
         if error is SyncError {
             return true
         }
@@ -59,7 +62,9 @@ struct RetryPolicy {
              "DEV_AUTH_LOCAL_ONLY",
              "AUTH_NOT_CONFIGURED",
              "INVALID_ROLE",
-             "USER_NOT_FOUND":
+             "USER_NOT_FOUND",
+             "UPLOAD_INVALID",
+             "OPERATION_REUSED":
             return true
         default:
             return false

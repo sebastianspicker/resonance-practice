@@ -1,5 +1,6 @@
 /** Idempotent v1 command gateway: receipt replay, owning-module dispatch, and receipt persistence. */
 import type { Prisma, PrismaClient } from '@prisma/client';
+import type { FastifyBaseLogger } from 'fastify';
 import { ApiError, isPrismaError } from '../../../platform/http/errors.js';
 import { lockOperationIdentity } from '../../../platform/database/advisoryLocks.js';
 import type { SyncCommand, SyncCommandResult } from './contract.js';
@@ -18,7 +19,8 @@ import { commandHash, persistSyncReceipt, replaySyncReceipt } from './receipts.j
 export async function executeSyncCommand(
   prisma: PrismaClient,
   userId: string,
-  command: SyncCommand
+  command: SyncCommand,
+  log: Pick<FastifyBaseLogger, 'error'>
 ): Promise<SyncCommandResult> {
   const hash = commandHash(command);
   try {
@@ -29,8 +31,18 @@ export async function executeSyncCommand(
     }
     if (error instanceof ApiError) {
       if (error.statusCode === 429) throw error;
+      if (error.statusCode >= 500) {
+        log.error(
+          { err: error, operationId: command.operationId, kind: command.kind },
+          'Sync command failed with a server error'
+        );
+      }
       return apiErrorResult(command, error);
     }
+    log.error(
+      { err: error, operationId: command.operationId, kind: command.kind },
+      'Sync command failed unexpectedly'
+    );
     return retryableResult(command, 'Unexpected error');
   }
 }

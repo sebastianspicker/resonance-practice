@@ -46,6 +46,8 @@ extension EntryDetailView {
 
   @discardableResult
   func finishRecording() -> Bool {
+    // An earlier stop (auto-stop, interruption) already attached this file.
+    guard recorder.isRecording else { return false }
     recorder.stopRecording()
     guard let url = recorder.lastURL else {
       reportSubmissionError("Recording file is unavailable.")
@@ -125,6 +127,7 @@ extension EntryDetailView {
         player.stop()
         playingArtifactID = nil
       }
+      syncManager.discardQueuedUpload(artifactID: artifact.id)
       FileStore.deleteFileIfExists(atPath: artifact.localPath)
       entry.artifacts.removeAll { $0.id == artifact.id }
       modelContext.delete(artifact)
@@ -132,6 +135,27 @@ extension EntryDetailView {
     }
 
     startRecording()
+  }
+
+  /// Removes a draft's video that has not uploaded (pending or failed), e.g. after a size rejection.
+  func removeLocalVideo(_ artifact: LocalArtifact) {
+    guard entry.status == .draft, artifact.type == .video,
+      artifact.uploadState == .pending || artifact.uploadState == .failed
+    else { return }
+    if playingArtifactID == artifact.id {
+      playbackTask?.cancel()
+      player.stop()
+      playingArtifactID = nil
+    }
+    syncManager.discardQueuedUpload(artifactID: artifact.id)
+    FileStore.deleteFileIfExists(atPath: artifact.localPath)
+    entry.artifacts.removeAll { $0.id == artifact.id }
+    for marker in captureMarkers(for: artifact) {
+      entry.captureMarkers.removeAll { $0.id == marker.id }
+      modelContext.delete(marker)
+    }
+    modelContext.delete(artifact)
+    _ = saveEntryChanges()
   }
 
   func attachLessonVideo(_ result: Result<[URL], Error>) async {
@@ -143,6 +167,12 @@ extension EntryDetailView {
       guard let sourceURL = try result.get().first else { return }
       let didAccess = sourceURL.startAccessingSecurityScopedResource()
       defer { if didAccess { sourceURL.stopAccessingSecurityScopedResource() } }
+      if let size = try sourceURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+        Int64(size) > ServerLimits.maxUploadSizeBytes
+      {
+        reportSubmissionError("This video is larger than the 100 MB upload limit. Choose a shorter video.")
+        return
+      }
       let destination = FileStore.createVideoFileURL(
         entryId: entry.id,
         fileExtension: sourceURL.pathExtension.isEmpty ? "mp4" : sourceURL.pathExtension)

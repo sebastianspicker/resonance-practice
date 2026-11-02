@@ -8,6 +8,7 @@ struct WorkspaceReviewDetail: View {
     let initialFeedback: FeedbackPrefill?
     let onFeedbackQueued: () -> Void
     var isFeedbackQueued: Bool = false
+    var onDraftChange: (Bool) -> Void = { _ in }
     @Environment(\.apiClient) private var apiClient
     @Environment(\.capturePresentation) private var usesIllustratedPlayback
     @EnvironmentObject private var authManager: AuthManager
@@ -51,7 +52,8 @@ struct WorkspaceReviewDetail: View {
                 playbackTime: { player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0 },
                 onQueued: onFeedbackQueued,
                 prefill: initialFeedback,
-                presentation: .workspace
+                presentation: .workspace,
+                onDraftChange: onDraftChange
             )
             .frame(width: 340)
             .frame(maxHeight: .infinity)
@@ -68,7 +70,18 @@ struct WorkspaceReviewDetail: View {
             selectedArtifactId = entry.artifacts.first?.id
             if !usesIllustratedPlayback { Task { await loadSelectedArtifact() } }
         }
-        .onDisappear { player.pause() }
+        .onReceive(
+            NotificationCenter.default.publisher(for: AVPlayerItem.didPlayToEndTimeNotification)
+                .receive(on: RunLoop.main)
+        ) { notification in
+            // The clip finished: show Play again instead of a stale Pause.
+            guard (notification.object as? AVPlayerItem) === player.currentItem else { return }
+            isAudioPlaying = false
+        }
+        .onDisappear {
+            player.pause()
+            isAudioPlaying = false
+        }
     }
 
     private var evidencePane: some View {
@@ -308,6 +321,12 @@ private extension WorkspaceReviewDetail {
             player.pause()
             isAudioPlaying = false
         } else {
+            let current = player.currentTime().seconds
+            let itemDuration = player.currentItem?.duration.seconds ?? .nan
+            // AVPlayer ignores play() at the end of an item, so restart from the beginning.
+            if current.isFinite, itemDuration.isFinite, itemDuration > 0, current >= itemDuration - 0.25 {
+                player.seek(to: .zero)
+            }
             player.play()
             isAudioPlaying = true
         }

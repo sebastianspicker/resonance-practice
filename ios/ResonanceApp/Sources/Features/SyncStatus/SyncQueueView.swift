@@ -44,5 +44,8 @@ struct SyncQueueView: View {
     }
 
     private func processQueue() { Task { await syncManager.processQueue() } }
-    private func retryFailed() { syncManager.retryFailedItems() }
+    private func retryFailed() {
+        syncManager.retryFailedItems()
+        Task { await syncManager.processQueue() }
+    }
 }

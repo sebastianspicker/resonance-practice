@@ -68,7 +68,7 @@ struct SettingsView: View {
 #endif
 
                 Section("Privacy") {
-                    Text("No analytics are collected by default. Media stays local until you submit.")
+                    Text("No analytics are collected by default. Recordings upload privately as soon as you are online; teachers see them only after you submit.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

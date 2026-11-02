@@ -7,12 +7,6 @@ import {
 import { ErrorCodes } from '../../../platform/http/errorCodes.js';
 import { ApiError } from '../../../platform/http/errors.js';
 
-export function assertEntryActive(entry: { deletedAt: Date | null }) {
-  if (entry.deletedAt) {
-    throw new ApiError(410, ErrorCodes.ENTRY_DELETED, 'Entry has been deleted');
-  }
-}
-
 /** Serialize creation and deletion for one client-generated entry ID. */
 export async function lockEntryIdentity(
   tx: Prisma.TransactionClient,

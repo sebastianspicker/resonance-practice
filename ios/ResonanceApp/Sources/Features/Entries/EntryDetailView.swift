@@ -117,7 +117,7 @@ struct EntryDetailView: View {
       hasMoreFeedback: hasMoreFeedback, loadMoreFeedback: loadMoreFeedback,
       confirmConsent: confirmPrivateCourseReviewConsent,
       hasAudio: entry.artifacts.contains { $0.type == .audio },
-      retake: retakeLastLocalAudio, editGoal: editGoal
+      retake: retakeLastLocalAudio, removeVideo: removeLocalVideo, editGoal: editGoal
     )
   }
 

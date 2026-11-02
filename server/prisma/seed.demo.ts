@@ -76,7 +76,6 @@ function entryWriteData(entry: DemoFixture['entries'][number]) {
     status: entry.status,
     consentConfirmedAt: entry.consentConfirmedAt ? new Date(entry.consentConfirmedAt) : null,
     consentScope: entry.consentScope ?? null,
-    deletedAt: null,
   };
 }
 
@@ -102,10 +101,8 @@ function artifactWriteData(artifact: DemoFixture['artifacts'][number]) {
     durationSeconds: artifact.durationSeconds,
     uploadState: artifact.uploadState,
     storageKey: artifact.storageKey,
-    remoteUrl: artifact.remoteUrl,
     expectedSizeBytes: artifact.expectedSizeBytes,
     uploadExpiresAt: artifact.uploadExpiresAt ? new Date(artifact.uploadExpiresAt) : null,
-    confirmationToken: artifact.confirmationToken,
   };
 }
 

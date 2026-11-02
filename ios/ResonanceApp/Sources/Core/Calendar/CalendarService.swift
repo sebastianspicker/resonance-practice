@@ -152,7 +152,7 @@ final class CalendarService: ObservableObject {
     }
 
     private nonisolated static func isPrivateOrLocalHost(_ host: String) -> Bool {
-        let normalizedHost = host.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        let normalizedHost = host.trimmingCharacters(in: CharacterSet(charactersIn: ".[]"))
         guard !normalizedHost.isEmpty else { return true }
 
         if normalizedHost == "localhost" || normalizedHost.hasSuffix(".local") {
@@ -163,8 +163,15 @@ final class CalendarService: ObservableObject {
             return isPrivateOrLocalIPv4(Array(address.rawValue))
         }
 
+        // inet_aton also accepts shorthand forms such as 127.1, 0x7f.1 and 2130706433.
+        var legacyAddress = in_addr()
+        if inet_aton(normalizedHost, &legacyAddress) != 0 {
+            return isPrivateOrLocalIPv4(withUnsafeBytes(of: legacyAddress.s_addr) { Array($0) })
+        }
+
         if let address = IPv6Address(normalizedHost) {
             let bytes = Array(address.rawValue)
+            if bytes.allSatisfy({ $0 == 0 }) { return true }
             if let mappedIPv4 = mappedIPv4Address(in: bytes) {
                 return isPrivateOrLocalIPv4(mappedIPv4)
             }
@@ -193,8 +200,10 @@ final class CalendarService: ObservableObject {
 
     private nonisolated static func isPrivateOrLocalIPv4(_ bytes: [UInt8]) -> Bool {
         guard bytes.count == 4 else { return true }
-        return bytes[0] == 127
+        return bytes[0] == 0
+            || bytes[0] == 127
             || bytes[0] == 10
+            || (bytes[0] == 100 && (64...127).contains(bytes[1]))
             || (bytes[0] == 172 && (16...31).contains(bytes[1]))
             || (bytes[0] == 192 && bytes[1] == 168)
             || (bytes[0] == 169 && bytes[1] == 254)
@@ -215,7 +224,6 @@ final class CalendarService: ObservableObject {
         components.scheme = url.scheme
         components.host = url.host
         components.port = url.port
-        components.path = url.path
         return components.string ?? "calendar feed"
     }
 }

@@ -41,6 +41,8 @@ struct SubmissionDetailView: View {
     let onFeedbackQueued: () -> Void
     private let loadsRemoteMedia: Bool
     private let isFeedbackQueued: Bool
+    private let reviewStatus: ReviewQueueStatus
+    private let onDraftChange: (Bool) -> Void
     @Environment(\.apiClient) private var apiClient
     @EnvironmentObject private var authManager: AuthManager
     @State private var selectedArtifactId: String?
@@ -52,12 +54,16 @@ struct SubmissionDetailView: View {
         entry: ReviewQueueEntry,
         onFeedbackQueued: @escaping () -> Void,
         loadsRemoteMedia: Bool = true,
-        isFeedbackQueued: Bool = false
+        isFeedbackQueued: Bool = false,
+        reviewStatus: ReviewQueueStatus = .submitted,
+        onDraftChange: @escaping (Bool) -> Void = { _ in }
     ) {
         self.entry = entry
         self.onFeedbackQueued = onFeedbackQueued
         self.loadsRemoteMedia = loadsRemoteMedia
         self.isFeedbackQueued = isFeedbackQueued
+        self.reviewStatus = reviewStatus
+        self.onDraftChange = onDraftChange
     }
 
     var body: some View {
@@ -79,7 +85,7 @@ struct SubmissionDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    StatusPill(status: isFeedbackQueued ? .feedbackQueued : .submitted)
+                    StatusPill(status: isFeedbackQueued ? .feedbackQueued : (reviewStatus == .reviewed ? .reviewed : .submitted))
                 }
             }
             .task {
@@ -173,7 +179,8 @@ struct SubmissionDetailView: View {
         FeedbackEditorView(
             entry: entry,
             playbackTime: { player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0 },
-            onQueued: onFeedbackQueued
+            onQueued: onFeedbackQueued,
+            onDraftChange: onDraftChange
         )
     }
 

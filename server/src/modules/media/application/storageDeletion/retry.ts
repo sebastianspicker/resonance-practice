@@ -1,7 +1,7 @@
 import type { S3Client } from '@aws-sdk/client-s3';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { Prisma, type PrismaClient } from '@prisma/client';
-import { nanoid } from 'nanoid';
+import { randomToken } from '../../../../platform/randomToken.js';
 import { config } from '../../../../platform/config.js';
 import { withDeadline } from '../../../../platform/deadline.js';
 import { boundedStorageDeletionLimit } from '../cleanup/shared.js';
@@ -124,7 +124,7 @@ async function claimNextStorageDeletionJob(
   dueAt: Date,
   requestTimeoutMs: number
 ): Promise<StorageDeletionJobRecord | null> {
-  const claimToken = nanoid(24);
+  const claimToken = randomToken(18);
   const claimedAt = new Date();
   const claimExpiresAt = new Date(
     claimedAt.getTime() + requestTimeoutMs + STORAGE_DELETION_CLAIM_SETTLEMENT_MS

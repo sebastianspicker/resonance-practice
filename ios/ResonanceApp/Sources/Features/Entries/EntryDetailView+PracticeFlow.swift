@@ -60,7 +60,12 @@ extension EntryDetailView {
       beginGuidedPracticeIfNeeded()
     }
     .task(id: practiceSyncKey) { await continuePracticeSubmission() }
-    .onDisappear { isPracticeVisible = false }
+    .onDisappear {
+      isPracticeVisible = false
+      // savePracticeReflection is a no-op unless the entry is editable and the text changed;
+      // skip it when the entry was just deleted so no update is queued for a missing entry.
+      if entry.modelContext != nil, !entry.isDeleted { _ = savePracticeReflection() }
+    }
     .onChange(of: scenePhase) { _, phase in
       if phase != .active && recorder.isRecording { stopGuidedRecording() }
     }
@@ -153,7 +158,7 @@ extension EntryDetailView {
             .buttonStyle(PracticeFlowButtonStyle(primary: false))
         }
       }
-      practicePrivacy(recorder.isRecording ? "Private recording on this device" : "Private draft")
+      practicePrivacy(recorder.isRecording ? "Private until you submit" : "Private draft")
     }
   }
 
@@ -184,7 +189,7 @@ extension EntryDetailView {
         Button("Keep as draft", action: keepPracticeDraft)
           .buttonStyle(PracticeFlowButtonStyle(primary: false))
       }
-      practicePrivacy(reflectionText == (entry.notes ?? "") ? "Saved on this device" : "Reflection not saved yet")
+      practicePrivacy(reflectionText == (entry.notes ?? "") ? "Private until you submit" : "Reflection not saved yet")
     }
   }
 
@@ -220,7 +225,7 @@ extension EntryDetailView {
         Button("Keep as draft", action: keepPracticeDraft)
           .buttonStyle(PracticeFlowButtonStyle(primary: false))
       }
-      practicePrivacy("Saved on this device")
+      practicePrivacy("Private until you submit")
     }
   }
 

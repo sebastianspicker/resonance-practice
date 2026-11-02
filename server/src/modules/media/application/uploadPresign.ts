@@ -66,7 +66,7 @@ export async function presignUpload(
   }
   throw new ApiError(
     409,
-    ErrorCodes.UPLOAD_INVALID,
+    ErrorCodes.UPLOAD_RETRY_LATER,
     'Artifact session expired before an upload credential could be issued'
   );
 }

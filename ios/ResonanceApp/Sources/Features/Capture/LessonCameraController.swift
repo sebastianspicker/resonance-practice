@@ -12,14 +12,21 @@ final class LessonCameraController: NSObject, ObservableObject {
     @Published var elapsedSeconds = 0
     @Published var audioLevel = 0.0
     @Published var errorMessage: String?
+    @Published var noticeMessage: String?
     @Published var lastRecordingURL: URL?
     @Published var lastRecordingDurationSeconds = 0
 
     private let sessionQueue = DispatchQueue(label: "resonance.lesson-camera.session")
     private let audioQueue = DispatchQueue(label: "resonance.lesson-camera.audio")
-    private let movieOutput = AVCaptureMovieFileOutput()
+    private let movieOutput: AVCaptureMovieFileOutput = {
+        let output = AVCaptureMovieFileOutput()
+        // Headroom below ServerLimits.maxUploadSizeBytes: the movie header is written after the limit check.
+        output.maxRecordedFileSize = 95 * 1024 * 1024
+        return output
+    }()
     private var startedAt: Date?
     private var timer: Timer?
+    private var discardsNextRecording = false
 
     /// Requests camera and microphone access before configuring a usable recording session.
     func prepare() async {
@@ -29,6 +36,7 @@ final class LessonCameraController: NSObject, ObservableObject {
             errorMessage = "Camera permission is required to film a teaching lesson."
             return
         }
+        if !hasAudio { noticeMessage = "Microphone access is off; this video will have no sound." }
         let didConfigure = await configureSession(includeAudio: hasAudio)
         isSessionReady = didConfigure
         errorMessage = didConfigure ? nil : "Camera is unavailable on this device."
@@ -36,6 +44,8 @@ final class LessonCameraController: NSObject, ObservableObject {
 
     func startRecording(to url: URL) {
         guard isSessionReady, !movieOutput.isRecording else { return }
+        discardTake()
+        discardsNextRecording = false
         lastRecordingURL = nil
         lastRecordingDurationSeconds = 0
         elapsedSeconds = 0
@@ -54,6 +64,18 @@ final class LessonCameraController: NSObject, ObservableObject {
         }
         stopTimer()
         isRecording = false
+    }
+
+    /// Deletes the finished take, if any; if one is still recording, deletes it once the recorder finishes.
+    func discardTake() {
+        if movieOutput.isRecording {
+            discardsNextRecording = true
+            stopRecording()
+            return
+        }
+        if let url = lastRecordingURL { FileStore.deleteFileIfExists(atPath: url.path) }
+        lastRecordingURL = nil
+        lastRecordingDurationSeconds = 0
     }
 
     func stopSession() {
@@ -93,7 +115,7 @@ final class LessonCameraController: NSObject, ObservableObject {
         return await withCheckedContinuation { continuation in
             sessionQueue.async {
                 session.beginConfiguration()
-                session.sessionPreset = .high
+                session.sessionPreset = session.canSetSessionPreset(.hd1280x720) ? .hd1280x720 : .high
 
                 do {
                     guard
@@ -165,13 +187,21 @@ extension LessonCameraController: AVCaptureFileOutputRecordingDelegate {
         from connections: [AVCaptureConnection],
         error: Error?
     ) {
-        let duration = Int(CMTimeGetSeconds(output.recordedDuration).rounded())
-        let errorMessage = error?.localizedDescription
+        let seconds = CMTimeGetSeconds(output.recordedDuration)
+        let duration = seconds.isFinite ? Int(seconds.rounded()) : 0
+        let hitLimit = (error as NSError?)?.userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool == true
+        let errorMessage = hitLimit ? nil : error?.localizedDescription
         let outputPath = outputFileURL.path
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.stopTimer()
             self.isRecording = false
+            if self.discardsNextRecording {
+                self.discardsNextRecording = false
+                FileStore.deleteFileIfExists(atPath: outputPath)
+                return
+            }
+            if hitLimit { self.noticeMessage = "Recording stopped at the size limit." }
             if let errorMessage {
                 self.errorMessage = errorMessage
                 FileStore.deleteFileIfExists(atPath: outputPath)
