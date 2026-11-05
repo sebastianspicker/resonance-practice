@@ -2,6 +2,8 @@
 
 A music practice journal with timestamped teacher feedback.
 
+> _Claude was used to polish and proof-read the code and documentation of this repository._
+
 [![CI](https://github.com/sebastianspicker/resonance-practice/actions/workflows/ci.yml/badge.svg)](https://github.com/sebastianspicker/resonance-practice/actions/workflows/ci.yml)
 [![Walkthrough](https://img.shields.io/badge/walkthrough-live-5e3fc4)](https://sebastianspicker.github.io/resonance-practice/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -134,8 +136,9 @@ The same tour is available as a gallery on the
 
 The client and server build independently and share the v1 HTTP contract. Neither
 is published as a reusable library. The
-[architecture guide](docs/ARCHITECTURE.md) covers dependency direction and
-runtime flows.
+[architecture guide](docs/ARCHITECTURE.md) shows how it fits together in
+diagrams: what runs where, what happens when a student records, submits or a
+teacher reviews, the data model, CI, and a code map.
 
 ## Prerequisites
 
