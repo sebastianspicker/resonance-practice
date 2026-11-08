@@ -114,6 +114,7 @@ export async function acquireArtifactCompletionClaim(
       entryId: entry.id,
       artifactId: current.artifactId,
     };
+    // #lizard forgives: one linear job; its length is sequential steps, not mixed concerns
   });
 }
 

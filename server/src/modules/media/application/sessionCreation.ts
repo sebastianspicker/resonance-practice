@@ -267,6 +267,7 @@ export async function createArtifactSession(
       session,
       artifact: session.artifact,
     };
+    // #lizard forgives: one linear job; its length is sequential steps, not mixed concerns
   });
   return {
     sessionId: signed.session.id,

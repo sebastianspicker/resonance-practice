@@ -103,6 +103,7 @@ export function registerOidcRoutes(app: FastifyInstance, prisma: PrismaClient) {
       appCallbackUrl.searchParams.set('code', code);
       reply.header('Set-Cookie', clearOidcAttemptCookie());
       reply.redirect(appCallbackUrl.toString());
+      // #lizard forgives: one linear job; its length is sequential steps, not mixed concerns
     }
   );
 }

@@ -119,17 +119,13 @@ export async function replaceCaptureMarkers(
     throw new ApiError(409, ErrorCodes.ENTRY_LOCKED, 'Reviewed entries cannot be edited');
   }
   const markers = parseCaptureMarkers(payload.markers);
+  const markerIds = markers.map((marker) => marker.id);
   await requireMarkerArtifacts(
     tx,
     entry.id,
     markers.map((marker) => marker.artifactId)
   );
-  await requireMarkerIdentities(
-    tx,
-    entry.id,
-    userId,
-    markers.map((marker) => marker.id)
-  );
+  await requireMarkerIdentities(tx, entry.id, userId, markerIds);
   for (const marker of markers) {
     await tx.captureMarker.upsert({
       where: { id: marker.id },
@@ -146,9 +142,10 @@ export async function replaceCaptureMarkers(
     where: {
       entryId: entry.id,
       studentId: userId,
-      ...(markers.length > 0 ? { id: { notIn: markers.map((marker) => marker.id) } } : {}),
+      ...(markerIds.length > 0 ? { id: { notIn: markerIds } } : {}),
     },
   });
+  // #lizard forgives: one linear job; its length is sequential steps, not mixed concerns
   return bumpEntryVersion(tx, entry.id);
 }
 

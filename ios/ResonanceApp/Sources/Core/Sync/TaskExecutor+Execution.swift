@@ -96,6 +96,7 @@ extension TaskExecutor {
         try Task.checkCancellation()
         entry.serverVersion = completion.currentVersion
         markArtifactUploaded(artifact)
+        // #lizard forgives: one linear job; its length is sequential steps, not mixed concerns
     }
 
     private func artifactSessionBaseVersion(

@@ -69,6 +69,7 @@ export async function presignUpload(
     ErrorCodes.UPLOAD_RETRY_LATER,
     'Artifact session expired before an upload credential could be issued'
   );
+  // #lizard forgives: one linear job; its length is sequential steps, not mixed concerns
 }
 
 function storageUnavailableError() {

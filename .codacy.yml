@@ -10,3 +10,9 @@ engines:
       - "server/prisma/seed.ts"
       - "server/benchmarks/**"
       - "ios/ResonanceApp/Sources/App/Demo/GuidedPracticeScreenshotFixture.swift"
+      # Static presentation page: HTML template renderers, not product code.
+      - "demo/site/**"
+      # Lizard misreads this file's regex literals and merges functions into one.
+      - "scripts/check-ios-layers.mjs"
+# Single-job production functions over the nloc threshold carry an inline
+# `#lizard forgives` comment instead, so the rest of their files stay measured.
