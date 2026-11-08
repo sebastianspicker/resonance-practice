@@ -210,13 +210,17 @@ final class QueueStore {
     }
 
     /// Permanently removes queued uploads for one local artifact that is being discarded.
-    func discardWork(forArtifactID artifactID: String) {
+    /// Returns false, and removes nothing, while an upload for it is in flight.
+    func discardWork(forArtifactID artifactID: String) -> Bool {
         let descriptor = FetchDescriptor<SyncQueueItem>()
-        guard let items = try? modelContext.fetch(descriptor) else { return }
-        for item in items where decodedPayload(for: item)?.artifactID == artifactID {
+        guard let items = try? modelContext.fetch(descriptor) else { return false }
+        let matching = items.filter { decodedPayload(for: $0)?.artifactID == artifactID }
+        guard !matching.contains(where: { $0.queueStatus == .processing }) else { return false }
+        for item in matching {
             modelContext.delete(item)
         }
         save()
+        return true
     }
 
     func save() {

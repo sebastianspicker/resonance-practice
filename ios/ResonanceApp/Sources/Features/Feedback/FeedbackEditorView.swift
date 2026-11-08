@@ -75,7 +75,7 @@ struct FeedbackEditorView: View {
         )
         .modifier(DiscardFeedbackConfirmation(isPresented: $confirmDiscard, dismiss: dismiss))
         .interactiveDismissDisabled(hasDraft)
-        .onChange(of: hasDraft) { _, newValue in onDraftChange(newValue) }
+        .onChange(of: hasDraft, initial: true) { _, newValue in onDraftChange(newValue) }
         .onDisappear { onDraftChange(false) }
     }
 

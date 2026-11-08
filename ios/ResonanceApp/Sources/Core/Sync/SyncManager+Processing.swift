@@ -124,6 +124,10 @@ extension SyncManager {
             authManager.signOut()
             return false
         }
+        if Self.waitsForUnlock(error) {
+            deferUntilUnlock(item, error: error)
+            return false
+        }
         item.retryCount += 1
         item.lastError = stableErrorDescription(error)
         if item.retryCount >= retryPolicy.maxAttempts || retryPolicy.isTerminal(error) {
@@ -254,6 +258,10 @@ extension SyncManager {
     }
 
     private func handleFailure(_ error: Error, for item: SyncQueueItem) {
+        if Self.waitsForUnlock(error) {
+            deferUntilUnlock(item, error: error)
+            return
+        }
         item.retryCount += 1
         item.lastError = stableErrorDescription(error)
         if case let SyncError.serverConflict(entityId, _) = error {
@@ -267,6 +275,20 @@ extension SyncManager {
             item.nextAttemptAt = Date().addingTimeInterval(retryPolicy.backoffDelay(retryCount: item.retryCount))
             store.resetArtifactStateForRetryIfNeeded(item: item)
         }
+    }
+
+    /// A locked device is not a failed attempt: the file becomes readable again after unlock.
+    private static func waitsForUnlock(_ error: Error) -> Bool {
+        if case SyncError.localFileTemporarilyUnavailable = error { return true }
+        return false
+    }
+
+    /// Retries once a minute without using up the retry budget.
+    private func deferUntilUnlock(_ item: SyncQueueItem, error: Error) {
+        item.lastError = stableErrorDescription(error)
+        item.queueStatus = .pending
+        item.nextAttemptAt = Date().addingTimeInterval(60)
+        store.resetArtifactStateForRetryIfNeeded(item: item)
     }
 
     private func stableErrorDescription(_ error: Error) -> String {

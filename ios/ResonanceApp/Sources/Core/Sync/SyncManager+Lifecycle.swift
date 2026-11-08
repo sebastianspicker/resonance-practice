@@ -17,9 +17,11 @@ extension SyncManager {
     }
 
     /// Drops queued upload work for a local artifact the user discarded before it synced.
-    func discardQueuedUpload(artifactID: String) {
-        store.discardWork(forArtifactID: artifactID)
+    /// False while the upload is in flight; the caller must then keep the artifact.
+    func discardQueuedUpload(artifactID: String) -> Bool {
+        let discarded = store.discardWork(forArtifactID: artifactID)
         updateQueueMetrics()
+        return discarded
     }
 
     func retryFailedItems() {

@@ -1,0 +1,12 @@
+---
+# Codacy repository settings. Tool and pattern choices live in Codacy Cloud;
+# this file only scopes the function-length metric (Lizard) away from
+# data fixtures, seeds and benchmarks, which are long by nature, not by logic.
+# Every other tool still analyses these files.
+engines:
+  lizard:
+    exclude_paths:
+      - "server/prisma/demoFixture.ts"
+      - "server/prisma/seed.ts"
+      - "server/benchmarks/**"
+      - "ios/ResonanceApp/Sources/App/Demo/GuidedPracticeScreenshotFixture.swift"

@@ -78,7 +78,7 @@ struct FeedbackDraftQueueOperation {
             guard note.utf16.count <= ServerLimits.maxMarkerTextLength else {
                 throw FeedbackDraftValidationError.markerNoteTooLong
             }
-            return (seconds, marker.text)
+            return (seconds, note)
         }
         guard parsed.count <= ServerLimits.maxMarkers else { throw FeedbackDraftValidationError.tooManyMarkers }
         return parsed

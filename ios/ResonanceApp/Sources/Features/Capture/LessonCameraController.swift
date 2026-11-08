@@ -27,6 +27,8 @@ final class LessonCameraController: NSObject, ObservableObject {
     private var startedAt: Date?
     private var timer: Timer?
     private var discardsNextRecording = false
+    /// True from startRecording until the recorder delegate reports the finished file.
+    private var recordingInFlight = false
 
     /// Requests camera and microphone access before configuring a usable recording session.
     func prepare() async {
@@ -43,7 +45,7 @@ final class LessonCameraController: NSObject, ObservableObject {
     }
 
     func startRecording(to url: URL) {
-        guard isSessionReady, !movieOutput.isRecording else { return }
+        guard isSessionReady, !movieOutput.isRecording, !recordingInFlight else { return }
         discardTake()
         discardsNextRecording = false
         lastRecordingURL = nil
@@ -54,6 +56,7 @@ final class LessonCameraController: NSObject, ObservableObject {
             connection.videoRotationAngle = 90
         }
         movieOutput.startRecording(to: url, recordingDelegate: self)
+        recordingInFlight = true
         isRecording = true
         startTimer()
     }
@@ -68,7 +71,8 @@ final class LessonCameraController: NSObject, ObservableObject {
 
     /// Deletes the finished take, if any; if one is still recording, deletes it once the recorder finishes.
     func discardTake() {
-        if movieOutput.isRecording {
+        // recordingInFlight covers the gap between stopRecording() and the delegate callback.
+        if movieOutput.isRecording || recordingInFlight {
             discardsNextRecording = true
             stopRecording()
             return
@@ -189,11 +193,15 @@ extension LessonCameraController: AVCaptureFileOutputRecordingDelegate {
     ) {
         let seconds = CMTimeGetSeconds(output.recordedDuration)
         let duration = seconds.isFinite ? Int(seconds.rounded()) : 0
-        let hitLimit = (error as NSError?)?.userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool == true
-        let errorMessage = hitLimit ? nil : error?.localizedDescription
+        // A playable file can also follow an interruption or a full disk, not only the size cap.
+        let finished = (error as NSError?)?.userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool == true
+        let hitLimit = finished && (error as? AVError)?.code == .maximumFileSizeReached
+        let errorMessage = finished ? nil : error?.localizedDescription
         let outputPath = outputFileURL.path
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            // Nobody else knows this file's URL once the controller is gone.
+            guard let self else { FileStore.deleteFileIfExists(atPath: outputPath); return }
+            self.recordingInFlight = false
             self.stopTimer()
             self.isRecording = false
             if self.discardsNextRecording {
@@ -201,7 +209,11 @@ extension LessonCameraController: AVCaptureFileOutputRecordingDelegate {
                 FileStore.deleteFileIfExists(atPath: outputPath)
                 return
             }
-            if hitLimit { self.noticeMessage = "Recording stopped at the size limit." }
+            if hitLimit {
+                self.noticeMessage = "Recording stopped at the size limit."
+            } else if finished {
+                self.noticeMessage = "Recording stopped early. The video was kept up to that point."
+            }
             if let errorMessage {
                 self.errorMessage = errorMessage
                 FileStore.deleteFileIfExists(atPath: outputPath)

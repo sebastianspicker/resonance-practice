@@ -122,12 +122,15 @@ extension EntryDetailView {
       .sorted { $0.createdAt < $1.createdAt }
 
     if let artifact = retakeCandidates.last {
+      guard syncManager.discardQueuedUpload(artifactID: artifact.id) else {
+        reportSubmissionError("This recording is uploading right now. Try again when the upload has finished.")
+        return
+      }
       if playingArtifactID == artifact.id {
         playbackTask?.cancel()
         player.stop()
         playingArtifactID = nil
       }
-      syncManager.discardQueuedUpload(artifactID: artifact.id)
       FileStore.deleteFileIfExists(atPath: artifact.localPath)
       entry.artifacts.removeAll { $0.id == artifact.id }
       modelContext.delete(artifact)
@@ -142,12 +145,15 @@ extension EntryDetailView {
     guard entry.status == .draft, artifact.type == .video,
       artifact.uploadState == .pending || artifact.uploadState == .failed
     else { return }
+    guard syncManager.discardQueuedUpload(artifactID: artifact.id) else {
+      reportSubmissionError("This video is uploading right now. Try again when the upload has finished.")
+      return
+    }
     if playingArtifactID == artifact.id {
       playbackTask?.cancel()
       player.stop()
       playingArtifactID = nil
     }
-    syncManager.discardQueuedUpload(artifactID: artifact.id)
     FileStore.deleteFileIfExists(atPath: artifact.localPath)
     entry.artifacts.removeAll { $0.id == artifact.id }
     for marker in captureMarkers(for: artifact) {

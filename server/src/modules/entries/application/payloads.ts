@@ -95,26 +95,40 @@ function buildEntryUpdateData(
   if ('tags' in payload) data.tags = { set: parseTags(payload.tags) };
   if ('notes' in payload) data.notes = parseNullableString(payload.notes, 'payload.notes');
 
-  const kind =
-    'kind' in payload ? requireEnum(payload.kind, 'payload.kind', ENTRY_KINDS) : entry.kind;
-  const consentConfirmedAt =
-    'consentConfirmedAt' in payload
-      ? parseNullableDate(payload.consentConfirmedAt, 'payload.consentConfirmedAt')
-      : entry.consentConfirmedAt;
-  const consentScope =
-    'consentScope' in payload
-      ? parseNullableEnum(payload.consentScope, 'payload.consentScope', CONSENT_SCOPES)
-      : entry.consentScope;
-  const captureProfile =
-    'captureProfile' in payload
-      ? parseNullableEnum(payload.captureProfile, 'payload.captureProfile', CAPTURE_PROFILES)
-      : entry.captureProfile;
-  validateCaptureMetadata(kind, consentConfirmedAt, consentScope, captureProfile);
-  if ('kind' in payload) data.kind = kind;
-  if ('consentConfirmedAt' in payload) data.consentConfirmedAt = consentConfirmedAt;
-  if ('consentScope' in payload) data.consentScope = consentScope;
-  if ('captureProfile' in payload) data.captureProfile = captureProfile;
-  return data;
+  // Present fields (an explicit null included) override the stored entry; validate the merged result.
+  const capture = {
+    ...('kind' in payload && { kind: requireEnum(payload.kind, 'payload.kind', ENTRY_KINDS) }),
+    ...('consentConfirmedAt' in payload && {
+      consentConfirmedAt: parseNullableDate(
+        payload.consentConfirmedAt,
+        'payload.consentConfirmedAt'
+      ),
+    }),
+    ...('consentScope' in payload && {
+      consentScope: parseNullableEnum(payload.consentScope, 'payload.consentScope', CONSENT_SCOPES),
+    }),
+    ...('captureProfile' in payload && {
+      captureProfile: parseNullableEnum(
+        payload.captureProfile,
+        'payload.captureProfile',
+        CAPTURE_PROFILES
+      ),
+    }),
+  };
+  const merged = {
+    kind: entry.kind,
+    consentConfirmedAt: entry.consentConfirmedAt,
+    consentScope: entry.consentScope,
+    captureProfile: entry.captureProfile,
+    ...capture,
+  };
+  validateCaptureMetadata(
+    merged.kind,
+    merged.consentConfirmedAt,
+    merged.consentScope,
+    merged.captureProfile
+  );
+  return { ...data, ...capture };
 }
 
 export function parseCaptureMarkers(value: unknown) {

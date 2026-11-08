@@ -8,63 +8,56 @@ const REQUIRED_TEST_DATABASE = "resonance_test";
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 /** Shared URL parser for destructive local database operations. Never include credentials in errors. */
-function assertDatabaseTargetUrl(rawUrl, { databaseName: expectedDatabaseName, purpose, allowExplicitRemote }) {
-  if (!rawUrl) {
-    throw new Error(
-      `Refusing destructive ${purpose}: DATABASE_URL must name ${expectedDatabaseName}`,
-    );
-  }
+function assertDatabaseTargetUrl(rawUrl, { databaseName, purpose, allowExplicitRemote }) {
+  const refuse = (reason) => new Error(`Refusing destructive ${purpose}: ${reason}`);
+  const parsed = parsePostgresUrl(rawUrl, databaseName, refuse);
+  assertApprovedHost(parsed.hostname, allowExplicitRemote, refuse);
+  assertDatabaseName(parsed.pathname, databaseName, refuse);
+  assertPublicSchema(parsed.searchParams, refuse);
+}
 
+function parsePostgresUrl(rawUrl, databaseName, refuse) {
+  if (!rawUrl) throw refuse(`DATABASE_URL must name ${databaseName}`);
   let parsed;
   try {
     parsed = new URL(rawUrl);
   } catch {
-    throw new Error(`Refusing destructive ${purpose}: DATABASE_URL is invalid`);
+    throw refuse("DATABASE_URL is invalid");
   }
   if (parsed.protocol !== "postgresql:" && parsed.protocol !== "postgres:") {
-    throw new Error(
-      `Refusing destructive ${purpose}: DATABASE_URL must use PostgreSQL`,
-    );
+    throw refuse("DATABASE_URL must use PostgreSQL");
   }
+  return parsed;
+}
 
-  if (!LOOPBACK_HOSTS.has(parsed.hostname)) {
-    const remoteDatabaseAllowed = allowExplicitRemote &&
-      process.env.RESONANCE_ALLOW_REMOTE_TEST_DATABASE === "true";
-    const configuredRemoteHost = process.env.RESONANCE_TEST_DATABASE_HOST;
-    if (!remoteDatabaseAllowed || configuredRemoteHost !== parsed.hostname) {
-      throw new Error(
-        `Refusing destructive ${purpose}: DATABASE_URL host must be loopback${allowExplicitRemote ? " or explicitly approved" : ""}`,
-      );
-    }
-  }
+function assertApprovedHost(hostname, allowExplicitRemote, refuse) {
+  if (LOOPBACK_HOSTS.has(hostname)) return;
+  const remoteDatabaseAllowed = allowExplicitRemote &&
+    process.env.RESONANCE_ALLOW_REMOTE_TEST_DATABASE === "true";
+  if (remoteDatabaseAllowed && process.env.RESONANCE_TEST_DATABASE_HOST === hostname) return;
+  throw refuse(
+    `DATABASE_URL host must be loopback${allowExplicitRemote ? " or explicitly approved" : ""}`,
+  );
+}
 
+function assertDatabaseName(pathname, expectedDatabaseName, refuse) {
   let databaseName;
   try {
-    databaseName = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
+    databaseName = decodeURIComponent(pathname.slice(1));
   } catch {
-    throw new Error(
-      `Refusing destructive ${purpose}: DATABASE_URL has an invalid database name`,
-    );
+    throw refuse("DATABASE_URL has an invalid database name");
   }
   if (databaseName !== expectedDatabaseName) {
-    throw new Error(
-      `Refusing destructive ${purpose}: database must be ${expectedDatabaseName}`,
-    );
+    throw refuse(`database must be ${expectedDatabaseName}`);
   }
-  if (
-    parsed.searchParams.getAll("schema").some((schema) => schema !== "public")
-  ) {
-    throw new Error(
-      `Refusing destructive ${purpose}: database schema must be public`,
-    );
+}
+
+function assertPublicSchema(searchParams, refuse) {
+  if (searchParams.getAll("schema").some((schema) => schema !== "public")) {
+    throw refuse("database schema must be public");
   }
-  if (
-    parsed.searchParams.has("options") ||
-    parsed.searchParams.has("search_path")
-  ) {
-    throw new Error(
-      `Refusing destructive ${purpose}: DATABASE_URL must not override search_path`,
-    );
+  if (searchParams.has("options") || searchParams.has("search_path")) {
+    throw refuse("DATABASE_URL must not override search_path");
   }
 }
 

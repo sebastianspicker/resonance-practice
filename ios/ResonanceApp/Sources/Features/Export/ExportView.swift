@@ -48,9 +48,9 @@ struct ExportView: View {
                     ShareLink("Share PDF", item: exportURL)
                 }
             }
-            .onChange(of: startDate) { exportURL = nil }
-            .onChange(of: endDate) { exportURL = nil }
-            .onChange(of: courseId) { exportURL = nil }
+            .onChange(of: startDate) { discardExport() }
+            .onChange(of: endDate) { discardExport() }
+            .onChange(of: courseId) { discardExport() }
             .scrollContentBackground(.hidden)
             .background(AppTheme.workspaceBackground)
             .navigationTitle("Export")
@@ -88,11 +88,8 @@ struct ExportView: View {
         let exportDir = FileStore.exportDirectoryURL()
         let url = exportDir.appendingPathComponent(filename)
 
+        discardExport()
         do {
-            // Only the file this view created earlier, and only inside the exports folder.
-            if let previous = exportURL, previous.deletingLastPathComponent() == exportDir {
-                try? FileManager.default.removeItem(at: previous)
-            }
             try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
 
             try PDFExporter.export(entries: entries, to: url)
@@ -102,6 +99,14 @@ struct ExportView: View {
             errorMessage = error.localizedDescription
             showErrorAlert = true
         }
+    }
+
+    /// Deletes the previous PDF, only the file this view created and only inside the exports folder.
+    private func discardExport() {
+        if let previous = exportURL, previous.deletingLastPathComponent() == FileStore.exportDirectoryURL() {
+            try? FileManager.default.removeItem(at: previous)
+        }
+        exportURL = nil
     }
 
     private func entriesInRange() -> [LocalPracticeEntry] {
