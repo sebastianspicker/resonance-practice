@@ -51,7 +51,7 @@
     "@aws-sdk/s3-request-presigner": "3.1038.0",
     "@fastify/cors": "11.2.0",
     "@fastify/helmet": "13.0.2",
-    "@fastify/rate-limit": "10.3.0",
+    "@fastify/rate-limit": "11.2.2",
     "@prisma/client": "5.22.0",
     "fastify": "5.12.7",
     "jsonwebtoken": "9.0.3",
