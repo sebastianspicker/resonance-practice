@@ -57,7 +57,7 @@
     "jsonwebtoken": "9.0.3",
     "openid-client": "5.7.1",
     "prisma": "5.22.0",
-    "rate-limiter-flexible": "11.2.1"
+    "rate-limiter-flexible": "11.3.0"
   },
   "overrides": {
     "fast-xml-builder": "1.2.0",
