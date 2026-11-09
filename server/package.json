@@ -73,7 +73,7 @@
     "@types/node": "24.13.2",
     "@typescript-eslint/eslint-plugin": "8.57.2",
     "@typescript-eslint/parser": "8.57.2",
-    "eslint": "9.39.4",
+    "eslint": "10.14.0",
     "globals": "17.4.0",
     "jscpd": "5.0.12",
     "knip": "6.27.0",
